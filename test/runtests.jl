@@ -1,5 +1,9 @@
 using Canary
 using Test
 
-# write your own tests here
-@test 1 == 2
+@testset "Linear Parition" begin
+  @test Canary.linearpartition(1,1,1) == 1:1
+  @test Canary.linearpartition(20,1,1) == 1:20
+  @test Canary.linearpartition(10,1,2) == 1:5
+  @test Canary.linearpartition(10,2,2) == 6:10
+end

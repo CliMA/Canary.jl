@@ -1,5 +1,5 @@
 module Canary
 
-greet() = print("Hello World!")
+include("mesh.jl")
 
 end # module
