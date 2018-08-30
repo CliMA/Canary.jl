@@ -8,6 +8,31 @@ using Test
   @test Canary.linearpartition(10,2,2) == 6:10
 end
 
+@testset "Hilbert Code" begin
+  @test Canary.hilbertcode([0,0], bits=1) == [0, 0]
+  @test Canary.hilbertcode([0,1], bits=1) == [0, 1]
+  @test Canary.hilbertcode([1,1], bits=1) == [1, 0]
+  @test Canary.hilbertcode([1,0], bits=1) == [1, 1]
+  @test Canary.hilbertcode([0,0], bits=2) == [0, 0]
+  @test Canary.hilbertcode([1,0], bits=2) == [0, 1]
+  @test Canary.hilbertcode([1,1], bits=2) == [0, 2]
+  @test Canary.hilbertcode([0,1], bits=2) == [0, 3]
+  @test Canary.hilbertcode([0,2], bits=2) == [1, 0]
+  @test Canary.hilbertcode([0,3], bits=2) == [1, 1]
+  @test Canary.hilbertcode([1,3], bits=2) == [1, 2]
+  @test Canary.hilbertcode([1,2], bits=2) == [1, 3]
+  @test Canary.hilbertcode([2,2], bits=2) == [2, 0]
+  @test Canary.hilbertcode([2,3], bits=2) == [2, 1]
+  @test Canary.hilbertcode([3,3], bits=2) == [2, 2]
+  @test Canary.hilbertcode([3,2], bits=2) == [2, 3]
+  @test Canary.hilbertcode([3,1], bits=2) == [3, 0]
+  @test Canary.hilbertcode([2,1], bits=2) == [3, 1]
+  @test Canary.hilbertcode([2,0], bits=2) == [3, 2]
+  @test Canary.hilbertcode([3,0], bits=2) == [3, 3]
+
+  @test Canary.hilbertcode(UInt64.([14,3,4])) == UInt64.([0x0,0x0,0xe25])
+end
+
 @testset "Mesh" begin
   let
     (etv, etc, fc) = brickmesh((2:5,4:6), (false,true))

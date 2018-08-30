@@ -12,6 +12,82 @@ the ranges will have lengths of either `floor(Int, n/np)` or `ceil(Int, n/np)`.
 linearpartition(n, p, np) = range(div((p-1)*n, np) + 1, stop=div(p*n, np))
 
 """
+    hilbertcode(Y::AbstractArray{T}; bits=8sizeof(T)) where T
+
+Given an array of axes coordinates `Y` stored as `bits`-bit integers
+the function returns the Hilbert integer `H`.
+
+The encoding of the Hilbert integer is best described by example.
+If 5-bits are used from each of 3 coordinates then the function performs
+
+     X[2]|                       H[0] = A B C D E
+         | /X[1]       ------->  H[1] = F G H I J
+    axes |/                      H[2] = K L M N O
+         0------ X[0]                   high low
+
+where the 15-bit Hilbert integer = `A B C D E F G H I J K L M N O` is stored in `H`
+
+This function is based on public domain code from John Skilling which can be
+found in <https://dx.doi.org/10.1063/1.1751381>.
+"""
+function hilbertcode(Y::AbstractArray{T}; bits=8sizeof(T)) where T
+  # Below is Skilling's AxestoTranspose
+  X = deepcopy(Y)
+  n = length(X)
+  M = one(T) << (bits-1)
+
+  Q = M
+  for j = 1:bits-1
+    P = Q - one(T)
+    for i = 1:n
+      if X[i] & Q != zero(T)
+        X[1] ⊻= P
+      else
+        t = (X[1] ⊻ X[i]) & P
+        X[1] ⊻= t
+        X[i] ⊻= t
+      end
+    end
+    Q >>>= one(T)
+  end
+
+  for i = 2:n
+    X[i] ⊻= X[i - 1]
+  end
+
+  t = zero(T)
+  Q = M
+  for j = 1:bits-1
+    if X[n] & Q != zero(T)
+      t ⊻= Q - one(T)
+    end
+    Q >>>= one(T)
+  end
+
+  for i = 1:n
+    X[i] ⊻= t
+  end
+
+  # Below we transpose X and store it in H, i.e.:
+  #
+  #   X[0] = A D G J M               H[0] = A B C D E
+  #   X[1] = B E H K N   <------->   H[1] = F G H I J
+  #   X[2] = C F I L O               H[2] = K L M N O
+  #
+  # The 15-bit Hilbert integer is then = A B C D E F G H I J K L M N O
+  H = zero(X)
+  for i = 0:n-1, j = 0:bits-1
+    k = i * bits + j
+    bit = (X[n - mod(k,n)] >>> div(k,n)) & one(T)
+    H[n - i] |= (bit << j)
+  end
+
+  return H
+end
+
+
+
+"""
     brickmesh(x, periodic; part=1, numparts=1)
 
 Generate a brick mesh with coordinates given by the tuple `x` and the
