@@ -30,6 +30,22 @@ end
   @test Canary.hilbertcode(UInt64.([14,3,4])) == UInt64.([0x0,0x0,0xe25])
 end
 
+@testset "Mesh to Hilbert Code" begin
+  etc = Array{Float64}(undef, 2, 4, 6)
+  etc[:, :, 1] = [2.0  3.0  2.0  3.0; 4.0  4.0  5.0  5.0]
+  etc[:, :, 2] = [3.0  4.0  3.0  4.0; 4.0  4.0  5.0  5.0]
+  etc[:, :, 3] = [4.0  5.0  4.0  5.0; 4.0  4.0  5.0  5.0]
+  etc[:, :, 4] = [2.0  3.0  2.0  3.0; 5.0  5.0  6.0  6.0]
+  etc[:, :, 5] = [3.0  4.0  3.0  4.0; 5.0  5.0  6.0  6.0]
+  etc[:, :, 6] = [4.0  5.0  4.0  5.0; 5.0  5.0  6.0  6.0]
+
+  code_exect = UInt64[0x0000000000000000 0x1555555555555555 0xffffffffffffffff 0x5555555555555555 0x6aaaaaaaaaaaaaaa 0xaaaaaaaaaaaaaaaa; 0x0000000000000000 0x5555555555555555 0xffffffffffffffff 0x5555555555555555 0xaaaaaaaaaaaaaaaa 0xaaaaaaaaaaaaaaaa]
+
+  code = centroidtocode(MPI.COMM_SELF, etc)
+
+  @test code == code_exect
+end
+
 @testset "Mesh" begin
   let
     (etv, etc, fc) = brickmesh((2:5,4:6), (false,true))

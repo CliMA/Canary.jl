@@ -1,6 +1,6 @@
 module Canary
 
-export brickmesh
+export brickmesh, centroidtocode
 
 include("mesh.jl")
 

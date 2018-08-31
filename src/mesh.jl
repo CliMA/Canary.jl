@@ -1,3 +1,4 @@
+using MPI
 using Base.Iterators: product
 
 """
@@ -85,7 +86,47 @@ function hilbertcode(Y::AbstractArray{T}; bits=8sizeof(T)) where T
   return H
 end
 
+"""
+    centroidtocode(comm::MPI.Comm, elemtocorner; coortocode, CT)
 
+Returns a code for each element based on its centroid.
+
+These element codes can be used to determine a linear ordering for the
+partition function.
+
+The communicator `comm` is used to calculate the bounding box for representing
+the centroids in coordinates of type `CT`, defaulting to `CT=UInt64`.  These
+integer coordinates are converted to a code using the function `coortocode`,
+which defaults to `hilbertcode`.
+
+The array containing the element corner coordinates, `elemtocorner`, is used
+to compute the centroids.  `elemtocorner` is a dimension by number of corners
+by number of elements array.
+"""
+function centroidtocode(comm::MPI.Comm, elemtocorner; coortocode=hilbertcode,
+                        CT=UInt64)
+  (d, nvert, nelem) = size(elemtocorner)
+  T = eltype(elemtocorner)
+
+  centroids = sum(elemtocorner, dims=2) ./ nvert
+
+  centroidmin = (nelem > 0) ? minimum(centroids, dims=3) : fill(typemax(T),d)
+  centroidmax = (nelem > 0) ? maximum(centroids, dims=3) : fill(typemin(T),d)
+
+  centroidmin = MPI.allreduce(centroidmin, MPI.MIN, comm)
+  centroidmax = MPI.allreduce(centroidmax, MPI.MAX, comm)
+
+  centroidsize = centroidmax - centroidmin
+
+  code = Array{CT}(undef, d, nelem)
+  for e = 1:nelem
+    c = (centroids[:,1,e] .- centroidmin) ./ centroidsize
+    X = CT.(floor.(typemax(CT).*BigFloat.(c, 16sizeof(CT))))
+    code[:,e] = coortocode(X)
+  end
+
+  code
+end
 
 """
     brickmesh(x, periodic; part=1, numparts=1)
