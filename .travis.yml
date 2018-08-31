@@ -1,5 +1,7 @@
 ## Documentation: http://docs.travis-ci.com/user/languages/julia/
 language: julia
+sudo: false
+dist: trusty
 os:
   - linux
   - osx
@@ -14,17 +16,31 @@ matrix:
   allow_failures:
   - julia: nightly
 
-## uncomment and modify the following lines to manually install system packages
-#addons:
-#  apt: # apt-get for linux
-#    packages:
-#    - gfortran
-#before_script: # homebrew for mac
-#  - if [ $TRAVIS_OS_NAME = osx ]; then brew install gcc; fi
+addons:
+  apt:
+    packages:
+      - gfortran
+      - mpich
+      - libmpich-dev
 
-## uncomment the following lines to override the default test script
-#script:
-#  - julia -e 'import Pkg; Pkg.build(); Pkg.test(; coverage=true)'
+before_script:
+  - |
+    if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+      brew update
+      brew upgrade cmake
+      brew cask uninstall oclint # Prevent conflict with gcc
+      brew install mpich
+    fi
+  # - |
+  #   if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+  #     curl -LO https://raw.githubusercontent.com/GiovanniBussi/macports-ci/master/macports-ci
+  #     source ./macports-ci install
+  #     sudo port -N install mpich
+  #   fi
+
+before_install:
+  - export CC=mpicc
+  - export FC=mpif90
 
 after_success:
   # push coverage results to Codecov
