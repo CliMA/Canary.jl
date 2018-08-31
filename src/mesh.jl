@@ -7,8 +7,9 @@ using Base.Iterators: product
 Partition the range `1:n` into `np` pieces and return the `p`th piece as a
 range.
 
-This will provide an equal partition when `n` is divisible by `np` and otherwise
-the ranges will have lengths of either `floor(Int, n/np)` or `ceil(Int, n/np)`.
+This will provide an equal partition when `n` is divisible by `np` and
+otherwise the ranges will have lengths of either `floor(Int, n/np)` or
+`ceil(Int, n/np)`.
 """
 linearpartition(n, p, np) = range(div((p-1)*n, np) + 1, stop=div(p*n, np))
 
@@ -26,7 +27,8 @@ If 5-bits are used from each of 3 coordinates then the function performs
     axes |/                      H[2] = K L M N O
          0------ X[0]                   high low
 
-where the 15-bit Hilbert integer = `A B C D E F G H I J K L M N O` is stored in `H`
+where the 15-bit Hilbert integer = `A B C D E F G H I J K L M N O` is stored
+in `H`
 
 This function is based on public domain code from John Skilling which can be
 found in <https://dx.doi.org/10.1063/1.1751381>.
@@ -166,8 +168,8 @@ This returns the mesh structure for
               +--|-----|-----|-----|--> x_1
                  2     3     4     5
 
-The (number of corners by number of elements) array `etv` gives the global vertex
-number for the corners of each element.
+The (number of corners by number of elements) array `etv` gives the global
+vertex number for the corners of each element.
 ```jldoctest brickmesh
 julia> etv
 4×6 Array{Int64,2}:
