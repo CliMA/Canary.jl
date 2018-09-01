@@ -21,7 +21,9 @@ include("test_mesh.jl")
   coverage_opt = coverage_opts[Base.JLOptions().code_coverage]
   testdir = dirname(@__FILE__)
 
-  for (n, f) in [(3, "mpi_test_centriod.jl")]
+  for (n, f) in [(3, "mpi_test_centriod.jl")
+                 (1, "mpi_test_sortcolumns.jl")
+                 (4, "mpi_test_sortcolumns.jl")]
     @test (run(`mpiexec -n $n $(Base.julia_cmd()) --startup-file=no --project=$(joinpath(testdir, "..")) --code-coverage=$coverage_opt $(joinpath(testdir, f))`); true)
   end
 end

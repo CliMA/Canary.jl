@@ -268,3 +268,66 @@ function brickmesh(x, periodic; part=1, numparts=1)
 
   (elemtovert, elemtocoord, faceconnections)
 end
+
+"""
+    function parallelsortcolumns(comm::MPI.Comm, A;
+                                 alg::Base.Sort.Algorithm=Base.Sort.DEFAULT_UNSTABLE,
+                                 lt=isless,
+                                 by=identity,
+                                 rev::Union{Bool,Nothing}=nothing)
+
+Sorts the columns of the distributed matrix `A`.
+
+See the documentation of `sort!` for a description of the keyword arguments.
+
+This function assumes `A` has the same number of rows on each MPI rank but can have
+a different number of columns.
+"""
+function parallelsortcolumns(comm::MPI.Comm, A;
+                             alg::Base.Sort.Algorithm=Base.Sort.DEFAULT_UNSTABLE,
+                             lt=isless,
+                             by=identity,
+                             rev::Union{Bool,Nothing}=nothing)
+
+  m, n = size(A)
+  T = eltype(A)
+
+  csize = MPI.Comm_size(comm)
+  crank = MPI.Comm_rank(comm)
+  croot = 0
+
+  A = sortslices(A, dims=2, alg=alg, lt=lt, by=by, rev=rev)
+
+  npivots = clamp(n, 0, csize)
+  pivots = T[A[i, div(n*p,npivots)+1] for i=1:m, p=0:npivots-1]
+  pivotcounts = MPI.Allgather(Cint(length(pivots)), comm)
+  pivots = MPI.Allgatherv(pivots, pivotcounts, comm)
+  pivots = reshape(pivots, m, div(length(pivots),m))
+  pivots = sortslices(pivots, dims=2, alg=alg, lt=lt, by=by, rev=rev)
+
+  # if we don't have any pivots then we must have zero columns
+  if size(pivots) == (m, 0)
+    return A
+  end
+
+  pivots =
+    [pivots[i, div(div(length(pivots),m)*r,csize)+1] for i=1:m, r=0:csize-1]
+
+  cols = map(i->view(A,:,i), 1:n)
+  sendstarts = [(i<=csize) ? (searchsortedfirst(cols, pivots[:,i], lt=lt,
+                                                by=by, rev=rev)-1)*m+1 : n*m+1
+                for i=1:csize+1]
+  sendcounts = [Cint(sendstarts[i+1]-sendstarts[i]) for i=1:csize]
+
+  B = []
+  for r = 0:csize-1
+    counts = MPI.Allgather(sendcounts[r+1], comm)
+    c = MPI.Gatherv(view(A, sendstarts[r+1]:sendstarts[r+2]-1), counts, r, comm)
+    if r == crank
+      B = c
+    end
+  end
+  B = reshape(B, m, div(length(B),m))
+
+  sortslices(B, dims=2, alg=alg, lt=lt, by=by, rev=rev)
+end
