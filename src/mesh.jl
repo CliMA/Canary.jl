@@ -1,5 +1,4 @@
 using MPI
-using Base.Iterators: product
 
 """
     linearpartition(n, p, np)
