@@ -133,3 +133,11 @@ end
     @test rs == [1, Nelem+1]
   end
 end
+
+@testset "Partition" begin
+  (etv, etc, fc) = brickmesh((-1:2:1,-1:2:1,-2:1:2), (true,true,true))
+  (netv, netc, nfc) = partition(MPI.COMM_SELF, etv, etc, fc)
+  @test etv == netv
+  @test etc == netc
+  @test fc == nfc
+end

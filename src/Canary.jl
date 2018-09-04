@@ -7,7 +7,7 @@ module Canary
 # Canary doesn't have to depend directly on the MPI package.
 __precompile__(false)
 
-export brickmesh, centroidtocode
+export brickmesh, centroidtocode, partition
 
 include("mesh.jl")
 

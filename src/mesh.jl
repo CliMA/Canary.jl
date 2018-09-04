@@ -450,3 +450,83 @@ function getpartition(comm::MPI.Comm, elemtocode::AbstractMatrix)
 
   partsendorder, partsendstarts, partrecvstarts
 end
+
+"""
+    partition(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
+
+This function takes in a mesh (as returned for example by `brickmesh`) and
+returns a Hilbert curve based partitioned mesh.
+"""
+function partition(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
+  (d, nvert, nelem) = size(elemtocoord)
+
+  csize = MPI.Comm_size(comm)
+  crank = MPI.Comm_rank(comm)
+
+  nface = 2d
+  nfacevert = 2^(d-1)
+
+  # Here we expand the list of face connections into a structure that is easy
+  # to partition.  The cost is extra memory transfer.  If this becomes a
+  # bottleneck something more efficient may be implemented.
+  #
+  elemtofaceconnect = zeros(eltype(eltype(faceconnections)), nfacevert, nface,
+                            nelem)
+  for fc in faceconnections
+    elemtofaceconnect[:,fc[2],fc[1]] = fc[3:end]
+  end
+
+  elemtocode = centroidtocode(comm, elemtocoord; CT=UInt64)
+  sendorder, sendstarts, recvstarts = getpartition(comm, elemtocode)
+
+  elemtovert = elemtovert[:,sendorder]
+  elemtocoord = elemtocoord[:,:,sendorder]
+  elemtofaceconnect = elemtofaceconnect[:,:,sendorder]
+
+  newelemtovert = []
+  newelemtocoord = []
+  newelemtofaceconnect = []
+  for r = 0:csize-1
+    sendrange = sendstarts[r+1]:sendstarts[r+2]-1
+    rcounts = MPI.Allgather(Cint(length(sendrange)), comm)
+
+    netv = MPI.Gatherv(view(elemtovert, :, sendrange), rcounts.*Cint(nvert),
+                       r, comm)
+
+    netc = MPI.Gatherv(view(elemtocoord, :, :, sendrange),
+                       rcounts.*Cint(d*nvert), r, comm)
+
+    netfc = MPI.Gatherv(view(elemtofaceconnect, :, :, sendrange),
+                        rcounts.*Cint(nfacevert*nface), r, comm)
+
+    if r == crank
+      newelemtovert = netv
+      newelemtocoord = netc
+      newelemtofaceconnect = netfc
+    end
+  end
+
+  newnelem = recvstarts[end]-1
+  newelemtovert = reshape(newelemtovert, nvert, newnelem)
+  newelemtocoord = reshape(newelemtocoord, d, nvert, newnelem)
+  newelemtofaceconnect = reshape(newelemtofaceconnect, nfacevert, nface,
+                                 newnelem)
+
+  # reorder local elements based on code of new elements
+  A = UInt64[centroidtocode(comm, newelemtocoord; CT=UInt64);
+             collect(1:newnelem)']
+  A = sortslices(A, dims=2)
+  newsortorder = view(A,d+1,:)
+  newelemtovert = newelemtovert[:,newsortorder]
+  newelemtocoord = newelemtocoord[:,:,newsortorder]
+  newelemtofaceconnect = newelemtofaceconnect[:,:,newsortorder]
+
+  newfaceconnections = similar(faceconnections, 0)
+  for e = 1:newnelem, f = 1:nface
+    if newelemtofaceconnect[1,f,e] > 0
+      push!(newfaceconnections, vcat(e, f, newelemtofaceconnect[:,f,e]))
+    end
+  end
+
+  (newelemtovert, newelemtocoord, newfaceconnections)
+end
