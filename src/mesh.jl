@@ -270,11 +270,11 @@ function brickmesh(x, periodic; part=1, numparts=1)
 end
 
 """
-    function parallelsortcolumns(comm::MPI.Comm, A;
-                                 alg::Base.Sort.Algorithm=Base.Sort.DEFAULT_UNSTABLE,
-                                 lt=isless,
-                                 by=identity,
-                                 rev::Union{Bool,Nothing}=nothing)
+    parallelsortcolumns(comm::MPI.Comm, A;
+                        alg::Base.Sort.Algorithm=Base.Sort.DEFAULT_UNSTABLE,
+                        lt=isless,
+                        by=identity,
+                        rev::Union{Bool,Nothing}=nothing)
 
 Sorts the columns of the distributed matrix `A`.
 
