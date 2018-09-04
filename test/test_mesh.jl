@@ -114,3 +114,22 @@ end
     @test etc == etc_parts
   end
 end
+
+@testset "Get Partition" begin
+  let
+    Nelem = 150
+    (so, ss, rs) = Canary.getpartition(MPI.COMM_SELF, Nelem:-1:1)
+    @test so == Nelem:-1:1
+    @test ss == [1, Nelem+1]
+    @test rs == [1, Nelem+1]
+  end
+
+  let
+    Nelem = 111
+    code = [ones(1,Nelem); collect(Nelem:-1:1)']
+    (so, ss, rs) = Canary.getpartition(MPI.COMM_SELF, Nelem:-1:1)
+    @test so == Nelem:-1:1
+    @test ss == [1, Nelem+1]
+    @test rs == [1, Nelem+1]
+  end
+end

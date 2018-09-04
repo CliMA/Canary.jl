@@ -331,3 +331,111 @@ function parallelsortcolumns(comm::MPI.Comm, A;
 
   sortslices(B, dims=2, alg=alg, lt=lt, by=by, rev=rev)
 end
+
+"""
+    getpartition(comm::MPI.Comm, elemtocode)
+
+Returns an equally weighted partition of a distributed set of elements by sorting
+their codes given in `elemtocode`.
+
+The codes for each element, `elemtocode`, are given as an array with a single
+entry per local element or as a matrix with a column for each local element.
+
+The partition is returned as a tuple three parts:
+
+ - `partsendorder`: permutation of elements into sending order
+ - `partsendstarts`: start entries in the send array for each rank
+ - `partrecvstarts`: start entries in the receive array for each rank
+
+Note that both `partsendstarts` and `partrecvstarts` are of length
+`MPI.Comm_size(comm)+1` where the last entry has the total number of elements
+to send or receive, respectively.
+"""
+getpartition(comm::MPI.Comm, elemtocode::AbstractVector) =
+  getpartition(comm, reshape(elemtocode, 1, length(elemtocode)))
+
+function getpartition(comm::MPI.Comm, elemtocode::AbstractMatrix)
+  (ncode, nelem) = size(elemtocode)
+
+  csize = MPI.Comm_size(comm)
+  crank = MPI.Comm_rank(comm)
+
+  CT = eltype(elemtocode)
+
+  A = CT[elemtocode;                                 # code
+         collect(CT, 1:nelem)';                      # original element number
+         fill(CT(MPI.Comm_rank(comm)), (1, nelem));  # original rank
+         fill(typemax(CT), (1, nelem))]              # new rank
+  m, n = size(A)
+
+  # sort by just code
+  A = parallelsortcolumns(comm, A)
+
+  # count the distribution of A
+  counts = MPI.Allgather(last(size(A)), comm)
+  starts = ones(Int, csize+1)
+  for i=1:csize
+    starts[i+1] = counts[i] + starts[i]
+  end
+
+  # loop to determine new rank
+  j = range(starts[crank+1], stop=starts[crank+2]-1)
+  for r = 0:csize-1
+    k = linearpartition(starts[end]-1, r+1, csize)
+    o = intersect(k,j) .- (starts[crank+1]-1)
+    A[ncode+3,o] .= r
+  end
+
+  # sort by original rank and code
+  A = sortslices(A, dims=2, by=x->x[[ncode+2,(1:ncode)...]])
+
+  # count number of elements that are going to be sent
+  sendcounts = zeros(Cint, csize)
+  for i = 1:last(size(A))
+    sendcounts[A[ncode+2,i]+1] += m
+  end
+  sendstarts = ones(Int, csize+1)
+  for i=1:csize
+    sendstarts[i+1] = sendcounts[i] + sendstarts[i]
+  end
+
+  # communicate columns of A to original rank
+  B = []
+  for r = 0:csize-1
+    rcounts = MPI.Allgather(sendcounts[r+1], comm)
+    c = MPI.Gatherv(view(A, sendstarts[r+1]:sendstarts[r+2]-1), rcounts, r, comm)
+    if r == crank
+      B = c
+    end
+  end
+  B = reshape(B, m, div(length(B),m))
+
+  # check to make sure we didn't drop any elements
+  @assert nelem == n == size(B)[2]
+
+  partsendcounts = zeros(Cint, csize)
+  for i = 1:last(size(B))
+    partsendcounts[B[ncode+3,i]+1] += 1
+  end
+  partsendstarts = ones(Int, csize+1)
+  for i=1:csize
+    partsendstarts[i+1] = partsendcounts[i] + partsendstarts[i]
+  end
+
+  partsendorder = B[ncode+1,:]
+
+  partrecvcounts = Cint[]
+  for r = 0:csize-1
+    c = MPI.Gather(partsendcounts[r+1], r, comm)
+    if r == crank
+      partrecvcounts = c
+    end
+  end
+
+  partrecvstarts = ones(Int, csize+1)
+  for i=1:csize
+    partrecvstarts[i+1] = partrecvcounts[i] + partrecvstarts[i]
+  end
+
+  partsendorder, partsendstarts, partrecvstarts
+end
