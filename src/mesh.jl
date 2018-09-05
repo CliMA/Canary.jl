@@ -659,3 +659,211 @@ function vertsortandorder(a, b, c, d)
 
   ((a, b, c, d), o)
 end
+
+"""
+    connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
+
+This function takes in a mesh (as returned for example by `brickmesh`) and
+returns a connected mesh.  This returns a `NamedTuple` of:
+
+ - `elems` the range of element indices
+ - `realelems` the range of real (aka nonghost) element indices
+ - `ghostelems` the range of ghost element indices
+ - `sendelems` an array of send element indices sorted so that
+ - `elemtocoord` element to vertex coordinates; `elemtocoord[d,i,e]` is the
+    `d`th coordinate of corner `i` of element `e`
+ - `elemtoelem` element to neighboring element; `elemtoelem[f,e]` is the
+   number of the element neighboring element `e` across face `f`.  If there is
+   no neighboring element then `elemtoelem[f,e] == e`.
+ - `elemtoface` element to neighboring element face; `elemtoface[f,e]` is the
+   face number of the element neighboring element `e` across face `f`.  If
+   there is no neighboring element then `elemtoface[f,e] == f`.
+ - `elemtoordr` element to neighboring element order; `elemtoordr[f,e]` is the
+   ordering number of the element neighboring element `e` across face `f`.  If
+   there is no neighboring element then `elemtoordr[f,e] == 1`.
+ - `nabrtorank` a list of the MPI ranks for the neighboring processes
+ - `nabrtorecv` a range in ghost elements to receive for each neighbor
+ - `nabrtosend` a range in `sendelems` to send for each neighbor
+
+"""
+function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
+  (d, nvert, nelem) = size(elemtocoord)
+  nface, nfacevert = 2d, 2^(d-1)
+
+  fmask = [CartesianIndices(ntuple(j->(j==div(f-1,2)+1)
+                                   ? mod(f-1,2)+1 : (1:2), d)) for f=1:nface]
+
+  csize = MPI.Comm_size(comm)
+  crank = MPI.Comm_rank(comm)
+
+  VT = eltype(elemtovert)
+  A = Array{VT}(undef, nfacevert+8, nface*nelem)
+
+  MR, ME, MF, MO, NR, NE, NF, NO = nfacevert .+ (1:8)
+  for e = 1:nelem
+    v = reshape(elemtovert[:,e], ntuple(j->2, d))
+    for f = 1:nface
+      j = (e-1)*nface + f
+      fv, o = vertsortandorder(v[fmask[f]]...)
+      A[1:nfacevert, j] .= fv
+      A[MR, j] = crank
+      A[ME, j] = e
+      A[MF, j] = f
+      A[MO, j] = o
+      A[NR, j] = typemax(VT)
+      A[NE, j] = typemax(VT)
+      A[NF, j] = typemax(VT)
+      A[NO, j] = typemax(VT)
+    end
+  end
+
+  # use neighboring vertices for connected faces
+  for fc in faceconnections
+    e = fc[1]
+    f = fc[2]
+    v = fc[3:end]
+    j = (e-1)*nface + f
+    fv, o = vertsortandorder(v...)
+    A[1:nfacevert, j] .= fv
+    A[MO, j] = o
+  end
+
+  A = parallelsortcolumns(comm, A)
+  m, n = size(A)
+
+  # match faces
+  j = 1
+  while j <= n
+    if j+1 <= n && A[1:nfacevert,j]==A[1:nfacevert,j+1]
+      # found connected face
+      A[NR:NO, j  ] = A[MR:MO, j+1]
+      A[NR:NO, j+1] = A[MR:MO, j  ]
+      j += 2
+    else
+      # found unconnect face
+      A[NR:NO, j] = A[MR:MO, j]
+      j += 1
+    end
+  end
+
+  A = sortslices(A, dims=2, by=x->(x[MR],x[NR],x[ME],x[MF]))
+
+  # count number of elements that are going to be sent
+  sendcounts = zeros(Cint, csize)
+  for i = 1:last(size(A))
+    sendcounts[A[MR,i]+1] += m
+  end
+  sendstarts = ones(Int, csize+1)
+  for i=1:csize
+    sendstarts[i+1] = sendcounts[i] + sendstarts[i]
+  end
+
+  # communicate columns of A to original rank
+  B = []
+  for r = 0:csize-1
+    rcounts = MPI.Allgather(sendcounts[r+1], comm)
+    c = MPI.Gatherv(view(A, sendstarts[r+1]:sendstarts[r+2]-1), rcounts, r,
+                    comm)
+    if r == crank
+      B = c
+    end
+  end
+  B = reshape(B, m, nface*nelem)
+
+  # get element sending information
+  B = sortslices(B, dims=2, by=x->(x[NR],x[ME]))
+  sendelems = Int[]
+  counts = zeros(Int, csize+1)
+  counts[1] = (last(size(B)) > 0) ? 1 : 0
+  sr, se = -1, 0
+  for i = 1:last(size(B))
+    r, e = B[NR,i], B[ME,i]
+    # See if we need to send element `e` to rank `r` and make sure that we
+    # didn't already mark it for sending.
+    if r != crank && !(sr == r && se == e)
+      counts[r+2] += 1
+      append!(sendelems, e)
+      sr, se = r, e
+    end
+  end
+  sendstarts = cumsum(counts)
+  nabrtosendrank = Int[r for r = 0:csize-1
+                       if sendstarts[r+2]-sendstarts[r+1] > 0]
+  nabrtosend = UnitRange{Int}[(sendstarts[r+1]:(sendstarts[r+2]-1))
+                              for r = 0:csize-1
+                              if sendstarts[r+2]-sendstarts[r+1] > 0]
+
+  # get element receiving information
+  B = sortslices(B, dims=2, by=x->(x[NR],x[NE]))
+  counts = zeros(Int, csize+1)
+  counts[1] = (last(size(B)) > 0) ? 1 : 0
+  sr, se = -1, 0
+  nghost = 0
+  for i = 1:last(size(B))
+    r, e = B[NR,i], B[NE,i]
+    if r != crank
+      # Check to make sure we have not already marked the element for
+      # receiving since we could be connected to the receiving element across
+      # multiple faces.
+      if !(sr == r && se == e)
+        nghost += 1
+        counts[r+2] += 1
+        sr, se = r, e
+      end
+      B[NR,i] = crank
+      B[NE,i] = nelem + nghost
+    end
+  end
+  recvstarts = cumsum(counts)
+  nabrtorecvrank = Int[r for r = 0:csize-1
+                       if recvstarts[r+2]-recvstarts[r+1] > 0]
+  nabrtorecv = UnitRange{Int}[(recvstarts[r+1]:(recvstarts[r+2]-1))
+                              for r = 0:csize-1
+                              if recvstarts[r+2]-recvstarts[r+1] > 0]
+
+  @assert nabrtorecvrank == nabrtosendrank
+  nabrtorank = nabrtorecvrank
+
+  elemtoelem = repeat((1:nelem+nghost)', nface, 1)
+  elemtoface = repeat(1:nface, 1, nelem+nghost)
+  elemtoordr = ones(Int, nface, nelem+nghost)
+
+  for i = 1:last(size(B))
+    me, mf, mo = B[ME,i], B[MF,i], B[MO,i]
+    ne, nf, no = B[NE,i], B[NF,i], B[NO,i]
+
+    elemtoelem[mf,me] = ne
+    elemtoface[mf,me] = nf
+    if no != 1 || mo != 1
+      error("TODO add support for other orientations")
+    end
+    elemtoordr[mf,me] = 1
+  end
+
+  # fill the ghost values in elemtocoord
+  newelemtocoord = similar(elemtocoord, d, nvert, nelem+nghost)
+  sendelemtocoord = elemtocoord[:,:,sendelems]
+
+  rreq = [MPI.Irecv!(view(newelemtocoord,:,:,nelem.+er), r, 666, comm)
+          for (r, er) = zip(nabrtorank, nabrtorecv)]
+
+  sreq = [MPI.Isend(view(sendelemtocoord,:,:,es), r, 666, comm)
+          for (r, es) = zip(nabrtorank, nabrtosend)]
+
+  newelemtocoord[:, :,1:nelem] .= elemtocoord
+
+  MPI.Waitall!(sreq)
+  MPI.Waitall!(rreq)
+
+  (elems=1:(nelem+nghost),       # range of          element indices
+   realelems=1:nelem,            # range of real     element indices
+   ghostelems=nelem.+(1:nghost), # range of ghost    element indices
+   sendelems=sendelems,          # array of send     element indices
+   elemtocoord=newelemtocoord,   # element to vertex coordinates
+   elemtoelem=elemtoelem,        # element to neighboring element
+   elemtoface=elemtoface,        # element to neighboring element face
+   elemtoordr=elemtoordr,        # element to neighboring element order
+   nabrtorank=nabrtorank,        # list of neighboring processes MPI ranks
+   nabrtorecv=nabrtorecv,        # neighbor receive ranges into `ghostelems`
+   nabrtosend=nabrtosend)        # neighbor send ranges into `sendelems`
+end
