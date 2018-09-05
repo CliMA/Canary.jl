@@ -3,9 +3,10 @@ using Test
 using MPI
 
 MPI.Init()
-MPI.finalize_atexit()
 
 include("test_mesh.jl")
+
+MPI.Finalize()
 
 @testset "MPI Jobs" begin
   # The code below was modified from the MPI.jl file runtests.jl
