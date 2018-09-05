@@ -107,17 +107,28 @@ by number of elements array.
 function centroidtocode(comm::MPI.Comm, elemtocorner; coortocode=hilbertcode,
                         CT=UInt64)
   (d, nvert, nelem) = size(elemtocorner)
-  T = eltype(elemtocorner)
 
   centroids = sum(elemtocorner, dims=2) ./ nvert
+  T = eltype(centroids)
 
   centroidmin = (nelem > 0) ? minimum(centroids, dims=3) : fill(typemax(T),d)
   centroidmax = (nelem > 0) ? maximum(centroids, dims=3) : fill(typemin(T),d)
 
   centroidmin = MPI.allreduce(centroidmin, MPI.MIN, comm)
   centroidmax = MPI.allreduce(centroidmax, MPI.MAX, comm)
-
   centroidsize = centroidmax - centroidmin
+
+  # Fix centroidsize to be nonzero.  It can be zero for a couple of reasons.
+  # For example, it will be zero if we have just one element.
+  if iszero(centroidsize)
+    centroidsize = ones(T, d)
+  else
+    for i = 1:d
+      if iszero(centroidsize[i])
+        centroidsize[i] = maximum(centroidsize)
+      end
+    end
+  end
 
   code = Array{CT}(undef, d, nelem)
   for e = 1:nelem
