@@ -433,7 +433,7 @@ function getpartition(comm::MPI.Comm, elemtocode::AbstractMatrix)
     partsendstarts[i+1] = partsendcounts[i] + partsendstarts[i]
   end
 
-  partsendorder = B[ncode+1,:]
+  partsendorder = Int.(B[ncode+1,:])
 
   partrecvcounts = Cint[]
   for r = 0:csize-1
