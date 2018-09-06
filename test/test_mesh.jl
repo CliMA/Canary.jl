@@ -59,6 +59,29 @@ end
   end
 end
 
+@testset "Vertex Ordering" begin
+  @test ((1,), 1) == Canary.vertsortandorder(1)
+
+  @test ((1,2), 1) == Canary.vertsortandorder(1, 2)
+  @test ((1,2), 2) == Canary.vertsortandorder(2, 1)
+
+  @test ((1,2,3), 1) == Canary.vertsortandorder(1, 2, 3)
+  @test ((1,2,3), 2) == Canary.vertsortandorder(3, 1, 2)
+  @test ((1,2,3), 3) == Canary.vertsortandorder(2, 3, 1)
+  @test ((1,2,3), 4) == Canary.vertsortandorder(2, 1, 3)
+  @test ((1,2,3), 5) == Canary.vertsortandorder(3, 2, 1)
+  @test ((1,2,3), 6) == Canary.vertsortandorder(1, 3, 2)
+
+  @test ((1,2,3,4), 1) == Canary.vertsortandorder(1, 2, 3, 4)
+  @test ((1,2,3,4), 2) == Canary.vertsortandorder(1, 3, 2, 4)
+  @test ((1,2,3,4), 3) == Canary.vertsortandorder(2, 1, 3, 4)
+  @test ((1,2,3,4), 4) == Canary.vertsortandorder(2, 4, 1, 3)
+  @test ((1,2,3,4), 5) == Canary.vertsortandorder(3, 1, 4, 2)
+  @test ((1,2,3,4), 6) == Canary.vertsortandorder(3, 4, 1, 2)
+  @test ((1,2,3,4), 7) == Canary.vertsortandorder(4, 2, 3, 1)
+  @test ((1,2,3,4), 8) == Canary.vertsortandorder(4, 3, 2, 1)
+end
+
 @testset "Mesh" begin
   let
     (etv, etc, fc) = brickmesh((2:5,4:6), (false,true))

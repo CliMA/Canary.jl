@@ -531,3 +531,131 @@ function partition(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
 
   (newelemtovert, newelemtocoord, newfaceconnections)
 end
+
+"""
+    minmaxflip(x, y)
+
+Returns `x, y` sorted lowest to highest and a bool that indicates if a swap
+was needed.
+"""
+minmaxflip(x, y) = y < x ? (y, x, true) : (x, y, false)
+
+"""
+    vertsortandorder(a)
+
+Returns `(a)` and an ordering `o==0`.
+"""
+vertsortandorder(a) = ((a,), 1)
+
+"""
+    vertsortandorder(a, b)
+
+Returns sorted vertex numbers `(a,b)` and an ordering `o` depending on the
+order needed to sort the elements.  This ordering is given below including the
+vetex ordering for faces.
+
+    o=    0      1
+
+        (a,b)  (b,a)
+
+          a      b
+          |      |
+          |      |
+          b      a
+"""
+function vertsortandorder(a, b)
+  a, b, s1 = minmaxflip(a, b)
+  o = s1 ? 2 : 1
+  ((a, b), o)
+end
+
+"""
+    vertsortandorder(a, b, c)
+
+Returns sorted vertex numbers `(a,b,c)` and an ordering `o` depending on the
+order needed to sort the elements.  This ordering is given below including the
+vetex ordering for faces.
+
+    o=     1         2         3         4         5         6
+
+        (a,b,c)   (c,a,b)   (b,c,a)   (b,a,c)   (c,b,a)   (a,c,b)
+
+          /c\\      /b\\      /a\\      /c\\      /a\\      /b\\
+         /   \\    /   \\    /   \\    /   \\    /   \\    /   \\
+        /a___b\\  /c___a\\  /b___c\\  /b___a\\  /c___b\\  /a___c\\
+"""
+function vertsortandorder(a, b, c)
+  # Use a (Bose-Nelson Algorithm based) sorting network from
+  # <http://pages.ripco.net/~jgamble/nw.html> to sort the vertices.
+  b, c, s1 = minmaxflip(b, c)
+  a, c, s2 = minmaxflip(a, c)
+  a, b, s3 = minmaxflip(a, b)
+
+  if     !s1 && !s2 && !s3
+    o = 1
+  elseif !s1 &&  s2 &&  s3
+    o = 2
+  elseif  s1 && !s2 &&  s3
+    o = 3
+  elseif !s1 && !s2 &&  s3
+    o = 4
+  elseif  s1 &&  s2 &&  s3
+    o = 5
+  elseif  s1 && !s2 && !s3
+    o = 6
+  else
+    error("Problem finding vertex ordering $((a,b,c)) with flips
+          $((s1,s2,s3))")
+  end
+
+  ((a, b, c), o)
+end
+
+"""
+    vertsortandorder(a, b, c, d)
+
+Returns sorted vertex numbers `(a,b,c,d)` and an ordering `o` depending on the
+order needed to sort the elements.  This ordering is given below including the
+vetex ordering for faces.
+
+    o=   1      2      3      4      5      6      7      8
+
+       (a,b,  (a,c,  (b,a,  (b,d,  (c,a,  (c,d,  (d,b,  (d,c,
+        c,d)   b,d)   c,d)   a,c)   d,b)   a,b)   c,a)   b,a)
+
+       c---d  b---d  c---d  a---c  d---b  a---b  c---a  b---a
+       |   |  |   |  |   |  |   |  |   |  |   |  |   |  |   |
+       a---b  a---c  b---a  b---d  c---a  c---d  d---b  d---c
+"""
+function vertsortandorder(a, b, c, d)
+  # Use a (Bose-Nelson Algorithm based) sorting network from
+  # <http://pages.ripco.net/~jgamble/nw.html> to sort the vertices.
+  a, b, s1 = minmaxflip(a, b)
+  c, d, s2 = minmaxflip(c, d)
+  a, c, s3 = minmaxflip(a, c)
+  b, d, s4 = minmaxflip(b, d)
+  b, c, s5 = minmaxflip(b, c)
+
+ if     !s1 && !s2 && !s3 && !s4 && !s5
+   o = 1
+ elseif !s1 && !s2 && !s3 && !s4 &&  s5
+   o = 2
+ elseif  s1 && !s2 && !s3 && !s4 && !s5
+   o = 3
+ elseif !s1 && !s2 &&  s3 &&  s4 &&  s5
+   o = 4
+ elseif  s1 &&  s2 && !s3 && !s4 &&  s5
+   o = 5
+ elseif !s1 && !s2 &&  s3 &&  s4 && !s5
+   o = 6
+ elseif  s1 &&  s2 &&  s3 &&  s4 &&  s5
+   o = 7
+ elseif  s1 &&  s2 &&  s3 &&  s4 && !s5
+   o = 8
+ else
+    error("Problem finding vertex ordering $((a,b,c,d))
+            with flips $((s1,s2,s3,s4,s5))")
+ end
+
+  ((a, b, c, d), o)
+end
