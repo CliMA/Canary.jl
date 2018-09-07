@@ -5,6 +5,7 @@ using MPI
 MPI.Init()
 
 include("test_mesh.jl")
+include("test_operators.jl")
 
 MPI.Finalize()
 

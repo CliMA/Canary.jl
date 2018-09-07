@@ -8,7 +8,10 @@ module Canary
 __precompile__(false)
 
 export brickmesh, centroidtocode, partition
+export lglpoints, lgpoints
+export barycentricweights, spectralderivative, interpolationmatrix
 
 include("mesh.jl")
+include("operators.jl")
 
 end # module
