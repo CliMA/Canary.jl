@@ -13,5 +13,6 @@ export barycentricweights, spectralderivative, interpolationmatrix
 
 include("mesh.jl")
 include("operators.jl")
+include("metric.jl")
 
 end # module
