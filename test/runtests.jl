@@ -6,6 +6,7 @@ MPI.Init()
 
 include("test_mesh.jl")
 include("test_operators.jl")
+include("test_metric.jl")
 
 MPI.Finalize()
 
