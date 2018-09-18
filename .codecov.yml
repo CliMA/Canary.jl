@@ -1,5 +1,1 @@
-coverage:
-  ignore:
-    - "src/GaussQuadrature/quadrature.jl"
-
 comment: false
