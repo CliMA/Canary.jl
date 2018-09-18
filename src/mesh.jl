@@ -414,7 +414,8 @@ function getpartition(comm::MPI.Comm, elemtocode::AbstractMatrix)
   B = []
   for r = 0:csize-1
     rcounts = MPI.Allgather(sendcounts[r+1], comm)
-    c = MPI.Gatherv(view(A, sendstarts[r+1]:sendstarts[r+2]-1), rcounts, r, comm)
+    c = MPI.Gatherv(view(A, sendstarts[r+1]:sendstarts[r+2]-1), rcounts, r,
+                    comm)
     if r == crank
       B = c
     end
