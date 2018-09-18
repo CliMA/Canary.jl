@@ -11,7 +11,8 @@ function main()
 
   @assert csize == 3
 
-  brick = brickmesh((0:4,5:9), (false,true), part=crank+1, numparts=csize)
+  brick = brickmesh((0:4,5:9), (false,true), boundary=[1 3 5; 2 4 6],
+                    part=crank+1, numparts=csize)
   mesh = connectmesh(comm, partition(comm, brick...)...)
 
   (elems,
@@ -22,6 +23,7 @@ function main()
    elemtoelem,
    elemtoface,
    elemtoordr,
+   elemtobndy,
    nabrtorank,
    nabrtorecv,
    nabrtosend) = mesh
@@ -55,6 +57,11 @@ function main()
   globalelemtocoord[:,:,14] = [2 3 2 3; 6 6 7 7]
   globalelemtocoord[:,:,15] = [2 3 2 3; 5 5 6 6]
   globalelemtocoord[:,:,16] = [3 4 3 4; 5 5 6 6]
+
+  globalelemtobndy = [1  0  0  1  1  1  0  0  0  0  0  0  0  0  0  0
+                      0  0  0  0  0  0  0  0  0  0  2  2  2  0  0  2
+                      0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+                      0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0]
 
   if crank == 0
     nrealelem = 5
@@ -94,6 +101,7 @@ function main()
   @test elemtocoord == globalelemtocoord[:,:,globalelems]
   @test elemtoface[:,realelems] == globalelemtoface[:,globalelems[realelems]]
   @test elemtoelem == elemtoelem_expect
+  @test elemtobndy == globalelemtobndy[:,globalelems]
   @test elemtoordr == ones(eltype(elemtoordr), size(elemtoordr))
   @test nabrtorank == nabrtorank_expect
   @test nabrtorecv == nabrtorecv_expect

@@ -11,9 +11,11 @@ function main()
 
   @assert csize == 3
 
-  (etv, etc, fc) = brickmesh((0:4,5:9), (false,true), part=crank+1,
-                             numparts=csize)
-  (etv, etc, fc) = partition(comm, etv, etc, fc)
+  (etv, etc, etb, fc) = brickmesh((0:4,5:9), (false,true),
+                                  boundary=[1 3 5; 2 4 6],
+                                  part=crank+1,
+                                  numparts=csize)
+  (etv, etc, etb, fc) = partition(comm, etv, etc, etb, fc)
 
   if crank == 0
     etv_expect = [1 2  7  6 11;
@@ -26,6 +28,11 @@ function main()
     @test etc[:,:,3] == [1 2 1 2; 6 6 7 7]
     @test etc[:,:,4] == [0 1 0 1; 6 6 7 7]
     @test etc[:,:,5] == [0 1 0 1; 7 7 8 8]
+    etb_expect = [1 0 0 1 1;
+                  0 0 0 0 0;
+                  0 0 0 0 0;
+                  0 0 0 0 0]
+    @test etb == etb_expect
     fc_expect = Array{Int64,1}[]
     @test fc == fc_expect
   elseif crank == 1
@@ -39,6 +46,11 @@ function main()
     @test etc[:,:,3] == [1 2 1 2; 7 7 8 8]
     @test etc[:,:,4] == [2 3 2 3; 7 7 8 8]
     @test etc[:,:,5] == [2 3 2 3; 8 8 9 9]
+    etb_expect = [1 0 0 0 0;
+                  0 0 0 0 0;
+                  0 0 0 0 0;
+                  0 0 0 0 0]
+    @test etb == etb_expect
     fc_expect = Array{Int64,1}[[1, 4, 1, 2], [2, 4, 2, 3], [5, 4, 3, 4]]
     @test fc == fc_expect
   elseif crank == 2
@@ -53,6 +65,11 @@ function main()
     @test etc[:,:,4] == [2 3 2 3; 6 6 7 7]
     @test etc[:,:,5] == [2 3 2 3; 5 5 6 6]
     @test etc[:,:,6] == [3 4 3 4; 5 5 6 6]
+    etb_expect = [0 0 0 0 0 0;
+                  2 2 2 0 0 2;
+                  0 0 0 0 0 0;
+                  0 0 0 0 0 0]
+    @test etb == etb_expect
     fc_expect = Array{Int64,1}[[1, 4, 4, 5]]
     @test fc == fc_expect
   end

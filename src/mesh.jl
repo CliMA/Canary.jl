@@ -141,7 +141,7 @@ function centroidtocode(comm::MPI.Comm, elemtocorner; coortocode=hilbertcode,
 end
 
 """
-    brickmesh(x, periodic; part=1, numparts=1)
+    brickmesh(x, periodic; part=1, numparts=1; boundary)
 
 Generate a brick mesh with coordinates given by the tuple `x` and the
 periodic dimensions given by the `periodic` tuple.
@@ -151,13 +151,19 @@ partition `part`.  This is a simple Cartesian partition and further
 partitioning (e.g, based on a space-filling curve) should be done before the
 mesh is used for computation.
 
+By default boundary faces will be marked with a one and other faces with a
+zero.  Specific boundary numbers can also be passed for each face of the brick
+in `boundary`.  This will mark the nonperiodic brick faces with the given
+boundary number.
+
 # Examples
 
 We can build a 3 by 2 element two-dimensional mesh that is periodic in the
 \$x_2\$-direction with
 ```jldoctest brickmesh
 julia> using Canary
-julia> (etv, etc, fc) = brickmesh((2:5,4:6), (false,true));
+julia> (etv, etc, etb, fc) = brickmesh((2:5,4:6), (false,true);
+                                       boundary=[1 3; 2 4]);
 ```
 This returns the mesh structure for
 
@@ -220,6 +226,19 @@ julia> etc
  5  5  6  6
 ```
 
+The (number of faces by number of elements) array `etb` gives the boundary
+number for each face of each element.  A zero will be given for connected
+faces.
+```jldoctest brickmesh
+julia> etb
+4×6 Array{Int64,2}:
+ 1  0  0  1  0  0
+ 0  0  2  0  0  2
+ 0  0  0  0  0  0
+ 0  0  0  0  0  0
+```
+Note that the faces are listed in Cartesian order.
+
 Finally, the periodic face connections are given in `fc` which is a list of
 arrays, one for each connection.
 Each array in the list is given in the format `[e, f, vs...]` where
@@ -237,7 +256,8 @@ julia> fc
 we see that face `4` of element `5` is associated with vertices `[2 3]` (the
 vertices for face `1` of element `2`).
 """
-function brickmesh(x, periodic; part=1, numparts=1)
+function brickmesh(x, periodic; part=1, numparts=1,
+                   boundary=ones(Int,2,length(x)))
   @assert length(x) == length(periodic)
   @assert length(x) >= 1
   @assert 1 <= part <= numparts
@@ -245,12 +265,14 @@ function brickmesh(x, periodic; part=1, numparts=1)
   T = promote_type(eltype.(x)...)
   d = length(x)
   nvert = 2^d
+  nface = 2d
 
   nelemdim = length.(x).-1
   elemlocal = linearpartition(prod(nelemdim), part, numparts)
 
   elemtovert = Array{Int}(undef, nvert, length(elemlocal))
   elemtocoord = Array{T}(undef, d, nvert, length(elemlocal))
+  elemtobndy = zeros(Int, nface, length(elemlocal))
   faceconnections = Array{Array{Int, 1}}(undef, 0)
 
   verts = LinearIndices(ntuple(j->1:length(x[j]), d))
@@ -267,6 +289,15 @@ function brickmesh(x, periodic; part=1, numparts=1)
     end
 
     for i=1:d
+      if !periodic[i] && ec[i]==1
+        elemtobndy[2(i-1)+1,e] = boundary[1,i]
+      end
+      if !periodic[i] && ec[i]==nelemdim[i]
+        elemtobndy[2(i-1)+2,e] = boundary[2,i]
+      end
+    end
+
+    for i=1:d
       if periodic[i] && ec[i]==nelemdim[i]
         js = ntuple(j->(i==j) ? 1 : 1:2, d)
         neighcorners = CartesianIndices(ntuple(j->(i==j) ?
@@ -277,7 +308,7 @@ function brickmesh(x, periodic; part=1, numparts=1)
     end
   end
 
-  (elemtovert, elemtocoord, faceconnections)
+  (elemtovert, elemtocoord, elemtobndy, faceconnections)
 end
 
 """
@@ -453,12 +484,14 @@ function getpartition(comm::MPI.Comm, elemtocode::AbstractMatrix)
 end
 
 """
-    partition(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
+    partition(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
+              faceconnections)
 
 This function takes in a mesh (as returned for example by `brickmesh`) and
 returns a Hilbert curve based partitioned mesh.
 """
-function partition(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
+function partition(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
+                   faceconnections)
   (d, nvert, nelem) = size(elemtocoord)
 
   csize = MPI.Comm_size(comm)
@@ -482,10 +515,12 @@ function partition(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
 
   elemtovert = elemtovert[:,sendorder]
   elemtocoord = elemtocoord[:,:,sendorder]
+  elemtobndy = elemtobndy[:,sendorder]
   elemtofaceconnect = elemtofaceconnect[:,:,sendorder]
 
   newelemtovert = []
   newelemtocoord = []
+  newelemtobndy = []
   newelemtofaceconnect = []
   for r = 0:csize-1
     sendrange = sendstarts[r+1]:sendstarts[r+2]-1
@@ -497,12 +532,16 @@ function partition(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
     netc = MPI.Gatherv(view(elemtocoord, :, :, sendrange),
                        rcounts.*Cint(d*nvert), r, comm)
 
+    netb = MPI.Gatherv(view(elemtobndy, :, sendrange), rcounts.*Cint(nface),
+                       r, comm)
+
     netfc = MPI.Gatherv(view(elemtofaceconnect, :, :, sendrange),
                         rcounts.*Cint(nfacevert*nface), r, comm)
 
     if r == crank
       newelemtovert = netv
       newelemtocoord = netc
+      newelemtobndy = netb
       newelemtofaceconnect = netfc
     end
   end
@@ -510,6 +549,7 @@ function partition(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
   newnelem = recvstarts[end]-1
   newelemtovert = reshape(newelemtovert, nvert, newnelem)
   newelemtocoord = reshape(newelemtocoord, d, nvert, newnelem)
+  newelemtobndy = reshape(newelemtobndy, nface, newnelem)
   newelemtofaceconnect = reshape(newelemtofaceconnect, nfacevert, nface,
                                  newnelem)
 
@@ -520,6 +560,7 @@ function partition(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
   newsortorder = view(A,d+1,:)
   newelemtovert = newelemtovert[:,newsortorder]
   newelemtocoord = newelemtocoord[:,:,newsortorder]
+  newelemtobndy = newelemtobndy[:,newsortorder]
   newelemtofaceconnect = newelemtofaceconnect[:,:,newsortorder]
 
   newfaceconnections = similar(faceconnections, 0)
@@ -529,7 +570,7 @@ function partition(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
     end
   end
 
-  (newelemtovert, newelemtocoord, newfaceconnections)
+  (newelemtovert, newelemtocoord, newelemtobndy, newfaceconnections)
 end
 
 """
@@ -661,7 +702,8 @@ function vertsortandorder(a, b, c, d)
 end
 
 """
-    connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
+    connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
+                faceconnections)
 
 This function takes in a mesh (as returned for example by `brickmesh`) and
 returns a connected mesh.  This returns a `NamedTuple` of:
@@ -681,12 +723,16 @@ returns a connected mesh.  This returns a `NamedTuple` of:
  - `elemtoordr` element to neighboring element order; `elemtoordr[f,e]` is the
    ordering number of the element neighboring element `e` across face `f`.  If
    there is no neighboring element then `elemtoordr[f,e] == 1`.
+ - `elemtobndy` element to bounday number; `elemtobndy[f,e]` is the
+   boundary number of face `f` of element `e`.  If there is a neighboring
+   element then `elemtobndy[f,e] == 0`.
  - `nabrtorank` a list of the MPI ranks for the neighboring processes
  - `nabrtorecv` a range in ghost elements to receive for each neighbor
  - `nabrtosend` a range in `sendelems` to send for each neighbor
 
 """
-function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
+function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
+                     faceconnections)
   (d, nvert, nelem) = size(elemtocoord)
   nface, nfacevert = 2d, 2^(d-1)
 
@@ -842,18 +888,27 @@ function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
 
   # fill the ghost values in elemtocoord
   newelemtocoord = similar(elemtocoord, d, nvert, nelem+nghost)
+  newelemtobndy = similar(elemtobndy, nface, nelem+nghost)
+
   sendelemtocoord = elemtocoord[:,:,sendelems]
+  sendelemtobndy = elemtobndy[:,sendelems]
 
-  rreq = [MPI.Irecv!(view(newelemtocoord,:,:,nelem.+er), r, 666, comm)
-          for (r, er) = zip(nabrtorank, nabrtorecv)]
+  crreq = [MPI.Irecv!(view(newelemtocoord,:,:,nelem.+er), r, 666, comm)
+           for (r, er) = zip(nabrtorank, nabrtorecv)]
 
-  sreq = [MPI.Isend(view(sendelemtocoord,:,:,es), r, 666, comm)
+  brreq = [MPI.Irecv!(view(newelemtobndy,:,nelem.+er), r, 666, comm)
+           for (r, er) = zip(nabrtorank, nabrtorecv)]
+
+  csreq = [MPI.Isend(view(sendelemtocoord,:,:,es), r, 666, comm)
+          for (r, es) = zip(nabrtorank, nabrtosend)]
+
+  bsreq = [MPI.Isend(view(sendelemtobndy,:,es), r, 666, comm)
           for (r, es) = zip(nabrtorank, nabrtosend)]
 
   newelemtocoord[:, :,1:nelem] .= elemtocoord
+  newelemtobndy[:,1:nelem] .= elemtobndy
 
-  MPI.Waitall!(sreq)
-  MPI.Waitall!(rreq)
+  MPI.Waitall!([csreq;crreq;bsreq;brreq])
 
   (elems=1:(nelem+nghost),       # range of          element indices
    realelems=1:nelem,            # range of real     element indices
@@ -863,6 +918,7 @@ function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, faceconnections)
    elemtoelem=elemtoelem,        # element to neighboring element
    elemtoface=elemtoface,        # element to neighboring element face
    elemtoordr=elemtoordr,        # element to neighboring element order
+   elemtobndy=newelemtobndy,     # element to boundary number
    nabrtorank=nabrtorank,        # list of neighboring processes MPI ranks
    nabrtorecv=nabrtorecv,        # neighbor receive ranges into `ghostelems`
    nabrtosend=nabrtosend)        # neighbor send ranges into `sendelems`
