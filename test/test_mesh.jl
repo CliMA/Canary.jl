@@ -59,6 +59,29 @@ end
   end
 end
 
+@testset "Vertex Ordering" begin
+  @test ((1,), 1) == Canary.vertsortandorder(1)
+
+  @test ((1,2), 1) == Canary.vertsortandorder(1, 2)
+  @test ((1,2), 2) == Canary.vertsortandorder(2, 1)
+
+  @test ((1,2,3), 1) == Canary.vertsortandorder(1, 2, 3)
+  @test ((1,2,3), 2) == Canary.vertsortandorder(3, 1, 2)
+  @test ((1,2,3), 3) == Canary.vertsortandorder(2, 3, 1)
+  @test ((1,2,3), 4) == Canary.vertsortandorder(2, 1, 3)
+  @test ((1,2,3), 5) == Canary.vertsortandorder(3, 2, 1)
+  @test ((1,2,3), 6) == Canary.vertsortandorder(1, 3, 2)
+
+  @test ((1,2,3,4), 1) == Canary.vertsortandorder(1, 2, 3, 4)
+  @test ((1,2,3,4), 2) == Canary.vertsortandorder(1, 3, 2, 4)
+  @test ((1,2,3,4), 3) == Canary.vertsortandorder(2, 1, 3, 4)
+  @test ((1,2,3,4), 4) == Canary.vertsortandorder(2, 4, 1, 3)
+  @test ((1,2,3,4), 5) == Canary.vertsortandorder(3, 1, 4, 2)
+  @test ((1,2,3,4), 6) == Canary.vertsortandorder(3, 4, 1, 2)
+  @test ((1,2,3,4), 7) == Canary.vertsortandorder(4, 2, 3, 1)
+  @test ((1,2,3,4), 8) == Canary.vertsortandorder(4, 3, 2, 1)
+end
+
 @testset "Mesh" begin
   let
     (etv, etc, fc) = brickmesh((2:5,4:6), (false,true))
@@ -125,6 +148,57 @@ end
 
     @test etv == etv_parts
     @test etc == etc_parts
+  end
+end
+
+@testset "Connect" begin
+  let
+    comm = MPI.COMM_SELF
+    mesh = connectmesh(comm, partition(comm, brickmesh((0:4,5:9),
+                                                       (false,true))...)...)
+
+    nelem = 16
+
+    @test mesh[:elemtocoord][:,:, 1] == [0 1 0 1; 5 5 6 6]
+    @test mesh[:elemtocoord][:,:, 2] == [1 2 1 2; 5 5 6 6]
+    @test mesh[:elemtocoord][:,:, 3] == [1 2 1 2; 6 6 7 7]
+    @test mesh[:elemtocoord][:,:, 4] == [0 1 0 1; 6 6 7 7]
+    @test mesh[:elemtocoord][:,:, 5] == [0 1 0 1; 7 7 8 8]
+    @test mesh[:elemtocoord][:,:, 6] == [0 1 0 1; 8 8 9 9]
+    @test mesh[:elemtocoord][:,:, 7] == [1 2 1 2; 8 8 9 9]
+    @test mesh[:elemtocoord][:,:, 8] == [1 2 1 2; 7 7 8 8]
+    @test mesh[:elemtocoord][:,:, 9] == [2 3 2 3; 7 7 8 8]
+    @test mesh[:elemtocoord][:,:,10] == [2 3 2 3; 8 8 9 9]
+    @test mesh[:elemtocoord][:,:,11] == [3 4 3 4; 8 8 9 9]
+    @test mesh[:elemtocoord][:,:,12] == [3 4 3 4; 7 7 8 8]
+    @test mesh[:elemtocoord][:,:,13] == [3 4 3 4; 6 6 7 7]
+    @test mesh[:elemtocoord][:,:,14] == [2 3 2 3; 6 6 7 7]
+    @test mesh[:elemtocoord][:,:,15] == [2 3 2 3; 5 5 6 6]
+    @test mesh[:elemtocoord][:,:,16] == [3 4 3 4; 5 5 6 6]
+
+    @test mesh[:elemtoelem] ==
+      [1   1   4  4  5  6   6  5   8   7  10   9  14   3   2  15
+       2  15  14  3  8  7  10  9  12  11  11  12  13  13  16  16
+       6   7   2  1  4  5   8  3  14   9  12  13  16  15  10  11
+       4   3   8  5  6  1   2  7  10  15  16  11  12   9  14  13]
+
+    @test mesh[:elemtoface] ==
+      [1  2  2  1  1  1  2  2  2  2  2  2  2  2  2  2
+       1  1  1  1  1  1  1  1  1  1  2  2  2  1  1  2
+       4  4  4  4  4  4  4  4  4  4  4  4  4  4  4  4
+       3  3  3  3  3  3  3  3  3  3  3  3  3  3  3  3]
+
+    @test mesh[:elemtoordr] == ones(Int, size(mesh[:elemtoordr]))
+
+    @test mesh[:elems] == 1:nelem
+    @test mesh[:realelems] == 1:nelem
+    @test mesh[:ghostelems] == nelem.+(1:0)
+
+    @test length(mesh[:sendelems]) == 0
+
+    @test mesh[:nabrtorank] == Int[]
+    @test mesh[:nabrtorecv] == UnitRange{Int}[]
+    @test mesh[:nabrtosend] == UnitRange{Int}[]
   end
 end
 

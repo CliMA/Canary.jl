@@ -26,6 +26,7 @@ MPI.Finalize()
   testdir = dirname(@__FILE__)
 
   for (n, f) in [(3, "mpi_test_centriod.jl")
+                 (3, "mpi_test_connect.jl")
                  (3, "mpi_test_getpartition.jl")
                  (5, "mpi_test_getpartition.jl")
                  (3, "mpi_test_partition.jl")
