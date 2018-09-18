@@ -1,6 +1,7 @@
 using Canary
 using Test
 using MPI
+using Logging
 
 MPI.Init()
 
@@ -30,6 +31,8 @@ MPI.Finalize()
                  (3, "mpi_test_partition.jl")
                  (1, "mpi_test_sortcolumns.jl")
                  (4, "mpi_test_sortcolumns.jl")]
-    @test (run(`mpiexec -n $n $(Base.julia_cmd()) --startup-file=no --project=$(joinpath(testdir, "..")) --code-coverage=$coverage_opt $(joinpath(testdir, f))`); true)
+    cmd =  `mpiexec -n $n $(Base.julia_cmd()) --startup-file=no --project=$(joinpath(testdir, "..")) --code-coverage=$coverage_opt $(joinpath(testdir, f))`
+    @info "Running MPI test..." n f cmd
+    @test (run(cmd); true)
   end
 end
