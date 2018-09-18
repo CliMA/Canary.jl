@@ -1,3 +1,61 @@
+@testset "GaussQuadrature" begin
+  for T ∈ (Float32, Float64, BigFloat)
+    let
+      x, w = Canary.GaussQuadrature.legendre(T, 1)
+      @test iszero(x)
+      @test w ≈ [2one(T)]
+    end
+
+    let
+      endpt = Canary.GaussQuadrature.left
+      x, w = Canary.GaussQuadrature.legendre(T, 1, endpt)
+      @test x ≈ [-one(T)]
+      @test w ≈ [2one(T)]
+    end
+
+    let
+      endpt = Canary.GaussQuadrature.right
+      x, w = Canary.GaussQuadrature.legendre(T, 1, endpt)
+      @test x ≈ [one(T)]
+      @test w ≈ [2one(T)]
+    end
+
+    let
+      endpt = Canary.GaussQuadrature.left
+      x, w = Canary.GaussQuadrature.legendre(T, 2, endpt)
+      @test x ≈ [-one(T); T(1//3)]
+      @test w ≈ [T(1//2); T(3//2)]
+    end
+
+    let
+      endpt = Canary.GaussQuadrature.right
+      x, w = Canary.GaussQuadrature.legendre(T, 2, endpt)
+      @test x ≈ [T(-1//3); one(T)]
+      @test w ≈ [T(3//2); T(1//2)]
+    end
+  end
+
+  let
+    err = ErrorException("Must have at least two points for both ends.")
+    endpt = Canary.GaussQuadrature.both
+    @test_throws err Canary.GaussQuadrature.legendre(1, endpt)
+  end
+
+  let
+    T = Float64
+    n = 100
+    endpt = Canary.GaussQuadrature.both
+
+    a, b = Canary.GaussQuadrature.legendre_coefs(T, n)
+
+    err = ErrorException("No convergence after 1 iterations " *
+                         "(try increasing maxits)")
+
+    @test_throws err Canary.GaussQuadrature.custom_gauss_rule(-one(T), one(T),
+                                                              a, b, endpt, 1)
+  end
+end
+
 @testset "Operators" begin
   P5(r::AbstractVector{T}) where T = T(1)/T(8) * (T(15) * r - T(70) * r.^3 +
                                                   T(63) * r.^5)
