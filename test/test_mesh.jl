@@ -84,18 +84,24 @@ end
 
 @testset "Mesh" begin
   let
-    (etv, etc, fc) = brickmesh((2:5,4:6), (false,true))
+    (etv, etc, etb, fc) = brickmesh((2:5,4:6), (false,true))
+
     etv_expect = [ 1  2  5  6
                    2  3  6  7
                    3  4  7  8
                    5  6  9 10
                    6  7 10 11
                    7  8 11 12]'
+    etb_expect = [1 0 0 1 0 0
+                  0 0 1 0 0 1
+                  0 0 0 0 0 0
+                  0 0 0 0 0 0]
     fc_expect = Array{Int64,1}[[4, 4, 1, 2],
                                [5, 4, 2, 3],
                                [6, 4, 3, 4]]
 
     @test etv == etv_expect
+    @test etb == etb_expect
     @test fc == fc_expect
     @test etc[:,:,1] == [2 3 2 3
                          4 4 5 5]
@@ -104,7 +110,7 @@ end
   end
 
   let
-    (etv, etc, fc) = brickmesh((-1:2:1,-1:2:1,-1:1:1), (true,true,true))
+    (etv, etc, etb, fc) = brickmesh((-1:2:1,-1:2:1,-1:1:1), (true,true,true))
     etv_expect = [1   5
                   2   6
                   3   7
@@ -113,6 +119,7 @@ end
                   6  10
                   7  11
                   8  12]
+    etb_expect = zeros(Int64, 6, 2)
 
     fc_expect = Array{Int64,1}[[1, 2, 1, 3, 5,  7],
                                [1, 4, 1, 2, 5,  6],
@@ -121,6 +128,7 @@ end
                                [2, 6, 1, 2, 3,  4]]
 
     @test etv == etv_expect
+    @test etb == etb_expect
     @test fc == fc_expect
 
     @test etc[:,:,1] == [-1  1 -1  1 -1  1 -1  1
@@ -133,21 +141,40 @@ end
   end
 
   let
+    (etv, etc, etb, fc) = brickmesh((-1:1,-1:1,-1:1),
+                                    (false,false,false),
+                                    boundary=[11 13 15; 12 14 16])
+
+    @test etb == [11  0 11  0 11  0 11  0
+                   0 12  0 12  0 12  0 12
+                  13 13  0  0 13 13  0  0
+                   0  0 14 14  0  0 14 14
+                  15 15 15 15  0  0  0  0
+                   0  0  0  0 16 16 16 16]
+  end
+
+  let
     x = (-1:2:10,-1:1:1,-4:1:1)
     p = (true,false,true)
+    b = [1 3 5; 2 4 6];
 
-    (etv, etc, fc) = brickmesh(x,p)
+    (etv, etc, etb, fc) = brickmesh(x, p, boundary=b)
 
     n = 50
-    (etv_parts, etc_parts, fc_parts) = brickmesh(x,p, part=1, numparts=n)
+    (etv_parts, etc_parts, etb_parts, fc_parts) = brickmesh(x, p, boundary=b,
+                                                            part=1,
+                                                            numparts=n)
     for j=2:n
-      (etv_j, etc_j, fc_j) = brickmesh(x,p, part=j, numparts=n)
+      (etv_j, etc_j, etb_j, fc_j) = brickmesh(x, p, boundary=b,
+                                              part=j, numparts=n)
       etv_parts = cat(etv_parts, etv_j; dims=2)
       etc_parts = cat(etc_parts, etc_j; dims=3)
+      etb_parts = cat(etb_parts, etb_j; dims=2)
     end
 
     @test etv == etv_parts
     @test etc == etc_parts
+    @test etb == etb_parts
   end
 end
 
@@ -222,9 +249,10 @@ end
 end
 
 @testset "Partition" begin
-  (etv, etc, fc) = brickmesh((-1:2:1,-1:2:1,-2:1:2), (true,true,true))
-  (netv, netc, nfc) = partition(MPI.COMM_SELF, etv, etc, fc)
+  (etv, etc, etb, fc) = brickmesh((-1:2:1,-1:2:1,-2:1:2), (true,true,true))
+  (netv, netc, netb, nfc) = partition(MPI.COMM_SELF, etv, etc, etb, fc)
   @test etv == netv
   @test etc == netc
+  @test etb == netb
   @test fc == nfc
 end
