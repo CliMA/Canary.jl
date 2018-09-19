@@ -72,6 +72,10 @@ end
   @test ((1,2,3), 5) == Canary.vertsortandorder(3, 2, 1)
   @test ((1,2,3), 6) == Canary.vertsortandorder(1, 3, 2)
 
+  err = ErrorException("Problem finding vertex ordering (1, 1, 2) with flips" *
+                       "\n          (false, true, false)")
+  @test_throws err Canary.vertsortandorder(2, 1, 1)
+
   @test ((1,2,3,4), 1) == Canary.vertsortandorder(1, 2, 3, 4)
   @test ((1,2,3,4), 2) == Canary.vertsortandorder(1, 3, 2, 4)
   @test ((1,2,3,4), 3) == Canary.vertsortandorder(2, 1, 3, 4)
@@ -80,6 +84,11 @@ end
   @test ((1,2,3,4), 6) == Canary.vertsortandorder(3, 4, 1, 2)
   @test ((1,2,3,4), 7) == Canary.vertsortandorder(4, 2, 3, 1)
   @test ((1,2,3,4), 8) == Canary.vertsortandorder(4, 3, 2, 1)
+
+  err = ErrorException("Problem finding vertex ordering (1, 1, 3, 3)" *
+                       "\n            with flips" *
+                       " (false, true, false, false, true)")
+  @test_throws err Canary.vertsortandorder(1, 3, 3, 1)
 end
 
 @testset "Mesh" begin
