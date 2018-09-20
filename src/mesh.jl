@@ -327,8 +327,8 @@ Sorts the columns of the distributed matrix `A`.
 
 See the documentation of `sort!` for a description of the keyword arguments.
 
-This function assumes `A` has the same number of rows on each MPI rank but can have
-a different number of columns.
+This function assumes `A` has the same number of rows on each MPI rank but can
+have a different number of columns.
 """
 function parallelsortcolumns(comm::MPI.Comm, A;
                              alg::Base.Sort.Algorithm=Base.Sort.DEFAULT_UNSTABLE,
@@ -369,7 +369,8 @@ function parallelsortcolumns(comm::MPI.Comm, A;
   B = []
   for r = 0:csize-1
     counts = MPI.Allgather(sendcounts[r+1], comm)
-    c = MPI.Gatherv(view(A, sendstarts[r+1]:sendstarts[r+2]-1), counts, r, comm)
+    c = MPI.Gatherv(view(A, sendstarts[r+1]:sendstarts[r+2]-1), counts, r,
+                    comm)
     if r == crank
       B = c
     end
@@ -382,8 +383,8 @@ end
 """
     getpartition(comm::MPI.Comm, elemtocode)
 
-Returns an equally weighted partition of a distributed set of elements by sorting
-their codes given in `elemtocode`.
+Returns an equally weighted partition of a distributed set of elements by
+sorting their codes given in `elemtocode`.
 
 The codes for each element, `elemtocode`, are given as an array with a single
 entry per local element or as a matrix with a column for each local element.
