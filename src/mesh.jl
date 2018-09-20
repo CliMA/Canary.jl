@@ -930,3 +930,48 @@ function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
    nabrtorecv=nabrtorecv,        # neighbor receive ranges into `ghostelems`
    nabrtosend=nabrtosend)        # neighbor send ranges into `sendelems`
 end
+
+"""
+    mappings(N, elemtoelem, elemtoface, elemtoordr)
+
+This function takes in a polynomial order `N` and parts of a mesh (as returned
+from `connectmesh`) and returns index mappings for the element surface flux
+computation.  The returned `Tuple` contains:
+
+ - `vmapM` an array of linear indices into the volume degrees of freedom where
+   `vmapM[:,f,e]` are the degrees of freedom indices for face `f` of element
+    `e`.
+
+ - `vmapP` an array of linear indices into the volume degrees of freedom where
+   `vmapP[:,f,e]` are the degrees of freedom indices for the face neighboring
+   face `f` of element `e`.
+"""
+function mappings(N, elemtoelem, elemtoface, elemtoordr)
+  nface, nelem = size(elemtoelem)
+
+  d = div(nface, 2)
+  Np, Nfp = (N+1)^d, (N+1)^(d-1)
+
+  p = reshape(1:Np, ntuple(j->N+1, d))
+  fd(f) =   div(f-1,2)+1
+  fe(f) = N*mod(f-1,2)+1
+  fmask = hcat((p[ntuple(j->(j==fd(f)) ? (fe(f):fe(f)) : (:), d)...][:]
+                for f=1:nface)...)
+
+  vmapM = similar(elemtoelem, Nfp, nface, nelem)
+  vmapP = similar(elemtoelem, Nfp, nface, nelem)
+
+  for e1 = 1:nelem, f1 = 1:nface
+    e2 = elemtoelem[f1,e1]
+    f2 = elemtoface[f1,e1]
+    o2 = elemtoordr[f1,e1]
+
+    # TODO support different orientations
+    @assert o2 == 1
+
+    vmapM[:,f1,e1] .= Np*(e1-1) .+ fmask[:,f1]
+    vmapP[:,f1,e1] .= Np*(e2-1) .+ fmask[:,f2]
+  end
+
+  (vmapM, vmapP)
+end
