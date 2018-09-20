@@ -278,6 +278,12 @@ function brickmesh(x, periodic; part=1, numparts=1,
   verts = LinearIndices(ntuple(j->1:length(x[j]), d))
   elems = CartesianIndices(ntuple(j->1:length(x[j])-1, d))
 
+  p = reshape(1:nvert, ntuple(j->2, d))
+  fmask = hcat((p[ntuple(j->(j==div(f-1,2)+1) ? (mod(f-1,2)+1:mod(f-1,2)+1) :
+                         (:), d)...,][:]
+                for f=1:nface)...)
+
+
   for (e, ec) = enumerate(elems[elemlocal])
     corners = CartesianIndices(ntuple(j->ec[j]:ec[j]+1, d))
     for (v, vc) = enumerate(corners)
@@ -299,11 +305,10 @@ function brickmesh(x, periodic; part=1, numparts=1,
 
     for i=1:d
       if periodic[i] && ec[i]==nelemdim[i]
-        js = ntuple(j->(i==j) ? 1 : 1:2, d)
         neighcorners = CartesianIndices(ntuple(j->(i==j) ?
-                                               (1:2) : ec[j]:ec[j]+1, d))
+                                               (1:2) : (ec[j]:ec[j]+1), d))
         push!(faceconnections,
-              vcat(e, 2i, vec(verts[neighcorners[js...]])))
+              vcat(e, 2i, verts[neighcorners[fmask[:,2i-1]]]))
       end
     end
   end
@@ -736,8 +741,10 @@ function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
   (d, nvert, nelem) = size(elemtocoord)
   nface, nfacevert = 2d, 2^(d-1)
 
-  fmask = [CartesianIndices(ntuple(j->(j==div(f-1,2)+1)
-                                   ? mod(f-1,2)+1 : (1:2), d)) for f=1:nface]
+  p = reshape(1:nvert, ntuple(j->2, d))
+  fmask = hcat((p[ntuple(j->(j==div(f-1,2)+1) ? (mod(f-1,2)+1:mod(f-1,2)+1) :
+                         (:), d)...][:]
+                for f=1:nface)...)
 
   csize = MPI.Comm_size(comm)
   crank = MPI.Comm_rank(comm)
@@ -750,7 +757,7 @@ function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
     v = reshape(elemtovert[:,e], ntuple(j->2, d))
     for f = 1:nface
       j = (e-1)*nface + f
-      fv, o = vertsortandorder(v[fmask[f]]...)
+      fv, o = vertsortandorder(v[fmask[:,f]]...)
       A[1:nfacevert, j] .= fv
       A[MR, j] = crank
       A[ME, j] = e
