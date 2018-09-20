@@ -93,6 +93,38 @@ end
 
 @testset "Mesh" begin
   let
+    (etv, etc, etb, fc) = brickmesh((4:7,), (false,))
+    etv_expect = [1 2 3
+                  2 3 4]
+    etb_expect = [1 0 0
+                  0 0 1]
+    fc_expect = Array{Int64,1}[]
+
+    @test etv == etv_expect
+    @test etb == etb_expect
+    @test fc == fc_expect
+    @test etc[:,:,1] == [4 5]
+    @test etc[:,:,2] == [5 6]
+    @test etc[:,:,3] == [6 7]
+  end
+
+  let
+    (etv, etc, etb, fc) = brickmesh((4:7,), (true,))
+    etv_expect = [1 2 3
+                  2 3 4]
+    etb_expect = [0 0 0
+                  0 0 0]
+    fc_expect = Array{Int64,1}[[3, 2, 1]]
+
+    @test etv == etv_expect
+    @test etb == etb_expect
+    @test fc == fc_expect
+    @test etc[:,:,1] == [4 5]
+    @test etc[:,:,2] == [5 6]
+    @test etc[:,:,3] == [6 7]
+  end
+
+  let
     (etv, etc, etb, fc) = brickmesh((2:5,4:6), (false,true))
 
     etv_expect = [ 1  2  5  6
@@ -163,6 +195,31 @@ end
   end
 
   let
+    x = (1:1000,)
+    p = (false,)
+    b = [1; 2]
+
+    (etv, etc, etb, fc) = brickmesh(x, p, boundary=b)
+
+    n = 50
+    (etv_parts, etc_parts, etb_parts, fc_parts) = brickmesh(x, p, boundary=b,
+                                                            part=1,
+                                                            numparts=n)
+    for j=2:n
+      (etv_j, etc_j, etb_j, fc_j) = brickmesh(x, p, boundary=b,
+                                              part=j, numparts=n)
+      etv_parts = cat(etv_parts, etv_j; dims=2)
+      etc_parts = cat(etc_parts, etc_j; dims=3)
+      etb_parts = cat(etb_parts, etb_j; dims=2)
+    end
+
+    @test etv == etv_parts
+    @test etc == etc_parts
+    @test etb == etb_parts
+  end
+
+
+  let
     x = (-1:2:10,-1:1:1,-4:1:1)
     p = (true,false,true)
     b = [1 3 5; 2 4 6];
@@ -188,6 +245,45 @@ end
 end
 
 @testset "Connect" begin
+  let
+    comm = MPI.COMM_SELF
+
+    mesh = connectmesh(comm, partition(comm, brickmesh((0:10,),
+                                                       (true,))...)...)
+
+    nelem = 10
+
+    @test mesh[:elemtocoord][:,:, 1] == [0  1]
+    @test mesh[:elemtocoord][:,:, 2] == [1  2]
+    @test mesh[:elemtocoord][:,:, 3] == [2  3]
+    @test mesh[:elemtocoord][:,:, 4] == [3  4]
+    @test mesh[:elemtocoord][:,:, 5] == [4  5]
+    @test mesh[:elemtocoord][:,:, 6] == [5  6]
+    @test mesh[:elemtocoord][:,:, 7] == [6  7]
+    @test mesh[:elemtocoord][:,:, 8] == [7  8]
+    @test mesh[:elemtocoord][:,:, 9] == [8  9]
+    @test mesh[:elemtocoord][:,:,10] == [9 10]
+
+    @test mesh[:elemtoelem] == [10 1 2 3 4 5 6 7  8 9
+                                 2 3 4 5 6 7 8 9 10 1]
+
+    @test mesh[:elemtoface] == [2 2 2 2 2 2 2 2 2 2
+                                1 1 1 1 1 1 1 1 1 1]
+
+    @test mesh[:elemtoordr] == ones(Int, size(mesh[:elemtoordr]))
+    @test mesh[:elemtobndy] == zeros(Int, size(mesh[:elemtoordr]))
+
+    @test mesh[:elems] == 1:nelem
+    @test mesh[:realelems] == 1:nelem
+    @test mesh[:ghostelems] == nelem.+(1:0)
+
+    @test length(mesh[:sendelems]) == 0
+
+    @test mesh[:nabrtorank] == Int[]
+    @test mesh[:nabrtorecv] == UnitRange{Int}[]
+    @test mesh[:nabrtosend] == UnitRange{Int}[]
+  end
+
   let
     comm = MPI.COMM_SELF
     mesh = connectmesh(comm, partition(comm, brickmesh((0:4,5:9),
