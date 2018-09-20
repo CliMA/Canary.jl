@@ -334,6 +334,107 @@ end
   end
 end
 
+@testset "Mappings" begin
+  let
+    comm = MPI.COMM_SELF
+    x = (0:4,)
+    mesh = connectmesh(comm, partition(comm, brickmesh(x, (true,))...)...)
+
+    N = 3
+    d = length(x)
+    nelem = prod(length.(x).-1)
+    nface = 2d
+    Nfp = (N+1)^(d-1)
+
+    vmapM, vmapP = mappings(N, mesh[:elemtoelem], mesh[:elemtoface],
+                            mesh[:elemtoordr])
+
+    @test vmapM == reshape([1,4,5,8,9,12,13,16], Nfp, nface, nelem)
+    @test vmapP == reshape([16,5,4,9,8,13,12,1], Nfp, nface, nelem)
+  end
+
+  let
+    comm = MPI.COMM_SELF
+    x = (-1:1, 0:1)
+    p = (false, true)
+    mesh = connectmesh(comm, partition(comm, brickmesh(x, p)...)...)
+
+    N = 2
+    d = length(x)
+    nelem = prod(length.(x).-1)
+    nface = 2d
+    Nfp = (N+1)^(d-1)
+
+    vmapM, vmapP = mappings(N, mesh[:elemtoelem], mesh[:elemtoface],
+                            mesh[:elemtoordr])
+
+    @test vmapM == reshape([ 1, 4, 7,  # f=1 e=1
+                             3, 6, 9,  # f=2 e=1
+                             1, 2, 3,  # f=3 e=1
+                             7, 8, 9,  # f=4 e=1
+                            10,13,16,  # f=1 e=2
+                            12,15,18,  # f=2 e=2
+                            10,11,12,  # f=3 e=2
+                            16,17,18], # f=4 e=2
+                           Nfp, nface, nelem)
+
+    @test vmapP == reshape([ 1, 4, 7,  # f=1 e=1
+                            10,13,16,  # f=1 e=2
+                             7, 8, 9,  # f=4 e=1
+                             1, 2, 3,  # f=3 e=1
+                             3, 6, 9,  # f=2 e=1
+                            12,15,18,  # f=2 e=2
+                            16,17,18,  # f=4 e=2
+                            10,11,12], # f=3 e=2
+                           Nfp, nface, nelem)
+  end
+
+  let
+    comm = MPI.COMM_SELF
+    x = (0:1, 0:1, -1:1)
+    p = (false, true, false)
+    mesh = connectmesh(comm, partition(comm, brickmesh(x, p)...)...)
+
+    N = 2
+    d = length(x)
+    nelem = prod(length.(x).-1)
+    nface = 2d
+    Np = (N+1)^d
+    Nfp = (N+1)^(d-1)
+
+    vmapM, vmapP = mappings(N, mesh[:elemtoelem], mesh[:elemtoface],
+                            mesh[:elemtoordr])
+
+    fmask = [ 1  3  1  7 1 19
+              4  6  2  8 2 20
+              7  9  3  9 3 21
+             10 12 10 16 4 22
+             13 15 11 17 5 23
+             16 18 12 18 6 24
+             19 21 19 25 7 25
+             22 24 20 26 8 26
+             25 27 21 27 9 27]
+
+
+    @test vmapM == reshape([fmask[:]; fmask[:].+Np],
+                           Nfp, nface, nelem)
+
+    @test vmapP == reshape([fmask[:,1];
+                            fmask[:,2];
+                            fmask[:,4];
+                            fmask[:,3];
+                            fmask[:,5];
+                            fmask[:,5].+Np;
+                            fmask[:,1].+Np;
+                            fmask[:,2].+Np;
+                            fmask[:,4].+Np;
+                            fmask[:,3].+Np;
+                            fmask[:,6];
+                            fmask[:,6].+Np],
+                           Nfp, nface, nelem)
+  end
+end
+
 @testset "Get Partition" begin
   let
     Nelem = 150
