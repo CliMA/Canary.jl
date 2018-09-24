@@ -10,6 +10,8 @@ __precompile__(false)
 export brickmesh, centroidtocode, partition, connectmesh, mappings
 export lglpoints, lgpoints
 export barycentricweights, spectralderivative, interpolationmatrix
+export creategrid!, computemetric!
+export creategrid2d, creategrid3d, computemetric
 
 include("mesh.jl")
 include("operators.jl")
