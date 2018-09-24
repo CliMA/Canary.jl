@@ -162,8 +162,8 @@ We can build a 3 by 2 element two-dimensional mesh that is periodic in the
 \$x_2\$-direction with
 ```jldoctest brickmesh
 julia> using Canary
-julia> (etv, etc, etb, fc) = brickmesh((2:5,4:6), (false,true);
-                                       boundary=[1 3; 2 4]);
+julia> (elemtovert, elemtocoord, elemtobndy, faceconnections) =
+        brickmesh((2:5,4:6), (false,true); boundary=[1 3; 2 4]);
 ```
 This returns the mesh structure for
 
@@ -184,10 +184,10 @@ This returns the mesh structure for
               +--|-----|-----|-----|--> x_1
                  2     3     4     5
 
-The (number of corners by number of elements) array `etv` gives the global
-vertex number for the corners of each element.
+The (number of corners by number of elements) array `elemtovert` gives the
+global vertex number for the corners of each element.
 ```jldoctest brickmesh
-julia> etv
+julia> elemtovert
 4×6 Array{Int64,2}:
  1  2  3   5   6   7
  2  3  4   6   7   8
@@ -196,10 +196,10 @@ julia> etv
 ```
 Note that the vertices are listed in Cartesian order.
 
-The (dimension by number of corners by number of elements) array `etc` gives
-the coordinates of the corners of each element.
+The (dimension by number of corners by number of elements) array `elemtocoord`
+gives the coordinates of the corners of each element.
 ```jldoctes brickmesh
-julia> etc
+julia> elemtocoord
 2×4×6 Array{Int64,3}:
 [:, :, 1] =
  2  3  2  3
@@ -226,11 +226,11 @@ julia> etc
  5  5  6  6
 ```
 
-The (number of faces by number of elements) array `etb` gives the boundary
-number for each face of each element.  A zero will be given for connected
-faces.
+The (number of faces by number of elements) array `elemtobndy` gives the
+boundary number for each face of each element.  A zero will be given for
+connected faces.
 ```jldoctest brickmesh
-julia> etb
+julia> elemtobndy
 4×6 Array{Int64,2}:
  1  0  0  1  0  0
  0  0  2  0  0  2
@@ -239,15 +239,15 @@ julia> etb
 ```
 Note that the faces are listed in Cartesian order.
 
-Finally, the periodic face connections are given in `fc` which is a list of
-arrays, one for each connection.
+Finally, the periodic face connections are given in `faceconnections` which is a
+list of arrays, one for each connection.
 Each array in the list is given in the format `[e, f, vs...]` where
  - `e`  is the element number;
  - `f`  is the face number; and
  - `vs` is the global vertices that face associated with.
 I the example
 ```jldoctest brickmesh
-julia> fc
+julia> faceconnections
 3-element Array{Array{Int64,1},1}:
  [4, 4, 1, 2]
  [5, 4, 2, 3]
