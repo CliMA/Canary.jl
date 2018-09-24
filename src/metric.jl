@@ -361,3 +361,146 @@ function computemetric!(x::AbstractArray{T, 4},
 
   (J, rx, sx, tx, ry, sy, ty, rz, sz, tz, sJ, nx, ny, nz)
 end
+
+"""
+    creategrid2d(elemtocoord::AbstractArray{S, 3},
+                 r::AbstractVector{T}) where {S, T}
+
+Create a 2-D tensor product grid using `elemtocoord` (see [`brickmesh`](@ref))
+using the 1-D `(-1, 1)` reference coordinates `r`. The element grids are filled
+using bilinear interpolation of the element coordinates.
+
+The grid is returned as a tuple of the `x` and `y` arrays
+"""
+function creategrid2d(e2c::AbstractArray{S, 3},
+                     r::AbstractVector{T}) where {S, T}
+  (d, nvert, nelem) = size(e2c)
+  @assert d == 2
+  Nq = length(r)
+  x = Array{T, 3}(undef, Nq, Nq, nelem)
+  y = Array{T, 3}(undef, Nq, Nq, nelem)
+  creategrid!(x, y, e2c, r)
+  (x=x, y=y)
+end
+
+"""
+    creategrid3d(elemtocoord::AbstractArray{S, 3},
+                 r::AbstractVector{T}) where {S, T}
+
+Create a 3-D tensor product grid using `elemtocoord` (see [`brickmesh`](@ref))
+using the 1-D `(-1, 1)` reference coordinates `r`. The element grids are filled
+using bilinear interpolation of the element coordinates.
+
+The grid is returned as a tuple of the `x`, `y`, `z` arrays
+"""
+function creategrid3d(e2c::AbstractArray{S, 3},
+                     r::AbstractVector{T}) where {S, T}
+  (d, nvert, nelem) = size(e2c)
+  @assert d == 3
+  Nq = length(r)
+  x = Array{T, 4}(undef, Nq, Nq, Nq, nelem)
+  y = Array{T, 4}(undef, Nq, Nq, Nq, nelem)
+  z = Array{T, 4}(undef, Nq, Nq, Nq, nelem)
+  creategrid!(x, y, z, e2c, r)
+  (x=x, y=y, z=z)
+end
+
+"""
+    computemetric(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
+                  D::AbstractMatrix{T}) where T
+
+Compute the 2-D metric terms from the element grid arrays `x` and `y` using the
+derivative matrix `D`. The derivative matrix `D` should be consistent with the
+reference grid `r` used in [`creategrid!`](@ref).
+
+The metric terms are returned as a 'NamedTuple` of the following arrays:
+
+ - `J` the Jacobian determinant
+ - `rx` derivative ∂r / ∂x'
+ - `sx` derivative ∂s / ∂x'
+ - `ry` derivative ∂r / ∂y'
+ - `sy` derivative ∂s / ∂y'
+ - `sJ` the surface Jacobian
+ - 'nx` outward pointing unit normal in \$x\$-direction
+ - 'ny` outward pointing unit normal in \$y\$-direction
+"""
+function computemetric(x::AbstractArray{T, 4},
+                       y::AbstractArray{T, 4},
+                       z::AbstractArray{T, 4},
+                       D::AbstractMatrix{T}) where T
+
+  @assert size(x) == size(y) == size(z)
+  Nq = size(D,1)
+  nelem = size(x, 4)
+  nface = 6
+
+  J = similar(x)
+  rx = similar(x)
+  sx = similar(x)
+  tx = similar(x)
+  ry = similar(x)
+  sy = similar(x)
+  ty = similar(x)
+  rz = similar(x)
+  sz = similar(x)
+  tz = similar(x)
+
+  sJ = Array{T, 4}(undef, Nq, Nq, nface, nelem)
+  nx = Array{T, 4}(undef, Nq, Nq, nface, nelem)
+  ny = Array{T, 4}(undef, Nq, Nq, nface, nelem)
+  nz = Array{T, 4}(undef, Nq, Nq, nface, nelem)
+
+  computemetric!(x, y, z, J, rx, sx, tx, ry, sy, ty, rz, sz, tz, sJ,
+                 nx, ny, nz, D)
+
+  (J=J, rx=rx, sx=sx, tx=tx, ry=ry, sy=sy, ty=ty, rz=rz, sz=sz, tz=tz, sJ=sJ,
+   nx=nx, ny=ny, nz=nz)
+end
+
+"""
+    computemetric(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
+                  D::AbstractMatrix{T}) where T
+
+Compute the 3-D metric terms from the element grid arrays `x`, `y`, and `z`
+using the derivative matrix `D`. The derivative matrix `D` should be consistent
+with the reference grid `r` used in [`creategrid!`](@ref).
+
+The metric terms are returned as a 'NamedTuple` of the following arrays:
+
+ - `J` the Jacobian determinant
+ - `rx` derivative ∂r / ∂x'
+ - `sx` derivative ∂s / ∂x'
+ - `tx` derivative ∂t / ∂x'
+ - `ry` derivative ∂r / ∂y'
+ - `sy` derivative ∂s / ∂y'
+ - `ty` derivative ∂t / ∂y'
+ - `rz` derivative ∂r / ∂z'
+ - `sz` derivative ∂s / ∂z'
+ - `tz` derivative ∂t / ∂z'
+ - `sJ` the surface Jacobian
+ - 'nx` outward pointing unit normal in \$x\$-direction
+ - 'ny` outward pointing unit normal in \$y\$-direction
+ - 'nz` outward pointing unit normal in \$z\$-direction
+"""
+function computemetric(x::AbstractArray{T, 3},
+                       y::AbstractArray{T, 3},
+                       D::AbstractMatrix{T}) where T
+  @assert size(x) == size(y)
+  Nq = size(D,1)
+  nelem = size(x, 3)
+  nface = 4
+
+  J = similar(x)
+  rx = similar(x)
+  sx = similar(x)
+  ry = similar(x)
+  sy = similar(x)
+
+  sJ = Array{T, 3}(undef, Nq, nface, nelem)
+  nx = Array{T, 3}(undef, Nq, nface, nelem)
+  ny = Array{T, 3}(undef, Nq, nface, nelem)
+
+  computemetric!(x, y, J, rx, sx, ry, sy, sJ, nx, ny, D)
+
+  (J=J, rx=rx, sx=sx, ry=ry, sy=sy, sJ=sJ, nx=nx, ny=ny)
+end
