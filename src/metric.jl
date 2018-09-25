@@ -1,4 +1,30 @@
 """
+    creategrid!(x::AbstractArray{T, 2}, elemtocoord::AbstractArray{S, 3},
+                r::AbstractVector{T}) where {S, T}
+
+Create a 1-D grid using `elemtocoord` (see [`brickmesh`](@ref)) using the 1-D
+`(-1, 1)` reference coordinates `r`. The element grids are filled using linear
+interpolation of the element coordinates.
+
+If `Nq = length(r)` and `nelem = size(elemtocoord, 3)` then the preallocated
+array `x` should be `(Nq, nelem) == size(x)`.
+"""
+function creategrid!(x::AbstractArray{T, 2}, e2c::AbstractArray{S, 3},
+                     r::AbstractVector{T}) where {S, T}
+  (d, nvert, nelem) = size(e2c)
+  @assert d == 1
+  Nq = length(r)
+
+  # linear blend
+  for e = 1:nelem
+    for i = 1:Nq
+      x[i, e] = ((1 - r[i]) * e2c[1, 1, e] + (1 + r[i])e2c[1, 2, e]) / 2
+    end
+  end
+  (x,)
+end
+
+"""
     creategrid!(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
                 elemtocoord::AbstractArray{S, 3},
                 r::AbstractVector{T}) where {S, T}
@@ -82,6 +108,43 @@ function creategrid!(x::AbstractArray{T, 4}, y::AbstractArray{T, 4},
     end
   end
   (x, y, z)
+end
+
+"""
+    computemetric!(x::AbstractArray{T, 2},
+                   J::AbstractArray{T, 2},
+                   rx::AbstractArray{T, 2},
+                   sJ::AbstractArray{T, 2},
+                   nx::AbstractArray{T, 2},
+                   D::AbstractMatrix{T}) where T
+
+Compute the 1-D metric terms from the element grid arrays `x`. All the arrays
+are preallocated by the user and the (square) derivative matrix `D` should be
+consistent with the reference grid `r` used in [`creategrid!`](@ref).
+
+If `Nq = size(D, 1)` and `nelem = size(x, 2)` then the volume arrays `x`, `J`,
+and `rx` should all be of size `(Nq, nelem)`.  Similarly, the face arrays `sJ`
+and `nx` should be of size `(Nq, nfaces, nelem)` with `nfaces = 2`.
+"""
+function computemetric!(x::AbstractArray{T, 2},
+                        J::AbstractArray{T, 2},
+                        rx::AbstractArray{T, 2},
+                        sJ::AbstractArray{T, 2},
+                        nx::AbstractArray{T, 2},
+                        D::AbstractMatrix{T}) where T
+  nelem = size(J, 2)
+  Nq = size(D, 1)
+  d = 1
+
+  for e = 1:nelem
+    J[:, e] = D * x[:, e]
+  end
+  rx .=  1 ./ J
+
+  nx[1, :] .= -sign.(J[ 1, :])
+  nx[2, :] .=  sign.(J[Nq, :])
+  sJ .= 1
+  (J, rx, sJ, nx)
 end
 
 """
@@ -362,8 +425,29 @@ function computemetric!(x::AbstractArray{T, 4},
   (J, rx, sx, tx, ry, sy, ty, rz, sz, tz, sJ, nx, ny, nz)
 end
 
+creategrid1d(elemtocoord, r) = creategrid(Val(1), elemtocoord, r)
 creategrid2d(elemtocoord, r) = creategrid(Val(2), elemtocoord, r)
 creategrid3d(elemtocoord, r) = creategrid(Val(3), elemtocoord, r)
+
+"""
+    creategrid(::Val{1}, elemtocoord::AbstractArray{S, 3},
+               r::AbstractVector{T}) where {S, T}
+
+Create a grid using `elemtocoord` (see [`brickmesh`](@ref)) using the 1-D `(-1,
+1)` reference coordinates `r`. The element grids are filled using bilinear
+interpolation of the element coordinates.
+
+The grid is returned as a tuple of with `x` array
+"""
+function creategrid(::Val{1}, e2c::AbstractArray{S, 3},
+                    r::AbstractVector{T}) where {S, T}
+  (d, nvert, nelem) = size(e2c)
+  @assert d == 1
+  Nq = length(r)
+  x = Array{T, 2}(undef, Nq, nelem)
+  creategrid!(x, e2c, r)
+  (x=x, )
+end
 
 """
     creategrid(::Val{2}, elemtocoord::AbstractArray{S, 3},
@@ -407,6 +491,39 @@ function creategrid(::Val{3}, e2c::AbstractArray{S, 3},
   creategrid!(x, y, z, e2c, r)
   (x=x, y=y, z=z)
 end
+
+"""
+    computemetric(x::AbstractArray{T, 2}, D::AbstractMatrix{T}) where T
+
+Compute the 1-D metric terms from the element grid array `x` using the
+derivative matrix `D`. The derivative matrix `D` should be consistent with the
+reference grid `r` used in [`creategrid!`](@ref).
+
+The metric terms are returned as a 'NamedTuple` of the following arrays:
+
+ - `J` the Jacobian determinant
+ - `rx` derivative ∂r / ∂x'
+ - `sJ` the surface Jacobian
+ - 'nx` outward pointing unit normal in \$x\$-direction
+"""
+function computemetric(x::AbstractArray{T, 2},
+                       D::AbstractMatrix{T}) where T
+
+  Nq = size(D,1)
+  nelem = size(x, 2)
+  nface = 2
+
+  J = similar(x)
+  rx = similar(x)
+
+  sJ = Array{T, 2}(undef, nface, nelem)
+  nx = Array{T, 2}(undef, nface, nelem)
+
+  computemetric!(x, J, rx, sJ, nx, D)
+
+  (J=J, rx=rx, sJ=sJ, nx=nx)
+end
+
 
 """
     computemetric(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},

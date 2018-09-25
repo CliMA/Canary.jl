@@ -5,6 +5,40 @@ const VGEO3D = (x = 1, y = 2, z = 3, J = 4, rx = 5, sx = 6, tx = 7, ry = 8,
                 sy = 9, ty = 10, rz = 11, sz = 12, tz = 13)
 const SGEO3D = (sJ = 1, nx = 2, ny = 3, nz = 4)
 
+@testset "1-D Metric terms" begin
+  for T ∈ (Float32, Float64, BigFloat)
+    #{{{
+    let
+      N = 4
+
+      r, w = Canary.lglpoints(T, N)
+      D = Canary.spectralderivative(r)
+      Nq = N + 1
+
+      d = 1
+      nfaces = 4
+      e2c = Array{T, 3}(undef, 1, 2, 2)
+      e2c[:, :, 1] = [-1 0]
+      e2c[:, :, 2] = [ 0 10]
+      nelem = size(e2c, 3)
+
+      (x, ) = Canary.creategrid1d(e2c, r)
+      @test x[:, 1] ≈ (r .- 1) / 2
+      @test x[:, 2] ≈ 5 * (r .+ 1)
+
+      metric = Canary.computemetric(x, D)
+      @test metric.J[:, 1] ≈ ones(T, Nq) / 2
+      @test metric.J[:, 2] ≈ 5 * ones(T, Nq)
+      @test metric.rx[:, 1] ≈ 2 * ones(T, Nq)
+      @test metric.rx[:, 2] ≈ ones(T, Nq) / 5
+      @test metric.nx[1, :] ≈ -ones(T, nelem)
+      @test metric.nx[2, :] ≈  ones(T, nelem)
+      @test metric.sJ[1, :] ≈  ones(T, nelem)
+      @test metric.sJ[2, :] ≈  ones(T, nelem)
+    end
+    #}}}
+  end
+end
 
 @testset "2-D Metric terms" begin
   for T ∈ (Float32, Float64, BigFloat)
