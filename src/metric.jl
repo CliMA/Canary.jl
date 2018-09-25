@@ -362,9 +362,12 @@ function computemetric!(x::AbstractArray{T, 4},
   (J, rx, sx, tx, ry, sy, ty, rz, sz, tz, sJ, nx, ny, nz)
 end
 
+creategrid2d(elemtocoord, r) = creategrid(Val(2), elemtocoord, r)
+creategrid3d(elemtocoord, r) = creategrid(Val(3), elemtocoord, r)
+
 """
-    creategrid2d(elemtocoord::AbstractArray{S, 3},
-                 r::AbstractVector{T}) where {S, T}
+    creategrid(::Val{2}, elemtocoord::AbstractArray{S, 3},
+               r::AbstractVector{T}) where {S, T}
 
 Create a 2-D tensor product grid using `elemtocoord` (see [`brickmesh`](@ref))
 using the 1-D `(-1, 1)` reference coordinates `r`. The element grids are filled
@@ -372,8 +375,8 @@ using bilinear interpolation of the element coordinates.
 
 The grid is returned as a tuple of the `x` and `y` arrays
 """
-function creategrid2d(e2c::AbstractArray{S, 3},
-                     r::AbstractVector{T}) where {S, T}
+function creategrid(::Val{2}, e2c::AbstractArray{S, 3},
+                    r::AbstractVector{T}) where {S, T}
   (d, nvert, nelem) = size(e2c)
   @assert d == 2
   Nq = length(r)
@@ -384,8 +387,8 @@ function creategrid2d(e2c::AbstractArray{S, 3},
 end
 
 """
-    creategrid3d(elemtocoord::AbstractArray{S, 3},
-                 r::AbstractVector{T}) where {S, T}
+    creategrid(::Val{3}, elemtocoord::AbstractArray{S, 3},
+               r::AbstractVector{T}) where {S, T}
 
 Create a 3-D tensor product grid using `elemtocoord` (see [`brickmesh`](@ref))
 using the 1-D `(-1, 1)` reference coordinates `r`. The element grids are filled
@@ -393,8 +396,8 @@ using bilinear interpolation of the element coordinates.
 
 The grid is returned as a tuple of the `x`, `y`, `z` arrays
 """
-function creategrid3d(e2c::AbstractArray{S, 3},
-                     r::AbstractVector{T}) where {S, T}
+function creategrid(::Val{3}, e2c::AbstractArray{S, 3},
+                    r::AbstractVector{T}) where {S, T}
   (d, nvert, nelem) = size(e2c)
   @assert d == 3
   Nq = length(r)
