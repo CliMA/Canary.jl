@@ -427,6 +427,54 @@ The metric terms are returned as a 'NamedTuple` of the following arrays:
  - 'nx` outward pointing unit normal in \$x\$-direction
  - 'ny` outward pointing unit normal in \$y\$-direction
 """
+function computemetric(x::AbstractArray{T, 3},
+                       y::AbstractArray{T, 3},
+                       D::AbstractMatrix{T}) where T
+  @assert size(x) == size(y)
+  Nq = size(D,1)
+  nelem = size(x, 3)
+  nface = 4
+
+  J = similar(x)
+  rx = similar(x)
+  sx = similar(x)
+  ry = similar(x)
+  sy = similar(x)
+
+  sJ = Array{T, 3}(undef, Nq, nface, nelem)
+  nx = Array{T, 3}(undef, Nq, nface, nelem)
+  ny = Array{T, 3}(undef, Nq, nface, nelem)
+
+  computemetric!(x, y, J, rx, sx, ry, sy, sJ, nx, ny, D)
+
+  (J=J, rx=rx, sx=sx, ry=ry, sy=sy, sJ=sJ, nx=nx, ny=ny)
+end
+
+"""
+    computemetric(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
+                  D::AbstractMatrix{T}) where T
+
+Compute the 3-D metric terms from the element grid arrays `x`, `y`, and `z`
+using the derivative matrix `D`. The derivative matrix `D` should be consistent
+with the reference grid `r` used in [`creategrid!`](@ref).
+
+The metric terms are returned as a 'NamedTuple` of the following arrays:
+
+ - `J` the Jacobian determinant
+ - `rx` derivative ∂r / ∂x'
+ - `sx` derivative ∂s / ∂x'
+ - `tx` derivative ∂t / ∂x'
+ - `ry` derivative ∂r / ∂y'
+ - `sy` derivative ∂s / ∂y'
+ - `ty` derivative ∂t / ∂y'
+ - `rz` derivative ∂r / ∂z'
+ - `sz` derivative ∂s / ∂z'
+ - `tz` derivative ∂t / ∂z'
+ - `sJ` the surface Jacobian
+ - 'nx` outward pointing unit normal in \$x\$-direction
+ - 'ny` outward pointing unit normal in \$y\$-direction
+ - 'nz` outward pointing unit normal in \$z\$-direction
+"""
 function computemetric(x::AbstractArray{T, 4},
                        y::AbstractArray{T, 4},
                        z::AbstractArray{T, 4},
@@ -458,52 +506,4 @@ function computemetric(x::AbstractArray{T, 4},
 
   (J=J, rx=rx, sx=sx, tx=tx, ry=ry, sy=sy, ty=ty, rz=rz, sz=sz, tz=tz, sJ=sJ,
    nx=nx, ny=ny, nz=nz)
-end
-
-"""
-    computemetric(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
-                  D::AbstractMatrix{T}) where T
-
-Compute the 3-D metric terms from the element grid arrays `x`, `y`, and `z`
-using the derivative matrix `D`. The derivative matrix `D` should be consistent
-with the reference grid `r` used in [`creategrid!`](@ref).
-
-The metric terms are returned as a 'NamedTuple` of the following arrays:
-
- - `J` the Jacobian determinant
- - `rx` derivative ∂r / ∂x'
- - `sx` derivative ∂s / ∂x'
- - `tx` derivative ∂t / ∂x'
- - `ry` derivative ∂r / ∂y'
- - `sy` derivative ∂s / ∂y'
- - `ty` derivative ∂t / ∂y'
- - `rz` derivative ∂r / ∂z'
- - `sz` derivative ∂s / ∂z'
- - `tz` derivative ∂t / ∂z'
- - `sJ` the surface Jacobian
- - 'nx` outward pointing unit normal in \$x\$-direction
- - 'ny` outward pointing unit normal in \$y\$-direction
- - 'nz` outward pointing unit normal in \$z\$-direction
-"""
-function computemetric(x::AbstractArray{T, 3},
-                       y::AbstractArray{T, 3},
-                       D::AbstractMatrix{T}) where T
-  @assert size(x) == size(y)
-  Nq = size(D,1)
-  nelem = size(x, 3)
-  nface = 4
-
-  J = similar(x)
-  rx = similar(x)
-  sx = similar(x)
-  ry = similar(x)
-  sy = similar(x)
-
-  sJ = Array{T, 3}(undef, Nq, nface, nelem)
-  nx = Array{T, 3}(undef, Nq, nface, nelem)
-  ny = Array{T, 3}(undef, Nq, nface, nelem)
-
-  computemetric!(x, y, J, rx, sx, ry, sy, sJ, nx, ny, D)
-
-  (J=J, rx=rx, sx=sx, ry=ry, sy=sy, sJ=sJ, nx=nx, ny=ny)
 end
