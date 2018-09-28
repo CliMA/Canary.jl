@@ -1,18 +1,26 @@
+#--------------------------------Markdown Language Header-----------------------
 # # Advection Equation Example
 #
 # ## Introduction
 #
-# FILL ME!
-#  What's the equation
-#  What's the method
+# This example shows how to solve the Advection or Transport equation in 1D, 2D, and 3D.
+# We solve the following equation:
+#
+# \[
+# \frac{\partial q}{\partial t} + \nabla \cdot \mathbf{f} = 0
+# \]
+#
+# To solve this PDE in one, two, and three dimensions we use the Discontinuous Galerkin method with basis functions comprised of tensor products
+# of one-dimensional Lagrange polynomials based on Lobatto points.
 #
 # ## Commented Program
 #
+#--------------------------------Markdown Language Header-----------------------
 
-# parameters:
+# Input Parameters: N is polynomial order and brickN(Ne) generates a brick-grid with Ne elements in each direction
 N = 4
-# brickN = (12,)
-brickN = (1 * 12, 1 * 12)
+brickN = (10)
+#brickN = (1 * 12, 1 * 12)
 # brickN = (10, 10, 10)
 
 # First we load the MPI and Canary packages
@@ -26,6 +34,11 @@ DFloat = Float64
 # number of dimensions
 dim = length(brickN)
 
+#Output the polynomial order, space dimensions, and element configuration
+println("N= ",N)
+println("dim= ",dim)
+println("brickN= ",brickN)
+
 # We now initialize MPI as well as get the communicator, rank, and size
 MPI.Initialized() || MPI.Init() # only initialize MPI if not initialized
 MPI.finalize_atexit()
@@ -33,7 +46,7 @@ mpicomm = MPI.COMM_WORLD
 mpirank = MPI.Comm_rank(mpicomm)
 mpisize = MPI.Comm_size(mpicomm)
 
-# Generate an local view of a fully periodic Cartesian mesh.
+# Generate a local view of a fully periodic Cartesian mesh.
 if dim == 1
   (Nx, ) = brickN
   local x = range(DFloat(0); length=Nx+1, stop=1)
@@ -52,13 +65,13 @@ else
                    part=mpirank+1, numparts=mpisize)
 end
 
-# Partion the mesh using a Hilbert curve based partitioning
+# Partition the mesh using a Hilbert curve based partitioning
 mesh = partition(mpicomm, mesh...)
 
 # Connect the mesh in parallel
 mesh = connectmesh(mpicomm, mesh...)
 
-# Get the vmaps
+# Get the vmaps: the points in the element along faces (P=+/right and M=-/left)
 (vmapM, vmapP) = mappings(N, mesh.elemtoelem, mesh.elemtoface, mesh.elemtoordr)
 
 # Create 1-D operators
@@ -68,7 +81,12 @@ D = spectralderivative(ξ)
 # Compute metric terms
 (nface, nelem) = size(mesh.elemtoelem)
 coord = creategrid(Val(dim), mesh.elemtocoord, ξ)
-if dim == 2
+if dim == 1
+  x = coord.x
+  for j = 1:length(x)
+    x[j] = x[j]
+  end
+elseif dim == 2
   (x, y) = (coord.x, coord.y)
   for j = 1:length(x)
     (x[j], y[j]) = (x[j] .+ sin.(π * x[j]) .* sin.(2 * π * y[j]) / 10,
@@ -120,29 +138,34 @@ elseif dim == 3
   Q.Uz .= 1
 end
 
-# set dt and number of steps
+# set U,V,W velocities, dt and number of steps
 dt = [floatmax(DFloat)]
 if dim == 1
-
+    (ξx) = (metric.ξx)
+    (Ux) = (Q.Ux)
+    for n = 1:length(Ux)
+        loc_dt = 2 ./ (abs.(Ux[n] * ξx[n]))
+        dt[1] = min(dt[1], loc_dt)
+    end
 elseif dim == 2
-  (ξx, ξy, ηx, ηy) = (metric.ξx, metric.ξy, metric.ηx, metric.ηy)
-  (Ux, Uy) = (Q.Ux, Q.Uy)
-  for n = 1:length(Ux)
-    loc_dt = 2 ./ max(abs.(Ux[n] * ξx[n] + Uy[n] * ξy[n]),
-                      abs.(Ux[n] * ηx[n] + Uy[n] * ηy[n]))
-    dt[1] = min(dt[1], loc_dt)
-  end
+    (ξx, ξy, ηx, ηy) = (metric.ξx, metric.ξy, metric.ηx, metric.ηy)
+    (Ux, Uy) = (Q.Ux, Q.Uy)
+    for n = 1:length(Ux)
+        loc_dt = 2 ./ max(abs.(Ux[n] * ξx[n] + Uy[n] * ξy[n]),
+                          abs.(Ux[n] * ηx[n] + Uy[n] * ηy[n]))
+        dt[1] = min(dt[1], loc_dt)
+    end
 elseif dim == 3
-  (ξx, ξy, ξz) = (metric.ξx, metric.ξy, metric.ξz)
-  (ηx, ηy, ηz) = (metric.ηx, metric.ηy, metric.ηz)
-  (ζx, ζy, ζz) = (metric.ζx, metric.ζy, metric.ζz)
-  (Ux, Uy, Uz) = (Q.Ux, Q.Uy, Q.Uz)
-  for n = 1:length(Ux)
-    loc_dt = 2 ./ max(abs.(Ux[n] * ξx[n] + Uy[n] * ξy[n] + Uz[n] * ξz[n]),
-                      abs.(Ux[n] * ηx[n] + Uy[n] * ηy[n] + Uz[n] * ηz[n]),
-                      abs.(Ux[n] * ζx[n] + Uy[n] * ζy[n] + Uz[n] * ζz[n]))
-    dt[1] = min(dt[1], loc_dt)
-  end
+    (ξx, ξy, ξz) = (metric.ξx, metric.ξy, metric.ξz)
+    (ηx, ηy, ηz) = (metric.ηx, metric.ηy, metric.ηz)
+    (ζx, ζy, ζz) = (metric.ζx, metric.ζy, metric.ζz)
+    (Ux, Uy, Uz) = (Q.Ux, Q.Uy, Q.Uz)
+    for n = 1:length(Ux)
+        loc_dt = 2 ./ max(abs.(Ux[n] * ξx[n] + Uy[n] * ξy[n] + Uz[n] * ξz[n]),
+                          abs.(Ux[n] * ηx[n] + Uy[n] * ηy[n] + Uz[n] * ηz[n]),
+                          abs.(Ux[n] * ζx[n] + Uy[n] * ζy[n] + Uz[n] * ζz[n]))
+        dt[1] = min(dt[1], loc_dt)
+    end
 end
 dt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
 dt = DFloat(dt / N^sqrt(2))
@@ -199,170 +222,239 @@ RKC = (DFloat(0),
        DFloat(2006345519317) / DFloat(3224310063776),
        DFloat(2802321613138) / DFloat(2924317926251))
 
+#-------------------------------------------------------------------------------#
+#------------Begin Volume, Flux, and Update Functions for Multiple Dispatch-----#
+#-------------------------------------------------------------------------------#
+#=
+This is the RHS Volume routine for 1-D
+F.X. Giraldo on 9/27/2018 - first Julia code!!
+=#
+# Volume RHS for 1-D
+function volumerhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, metric, D, ω,
+                    elems) where {S, T}
+  rhsρ = rhs.ρ
+  (ρ, Ux) = (Q.ρ, Q.Ux)
+  Nq = size(ρ, 1)
+  J = metric.J
+  ξx = metric.ξx
+  for e ∈ elems
+      # loop of ξ-grid lines
+      rhsρ[:,e] += D' * (ω .* J[:,e] .* ρ[:,e] .* (ξx[:,e] .* Ux[:,e]))
+  end #e ∈ elems
+end #function volumerhs-1d
 
 # Volume RHS for 2-D
 function volumerhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, metric, D, ω,
                     elems) where {S, T}
-  rhsρ = rhs.ρ
-  (ρ, Ux, Uy) = (Q.ρ, Q.Ux, Q.Uy)
-  Nq = size(ρ, 1)
-  J = metric.J
-  (ξx, ηx, ξy, ηy) = (metric.ξx, metric.ηx, metric.ξy, metric.ηy)
-  # for each element
-  for e ∈ elems
-    # loop of ξ-grid lines
-    for j = 1:Nq
-      rhsρ[:, j, e] +=
-        D' * (ω[j] * ω .* J[:, j, e].* ρ[:, j, e] .*
-              (ξx[:, j, e] .* Ux[:, j, e] + ξy[:, j, e] .* Uy[:, j, e]))
-    end
-    # loop of η-grid lines
-    for i = 1:Nq
-      rhsρ[i, :, e] +=
-        D' * (ω[i] * ω .* J[i, :, e].* ρ[i, :, e] .*
-              (ηx[i, :, e] .* Ux[i, :, e] + ηy[i, :, e] .* Uy[i, :, e]))
-    end
-  end
-end
+    rhsρ = rhs.ρ
+    (ρ, Ux, Uy) = (Q.ρ, Q.Ux, Q.Uy)
+    Nq = size(ρ, 1)
+    J = metric.J
+    (ξx, ηx, ξy, ηy) = (metric.ξx, metric.ηx, metric.ξy, metric.ηy)
+    for e ∈ elems
+        # loop of ξ-grid lines
+        for j = 1:Nq
+            rhsρ[:, j, e] +=
+                D' * (ω[j] * ω .* J[:, j, e].* ρ[:, j, e] .*
+                      (ξx[:, j, e] .* Ux[:, j, e] + ξy[:, j, e] .* Uy[:, j, e]))
+        end #j
+        # loop of η-grid lines
+        for i = 1:Nq
+            rhsρ[i, :, e] +=
+                D' * (ω[i] * ω .* J[i, :, e].* ρ[i, :, e] .*
+                      (ηx[i, :, e] .* Ux[i, :, e] + ηy[i, :, e] .* Uy[i, :, e]))
+        end #i
+    end #e ∈ elems
+end #function volumerhs-2d
 
 # Volume RHS for 3-D
 function volumerhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, D, ω,
                     elems) where {S, T}
-  rhsρ = rhs.ρ
-  (ρ, Ux, Uy, Uz) = (Q.ρ, Q.Ux, Q.Uy, Q.Uz)
-  Nq = size(ρ, 1)
-  J = metric.J
-  (ξx, ηx, ζx) = (metric.ξx, metric.ηx, metric.ζx)
-  (ξy, ηy, ζy) = (metric.ξy, metric.ηy, metric.ζy)
-  (ξz, ηz, ζz) = (metric.ξz, metric.ηz, metric.ζz)
-  for e ∈ elems
-    # loop of ξ-grid lines
-    for k = 1:Nq
-      for j = 1:Nq
-        rhsρ[:, j, k, e] +=
-          D' * (ω[j] * ω[k] * ω .* J[:, j, k, e] .* ρ[:, j, k, e] .*
-                (ξx[:, j, k, e] .* Ux[:, j, k, e] +
-                 ξy[:, j, k, e] .* Uy[:, j, k, e] +
-                 ξz[:, j, k, e] .* Uz[:, j, k, e]))
-      end
-    end
-    # loop of η-grid lines
-    for k = 1:Nq
-      for i = 1:Nq
-        rhsρ[i, :, k, e] +=
-          D' * (ω[i] * ω[k] * ω .* J[i, :, k, e] .* ρ[i, :, k, e] .*
-                (ηx[i, :, k, e] .* Ux[i, :, k, e] +
-                 ηy[i, :, k, e] .* Uy[i, :, k, e] +
-                 ηz[i, :, k, e] .* Uz[i, :, k, e]))
-      end
-    end
-    # loop of ζ-grid lines
-    for j = 1:Nq
-      for i = 1:Nq
-        rhsρ[i, j, :, e] +=
-          D' * (ω[i] * ω[j] * ω .* J[i, j, :, e] .* ρ[i, j, :, e] .*
-                (ζx[i, j, :, e] .* Ux[i, j, :, e] +
-                 ζy[i, j, :, e] .* Uy[i, j, :, e] +
-                 ζz[i, j, :, e] .* Uz[i, j, :, e]))
-      end
-    end
-  end
+    rhsρ = rhs.ρ
+    (ρ, Ux, Uy, Uz) = (Q.ρ, Q.Ux, Q.Uy, Q.Uz)
+    Nq = size(ρ, 1)
+    J = metric.J
+    (ξx, ηx, ζx) = (metric.ξx, metric.ηx, metric.ζx)
+    (ξy, ηy, ζy) = (metric.ξy, metric.ηy, metric.ζy)
+    (ξz, ηz, ζz) = (metric.ξz, metric.ηz, metric.ζz)
+    for e ∈ elems
+        # loop of ξ-grid lines
+        for k = 1:Nq
+            for j = 1:Nq
+                rhsρ[:, j, k, e] +=
+                    D' * (ω[j] * ω[k] * ω .* J[:, j, k, e] .* ρ[:, j, k, e] .*
+                          (ξx[:, j, k, e] .* Ux[:, j, k, e] +
+                           ξy[:, j, k, e] .* Uy[:, j, k, e] +
+                           ξz[:, j, k, e] .* Uz[:, j, k, e]))
+            end #j
+        end #k
+        # loop of η-grid lines
+        for k = 1:Nq
+            for i = 1:Nq
+                rhsρ[i, :, k, e] +=
+                    D' * (ω[i] * ω[k] * ω .* J[i, :, k, e] .* ρ[i, :, k, e] .*
+                          (ηx[i, :, k, e] .* Ux[i, :, k, e] +
+                           ηy[i, :, k, e] .* Uy[i, :, k, e] +
+                           ηz[i, :, k, e] .* Uz[i, :, k, e]))
+            end #i
+        end #k
+        # loop of ζ-grid lines
+        for j = 1:Nq
+            for i = 1:Nq
+                rhsρ[i, j, :, e] +=
+                    D' * (ω[i] * ω[j] * ω .* J[i, j, :, e] .* ρ[i, j, :, e] .*
+                          (ζx[i, j, :, e] .* Ux[i, j, :, e] +
+                           ζy[i, j, :, e] .* Uy[i, j, :, e] +
+                           ζz[i, j, :, e] .* Uz[i, j, :, e]))
+            end #i
+        end #j
+    end #e ∈ elems
 end
+
+# Face RHS for 1-D
+function facerhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems, vmapM,
+                  vmapP) where {S, T}
+    rhsρ = rhs.ρ
+    (ρ, Ux) = (Q.ρ, Q.Ux)
+    nface = 2
+    (nx, sJ) = (metric.nx, metric.sJ)
+    nx = reshape(nx, size(vmapM))
+    sJ = reshape(sJ, size(vmapM))
+
+    for e ∈ elems
+        for f ∈ 1:nface
+            ρM = ρ[vmapM[1, f, e]]
+            UxM = Ux[vmapM[1, f, e]]
+            FxM = ρM .* UxM
+
+            ρP = ρ[vmapP[1, f, e]]
+            UxP = Ux[vmapP[1, f, e]]
+            FxP = ρP .* UxP
+
+            nxM = nx[1, f, e]
+            λ = max.(abs.(nxM .* UxM), abs.(nxM .* UxP))
+
+            F = (nxM .* (FxM + FxP) - λ .* (ρP - ρM)) / 2
+            rhsρ[vmapM[1, f, e]] -= sJ[1, f, e] .* F
+        end #for f ∈ 1:nface
+    end #e ∈ elems
+end #function facerhs-1d
 
 # Face RHS for 2-D
 function facerhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems, vmapM,
                   vmapP) where {S, T}
-  rhsρ = rhs.ρ
-  (ρ, Ux, Uy) = (Q.ρ, Q.Ux, Q.Uy)
-  nface = 4
-  (nx, ny, sJ) = (metric.nx, metric.ny, metric.sJ)
-  for e ∈ elems
-    for f ∈ 1:nface
-      ρM = ρ[vmapM[:, f, e]]
-      UxM = Ux[vmapM[:, f, e]]
-      UyM = Uy[vmapM[:, f, e]]
-      FxM = ρM .* UxM
-      FyM = ρM .* UyM
+    rhsρ = rhs.ρ
+    (ρ, Ux, Uy) = (Q.ρ, Q.Ux, Q.Uy)
+    nface = 4
+    (nx, ny, sJ) = (metric.nx, metric.ny, metric.sJ)
+    for e ∈ elems
+        for f ∈ 1:nface
+            ρM = ρ[vmapM[:, f, e]]
+            UxM = Ux[vmapM[:, f, e]]
+            UyM = Uy[vmapM[:, f, e]]
+            FxM = ρM .* UxM
+            FyM = ρM .* UyM
 
-      ρP = ρ[vmapP[:, f, e]]
-      UxP = Ux[vmapP[:, f, e]]
-      UyP = Uy[vmapP[:, f, e]]
-      FxP = ρP .* UxP
-      FyP = ρP .* UyP
+            ρP = ρ[vmapP[:, f, e]]
+            UxP = Ux[vmapP[:, f, e]]
+            UyP = Uy[vmapP[:, f, e]]
+            FxP = ρP .* UxP
+            FyP = ρP .* UyP
 
-      nxM = nx[:, f, e]
-      nyM = ny[:, f, e]
-      λ = max.(abs.(nxM .* UxM + nyM .* UyM), abs.(nxM .* UxP + nyM .* UyP))
+            nxM = nx[:, f, e]
+            nyM = ny[:, f, e]
+            λ = max.(abs.(nxM .* UxM + nyM .* UyM), abs.(nxM .* UxP + nyM .* UyP))
 
-      F = (nxM .* (FxM + FxP) + nyM .* (FyM + FyP) + λ .* (ρM - ρP)) / 2
-      rhsρ[vmapM[:, f, e]] -= ω .* sJ[:, f, e] .* F
-    end
-  end
-end
+            F = (nxM .* (FxM + FxP) + nyM .* (FyM + FyP) + λ .* (ρM - ρP)) / 2
+            rhsρ[vmapM[:, f, e]] -= ω .* sJ[:, f, e] .* F
+        end #f ∈ 1:nface
+    end #e ∈ elems
+end #function facerhs-2d
 
-# Face RHS for 2-D
+# Face RHS for 3-D
 function facerhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems, vmapM,
                   vmapP) where {S, T}
-  rhsρ = rhs.ρ
-  (ρ, Ux, Uy, Uz) = (Q.ρ, Q.Ux, Q.Uy, Q.Uz)
-  nface = 6
-  (nx, ny, nz, sJ) = (metric.nx, metric.ny, metric.nz, metric.sJ)
-  for e ∈ elems
-    for f ∈ 1:nface
-      ρM = ρ[vmapM[:, f, e]]
-      UxM = Ux[vmapM[:, f, e]]
-      UyM = Uy[vmapM[:, f, e]]
-      UzM = Uz[vmapM[:, f, e]]
-      FxM = ρM .* UxM
-      FyM = ρM .* UyM
-      FzM = ρM .* UzM
+    rhsρ = rhs.ρ
+    (ρ, Ux, Uy, Uz) = (Q.ρ, Q.Ux, Q.Uy, Q.Uz)
+    nface = 6
+    (nx, ny, nz, sJ) = (metric.nx, metric.ny, metric.nz, metric.sJ)
+    nx = reshape(nx, size(vmapM))
+    ny = reshape(ny, size(vmapM))
+    nz = reshape(nz, size(vmapM))
+    sJ = reshape(sJ, size(vmapM))
+    for e ∈ elems
+        for f ∈ 1:nface
+            ρM = ρ[vmapM[:, f, e]]
+            UxM = Ux[vmapM[:, f, e]]
+            UyM = Uy[vmapM[:, f, e]]
+            UzM = Uz[vmapM[:, f, e]]
+            FxM = ρM .* UxM
+            FyM = ρM .* UyM
+            FzM = ρM .* UzM
 
-      ρP = ρ[vmapP[:, f, e]]
-      UxP = Ux[vmapP[:, f, e]]
-      UyP = Uy[vmapP[:, f, e]]
-      UzP = Uz[vmapP[:, f, e]]
-      FxP = ρP .* UxP
-      FyP = ρP .* UyP
-      FzP = ρP .* UzP
+            ρP = ρ[vmapP[:, f, e]]
+            UxP = Ux[vmapP[:, f, e]]
+            UyP = Uy[vmapP[:, f, e]]
+            UzP = Uz[vmapP[:, f, e]]
+            FxP = ρP .* UxP
+            FyP = ρP .* UyP
+            FzP = ρP .* UzP
 
-      nxM = nx[:, f, e]
-      nyM = ny[:, f, e]
-      nzM = nz[:, f, e]
-      λ = max.(abs.(nxM .* UxM + nyM .* UyM + nzM .* UzM),
-               abs.(nxM .* UxP + nyM .* UyP + nzM .* UzP))
+            nxM = nx[:, f, e]
+            nyM = ny[:, f, e]
+            nzM = nz[:, f, e]
+            λ = max.(abs.(nxM .* UxM + nyM .* UyM + nzM .* UzM),
+                     abs.(nxM .* UxP + nyM .* UyP + nzM .* UzP))
 
-      F = (nxM .* (FxM + FxP) + nyM .* (FyM + FyP) + nzM .* (FzM + FzP) +
-           λ .* (ρM - ρP)) / 2
-      rhsρ[vmapM[:, f, e]] -= kron(ω, ω) .* sJ[:, f, e] .* F
+            F = (nxM .* (FxM + FxP) + nyM .* (FyM + FyP) + nzM .* (FzM + FzP) +
+                 λ .* (ρM - ρP)) / 2
+            rhsρ[vmapM[:, f, e]] -= kron(ω, ω) .* sJ[:, f, e] .* F
+        end #f ∈ 1:nface
+    end #e ∈ elems
+end #function facerhs-3d
+
+# Update for 1-D
+function updatesolution!(rhs, Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems,
+                         rka, rkb, dt) where {S, T}
+    J = metric.J
+    #M = reshape(kron(ω, ω), length(ω), length(ω))
+    M =  ω
+    for (rhsq, q) ∈ zip(rhs, Q)
+        for e ∈ elems
+            q[:, e] += rkb * dt * rhsq[:, e] ./ ( M .* J[:, e])
+            rhsq[:, e] *= rka
+        end
     end
-  end
 end
 
 # Update for 2-D
 function updatesolution!(rhs, Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems,
                          rka, rkb, dt) where {S, T}
-  J = metric.J
-  M = reshape(kron(ω, ω), length(ω), length(ω))
-  for (rhsq, q) ∈ zip(rhs, Q)
-    for e ∈ elems
-      q[:, :, e] += rkb * dt * rhsq[:, :, e] ./ (M .* J[:, :, e])
-      rhsq[:, :, e] *= rka
+    J = metric.J
+    M = reshape(kron(ω, ω), length(ω), length(ω))
+    for (rhsq, q) ∈ zip(rhs, Q)
+        for e ∈ elems
+            q[:, :, e] += rkb * dt * rhsq[:, :, e] ./ (M .* J[:, :, e])
+            rhsq[:, :, e] *= rka
+        end
     end
-  end
 end
 
 # Update for 3-D
 function updatesolution!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems,
                          rka, rkb, dt) where {S, T}
-  J = metric.J
-  M = reshape(kron(ω, ω, ω), length(ω), length(ω), length(ω))
-  for (rhsq, q) ∈ zip(rhs, Q)
-    for e ∈ elems
-      q[:, :, :, e] += rkb * dt * rhsq[:, :, :, e] ./ (M .* J[:, :, :, e])
-      rhsq[:, :, :, e] *= rka
+    J = metric.J
+    M = reshape(kron(ω, ω, ω), length(ω), length(ω), length(ω))
+    for (rhsq, q) ∈ zip(rhs, Q)
+        for e ∈ elems
+            q[:, :, :, e] += rkb * dt * rhsq[:, :, :, e] ./ (M .* J[:, :, :, e])
+            rhsq[:, :, :, e] *= rka
+        end
     end
-  end
 end
+#-------------------------------------------------------------------------------#
+#------------End Volume, Flux, and Update Functions for Multiple Dispatch-------#
+#-------------------------------------------------------------------------------#
 
 # L2 Error: 1-D
 function L2energy(Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems) where {S, T}
