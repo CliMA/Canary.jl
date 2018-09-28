@@ -114,8 +114,8 @@ end
     computemetric!(x::AbstractArray{T, 2},
                    J::AbstractArray{T, 2},
                    rx::AbstractArray{T, 2},
-                   sJ::AbstractArray{T, 2},
-                   nx::AbstractArray{T, 2},
+                   sJ::AbstractArray{T, 3},
+                   nx::AbstractArray{T, 3},
                    D::AbstractMatrix{T}) where T
 
 Compute the 1-D metric terms from the element grid arrays `x`. All the arrays
@@ -124,13 +124,13 @@ consistent with the reference grid `r` used in [`creategrid!`](@ref).
 
 If `Nq = size(D, 1)` and `nelem = size(x, 2)` then the volume arrays `x`, `J`,
 and `rx` should all be of size `(Nq, nelem)`.  Similarly, the face arrays `sJ`
-and `nx` should be of size `(Nq, nfaces, nelem)` with `nfaces = 2`.
+and `nx` should be of size `(1, nfaces, nelem)` with `nfaces = 2`.
 """
 function computemetric!(x::AbstractArray{T, 2},
                         J::AbstractArray{T, 2},
                         rx::AbstractArray{T, 2},
-                        sJ::AbstractArray{T, 2},
-                        nx::AbstractArray{T, 2},
+                        sJ::AbstractArray{T, 3},
+                        nx::AbstractArray{T, 3},
                         D::AbstractMatrix{T}) where T
   nelem = size(J, 2)
   Nq = size(D, 1)
@@ -141,8 +141,8 @@ function computemetric!(x::AbstractArray{T, 2},
   end
   rx .=  1 ./ J
 
-  nx[1, :] .= -sign.(J[ 1, :])
-  nx[2, :] .=  sign.(J[Nq, :])
+  nx[1, 1, :] .= -sign.(J[ 1, :])
+  nx[1, 2, :] .=  sign.(J[Nq, :])
   sJ .= 1
   (J, rx, sJ, nx)
 end
@@ -243,9 +243,9 @@ end
                    tx::AbstractArray{T, 4} ry::AbstractArray{T, 4},
                    sy::AbstractArray{T, 4}, ty::AbstractArray{T, 4}
                    rz::AbstractArray{T, 4}, sz::AbstractArray{T, 4},
-                   tz::AbstractArray{T, 4} sJ::AbstractArray{T, 4},
-                   nx::AbstractArray{T, 4}, ny::AbstractArray{T, 4},
-                   nz::AbstractArray{T, 4}, D::AbstractMatrix{T}) where T
+                   tz::AbstractArray{T, 4} sJ::AbstractArray{T, 3},
+                   nx::AbstractArray{T, 3}, ny::AbstractArray{T, 3},
+                   nz::AbstractArray{T, 3}, D::AbstractMatrix{T}) where T
 
 Compute the 3-D metric terms from the element grid arrays `x`, `y`, and `z`. All
 the arrays are preallocated by the user and the (square) derivative matrix `D`
@@ -254,7 +254,7 @@ should be consistent with the reference grid `r` used in [`creategrid!`](@ref).
 If `Nq = size(D, 1)` and `nelem = size(x, 4)` then the volume arrays `x`, `y`,
 `z`, `J`, `rx`, `sx`, `tx`, `ry`, `sy`, `ty`, `rz`, `sz`, and `tz` should all be
 of size `(Nq, Nq, Nq, nelem)`.  Similarly, the face arrays `sJ`, `nx`, `ny`, and
-`nz` should be of size `(Nq, Nq, nfaces, nelem)` with `nfaces = 6`.
+`nz` should be of size `(Nq^2, nfaces, nelem)` with `nfaces = 6`.
 
 The curl invariant formulation of Kopriva (2006), equation 37, is used.
 
@@ -276,10 +276,10 @@ function computemetric!(x::AbstractArray{T, 4},
                         rz::AbstractArray{T, 4},
                         sz::AbstractArray{T, 4},
                         tz::AbstractArray{T, 4},
-                        sJ::AbstractArray{T, 4},
-                        nx::AbstractArray{T, 4},
-                        ny::AbstractArray{T, 4},
-                        nz::AbstractArray{T, 4},
+                        sJ::AbstractArray{T, 3},
+                        nx::AbstractArray{T, 3},
+                        ny::AbstractArray{T, 3},
+                        nz::AbstractArray{T, 3},
                         D::AbstractMatrix{T}) where T
 
   nelem = size(J, 4)
@@ -396,6 +396,9 @@ function computemetric!(x::AbstractArray{T, 4},
     @views tz[:, :, :, e] = tz[:, :, :, e] .* JI2
   end
 
+  nx = reshape(nx, Nq, Nq, 6, nelem)
+  ny = reshape(ny, Nq, Nq, 6, nelem)
+  nz = reshape(nz, Nq, Nq, 6, nelem)
   @views nx[:, :, 1, :] .= -J[ 1, :, :, :] .* rx[ 1, :, :, :]
   @views nx[:, :, 2, :] .=  J[Nq, :, :, :] .* rx[Nq, :, :, :]
   @views nx[:, :, 3, :] .= -J[ :, 1, :, :] .* sx[ :, 1, :, :]
@@ -416,6 +419,9 @@ function computemetric!(x::AbstractArray{T, 4},
   @views nz[:, :, 4, :] .=  J[ :,Nq, :, :] .* sz[ :,Nq, :, :]
   @views nz[:, :, 5, :] .= -J[ :, :, 1, :] .* tz[ :, :, 1, :]
   @views nz[:, :, 6, :] .=  J[ :, :,Nq, :] .* tz[ :, :,Nq, :]
+  nx = reshape(nx, Nq * Nq, 6, nelem)
+  ny = reshape(ny, Nq * Nq, 6, nelem)
+  nz = reshape(nz, Nq * Nq, 6, nelem)
 
   @. sJ = hypot(nx, ny, nz)
   @. nx = nx / sJ
@@ -516,8 +522,8 @@ function computemetric(x::AbstractArray{T, 2},
   J = similar(x)
   rx = similar(x)
 
-  sJ = Array{T, 2}(undef, nface, nelem)
-  nx = Array{T, 2}(undef, nface, nelem)
+  sJ = Array{T, 3}(undef, 1, nface, nelem)
+  nx = Array{T, 3}(undef, 1, nface, nelem)
 
   computemetric!(x, J, rx, sJ, nx, D)
 
@@ -613,10 +619,10 @@ function computemetric(x::AbstractArray{T, 4},
   sz = similar(x)
   tz = similar(x)
 
-  sJ = Array{T, 4}(undef, Nq, Nq, nface, nelem)
-  nx = Array{T, 4}(undef, Nq, Nq, nface, nelem)
-  ny = Array{T, 4}(undef, Nq, Nq, nface, nelem)
-  nz = Array{T, 4}(undef, Nq, Nq, nface, nelem)
+  sJ = Array{T, 3}(undef, Nq^2, nface, nelem)
+  nx = Array{T, 3}(undef, Nq^2, nface, nelem)
+  ny = Array{T, 3}(undef, Nq^2, nface, nelem)
+  nz = Array{T, 3}(undef, Nq^2, nface, nelem)
 
   computemetric!(x, y, z, J, rx, sx, tx, ry, sy, ty, rz, sz, tz, sJ,
                  nx, ny, nz, D)

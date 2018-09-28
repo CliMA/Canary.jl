@@ -31,10 +31,10 @@ const SGEO3D = (sJ = 1, nx = 2, ny = 3, nz = 4)
       @test metric.J[:, 2] ≈ 5 * ones(T, Nq)
       @test metric.rx[:, 1] ≈ 2 * ones(T, Nq)
       @test metric.rx[:, 2] ≈ ones(T, Nq) / 5
-      @test metric.nx[1, :] ≈ -ones(T, nelem)
-      @test metric.nx[2, :] ≈  ones(T, nelem)
-      @test metric.sJ[1, :] ≈  ones(T, nelem)
-      @test metric.sJ[2, :] ≈  ones(T, nelem)
+      @test metric.nx[1, 1, :] ≈ -ones(T, nelem)
+      @test metric.nx[1, 2, :] ≈  ones(T, nelem)
+      @test metric.sJ[1, 1, :] ≈  ones(T, nelem)
+      @test metric.sJ[1, 2, :] ≈  ones(T, nelem)
     end
     #}}}
   end
@@ -380,11 +380,12 @@ end
       nz_exact[:, :, 6, 1:2] .=  1
 
       vgeo = Array{T, 5}(undef, Nq, Nq, Nq, length(VGEO3D), nelem)
-      sgeo = Array{T, 5}(undef, Nq, Nq, nfaces, length(SGEO3D), nelem)
+      sgeo = Array{T, 4}(undef, Nq^2, nfaces, length(SGEO3D), nelem)
       Canary.creategrid!(ntuple(j->(@view vgeo[:, :, :, j, :]), d)..., e2c, r)
       Canary.computemetric!(ntuple(j->(@view vgeo[:, :, :, j, :]), length(VGEO3D))...,
-                            ntuple(j->(@view sgeo[:, :, :, j, :]), length(SGEO3D))...,
+                            ntuple(j->(@view sgeo[:, :, j, :]), length(SGEO3D))...,
       D)
+      sgeo = reshape(sgeo, Nq, Nq, nfaces, length(SGEO3D), nelem)
 
       @test (@view vgeo[:,:,:,VGEO3D.x,:]) ≈ x_exact
       @test (@view vgeo[:,:,:,VGEO3D.y,:]) ≈ y_exact
@@ -505,11 +506,12 @@ end
       fill!(@view(nze[:,:,6,:]),  Q[3,3])
 
       vgeo = Array{T, 5}(undef, Nq, Nq, Nq, length(VGEO3D), nelem)
-      sgeo = Array{T, 5}(undef, Nq, Nq, nfaces, length(SGEO3D), nelem)
+      sgeo = Array{T, 4}(undef, Nq^2, nfaces, length(SGEO3D), nelem)
       Canary.creategrid!(ntuple(j->(@view vgeo[:, :, :, j, :]), d)..., e2c, r)
       Canary.computemetric!(ntuple(j->(@view vgeo[:, :, :, j, :]), length(VGEO3D))...,
-                            ntuple(j->(@view sgeo[:, :, :, j, :]), length(SGEO3D))...,
+                            ntuple(j->(@view sgeo[:, :, j, :]), length(SGEO3D))...,
       D)
+      sgeo = reshape(sgeo, Nq, Nq, nfaces, length(SGEO3D), nelem)
 
       @test (@view vgeo[:,:,:,VGEO3D.x,:]) ≈ xe
       @test (@view vgeo[:,:,:,VGEO3D.y,:]) ≈ ye
@@ -566,7 +568,7 @@ end
       nelem = size(e2c, 3)
 
       vgeo = Array{T, 5}(undef, Nq, Nq, Nq, length(VGEO3D), nelem)
-      sgeo = Array{T, 5}(undef, Nq, Nq, nfaces, length(SGEO3D), nelem)
+      sgeo = Array{T, 4}(undef, Nq^2, nfaces, length(SGEO3D), nelem)
       Canary.creategrid!(ntuple(j->(@view vgeo[:, :, :, j, :]), d)..., e2c, r)
       x = @view vgeo[:, :, :, VGEO3D.x, :]
       y = @view vgeo[:, :, :, VGEO3D.y, :]
@@ -594,8 +596,9 @@ end
       foreach(j->(x[j], y[j], z[j]) = f(x[j], y[j], z[j]), 1:length(x))
 
       Canary.computemetric!(ntuple(j->(@view vgeo[:, :, :, j, :]), length(VGEO3D))...,
-                            ntuple(j->(@view sgeo[:, :, :, j, :]), length(SGEO3D))...,
+                            ntuple(j->(@view sgeo[:, :, j, :]), length(SGEO3D))...,
       D)
+      sgeo = reshape(sgeo, Nq, Nq, nfaces, length(SGEO3D), nelem)
 
       @test (@view vgeo[:,:,:,VGEO3D.J,:]) ≈ J
       @test (@view vgeo[:,:,:,VGEO3D.rx,:]) ≈ rx
@@ -668,8 +671,6 @@ end
 
       nelem = size(e2c, 3)
 
-      vgeo = Array{T, 5}(undef, Nq, Nq, Nq, length(VGEO3D), nelem)
-      sgeo = Array{T, 5}(undef, Nq, Nq, nfaces, length(SGEO3D), nelem)
       (x,y,z) = creategrid3d(e2c, r)
 
       (xr, xs, xt,
@@ -705,31 +706,32 @@ end
       @test metric.tx ≈ tx
       @test metric.ty ≈ ty
       @test metric.tz ≈ tz
+      ind = LinearIndices((1:Nq, 1:Nq))
       nx = metric.nx
       ny = metric.ny
       nz = metric.nz
       sJ = metric.sJ
       @test hypot.(nx, ny, nz) ≈ ones(T, size(nx))
-      @test ([sJ[:,:,1,:] .* nx[:,:,1,:], sJ[:,:,1,:] .* ny[:,:,1,:],
-              sJ[:,:,1,:] .* nz[:,:,1,:]] ≈
+      @test ([sJ[ind,1,:] .* nx[ind,1,:], sJ[ind,1,:] .* ny[ind,1,:],
+              sJ[ind,1,:] .* nz[ind,1,:]] ≈
              [-J[ 1,:,:,:] .* rx[ 1,:,:,:], -J[ 1,:,:,:] .* ry[ 1,:,:,:],
               -J[ 1,:,:,:] .* rz[ 1,:,:,:]])
-      @test ([sJ[:,:,2,:] .* nx[:,:,2,:], sJ[:,:,2,:] .* ny[:,:,2,:],
-              sJ[:,:,2,:] .* nz[:,:,2,:]] ≈
+      @test ([sJ[ind,2,:] .* nx[ind,2,:], sJ[ind,2,:] .* ny[ind,2,:],
+              sJ[ind,2,:] .* nz[ind,2,:]] ≈
              [ J[Nq,:,:,:] .* rx[Nq,:,:,:],  J[Nq,:,:,:] .* ry[Nq,:,:,:],
                J[Nq,:,:,:] .* rz[Nq,:,:,:]])
-      @test sJ[:,:,3,:] .* nx[:,:,3,:] ≈ -J[:, 1,:,:] .* sx[:, 1,:,:]
-      @test sJ[:,:,3,:] .* ny[:,:,3,:] ≈ -J[:, 1,:,:] .* sy[:, 1,:,:]
-      @test sJ[:,:,3,:] .* nz[:,:,3,:] ≈ -J[:, 1,:,:] .* sz[:, 1,:,:]
-      @test sJ[:,:,4,:] .* nx[:,:,4,:] ≈  J[:,Nq,:,:] .* sx[:,Nq,:,:]
-      @test sJ[:,:,4,:] .* ny[:,:,4,:] ≈  J[:,Nq,:,:] .* sy[:,Nq,:,:]
-      @test sJ[:,:,4,:] .* nz[:,:,4,:] ≈  J[:,Nq,:,:] .* sz[:,Nq,:,:]
-      @test sJ[:,:,5,:] .* nx[:,:,5,:] ≈ -J[:,:, 1,:] .* tx[:,:, 1,:]
-      @test sJ[:,:,5,:] .* ny[:,:,5,:] ≈ -J[:,:, 1,:] .* ty[:,:, 1,:]
-      @test sJ[:,:,5,:] .* nz[:,:,5,:] ≈ -J[:,:, 1,:] .* tz[:,:, 1,:]
-      @test sJ[:,:,6,:] .* nx[:,:,6,:] ≈  J[:,:,Nq,:] .* tx[:,:,Nq,:]
-      @test sJ[:,:,6,:] .* ny[:,:,6,:] ≈  J[:,:,Nq,:] .* ty[:,:,Nq,:]
-      @test sJ[:,:,6,:] .* nz[:,:,6,:] ≈  J[:,:,Nq,:] .* tz[:,:,Nq,:]
+      @test sJ[ind,3,:] .* nx[ind,3,:] ≈ -J[:, 1,:,:] .* sx[:, 1,:,:]
+      @test sJ[ind,3,:] .* ny[ind,3,:] ≈ -J[:, 1,:,:] .* sy[:, 1,:,:]
+      @test sJ[ind,3,:] .* nz[ind,3,:] ≈ -J[:, 1,:,:] .* sz[:, 1,:,:]
+      @test sJ[ind,4,:] .* nx[ind,4,:] ≈  J[:,Nq,:,:] .* sx[:,Nq,:,:]
+      @test sJ[ind,4,:] .* ny[ind,4,:] ≈  J[:,Nq,:,:] .* sy[:,Nq,:,:]
+      @test sJ[ind,4,:] .* nz[ind,4,:] ≈  J[:,Nq,:,:] .* sz[:,Nq,:,:]
+      @test sJ[ind,5,:] .* nx[ind,5,:] ≈ -J[:,:, 1,:] .* tx[:,:, 1,:]
+      @test sJ[ind,5,:] .* ny[ind,5,:] ≈ -J[:,:, 1,:] .* ty[:,:, 1,:]
+      @test sJ[ind,5,:] .* nz[ind,5,:] ≈ -J[:,:, 1,:] .* tz[:,:, 1,:]
+      @test sJ[ind,6,:] .* nx[ind,6,:] ≈  J[:,:,Nq,:] .* tx[:,:,Nq,:]
+      @test sJ[ind,6,:] .* ny[ind,6,:] ≈  J[:,:,Nq,:] .* ty[:,:,Nq,:]
+      @test sJ[ind,6,:] .* nz[ind,6,:] ≈  J[:,:,Nq,:] .* tz[:,:,Nq,:]
     end
   end
   #}}}
@@ -758,7 +760,7 @@ end
       nelem = size(e2c, 3)
 
       vgeo = Array{T, 5}(undef, Nq, Nq, Nq, length(VGEO3D), nelem)
-      sgeo = Array{T, 5}(undef, Nq, Nq, nfaces, length(SGEO3D), nelem)
+      sgeo = Array{T, 4}(undef, Nq^2, nfaces, length(SGEO3D), nelem)
       Canary.creategrid!(ntuple(j->(@view vgeo[:, :, :, j, :]), d)..., e2c, r)
       x = @view vgeo[:, :, :, VGEO3D.x, :]
       y = @view vgeo[:, :, :, VGEO3D.y, :]
@@ -767,8 +769,9 @@ end
       foreach(j->(x[j], y[j], z[j]) = f(x[j], y[j], z[j]), 1:length(x))
 
       Canary.computemetric!(ntuple(j->(@view vgeo[:, :, :, j, :]), length(VGEO3D))...,
-                            ntuple(j->(@view sgeo[:, :, :, j, :]), length(SGEO3D))...,
+                            ntuple(j->(@view sgeo[:, :, j, :]), length(SGEO3D))...,
       D)
+      sgeo = reshape(sgeo, Nq, Nq, nfaces, length(SGEO3D), nelem)
 
       (Cx, Cy, Cz) = (zeros(T, Nq, Nq, Nq), zeros(T, Nq, Nq, Nq),
                       zeros(T, Nq, Nq, Nq))
