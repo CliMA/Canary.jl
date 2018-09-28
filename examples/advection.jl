@@ -6,9 +6,10 @@
 # This example shows how to solve the Advection or Transport equation in 1D, 2D, and 3D.
 # We solve the following equation:
 #
-# \[
+# ```math
 # \frac{\partial q}{\partial t} + \nabla \cdot \mathbf{f} = 0
-# \]
+# ```
+#
 #
 # To solve this PDE in one, two, and three dimensions we use the Discontinuous Galerkin method with basis functions comprised of tensor products
 # of one-dimensional Lagrange polynomials based on Lobatto points.
@@ -17,36 +18,37 @@
 #
 #--------------------------------Markdown Language Header-----------------------
 
-# Input Parameters: N is polynomial order and brickN(Ne) generates a brick-grid with Ne elements in each direction
-N = 4
-brickN = (10)
-#brickN = (1 * 12, 1 * 12)
-# brickN = (10, 10, 10)
+# ### Define key parameters:
+# N is polynomial order and
+# brickN(Ne) generates a brick-grid with Ne elements in each direction
+N = 4 #polynomial order
+brickN = (10) #1D brickmesh
+#brickN = (1 * 12, 1 * 12) #2D brickmesh
+# brickN = (10, 10, 10) #3D brickmesh
+DFloat = Float64 #Number Type
 
-# First we load the MPI and Canary packages
+# ### Load the MPI and Canary packages where Canary builds the mesh, generates basis functions, and metric terms.
 using MPI
 using Canary
 using Printf: @sprintf
 
-# Define computational type
-DFloat = Float64
-
-# number of dimensions
+# ### The grid that we create determines the number of spatial dimensions that we are going to use.
 dim = length(brickN)
 
-#Output the polynomial order, space dimensions, and element configuration
+# ###Output the polynomial order, space dimensions, and element configuration
 println("N= ",N)
 println("dim= ",dim)
 println("brickN= ",brickN)
+println("DFloat= ",DFloat)
 
-# We now initialize MPI as well as get the communicator, rank, and size
+# ### Initialize MPI and get the communicator, rank, and size
 MPI.Initialized() || MPI.Init() # only initialize MPI if not initialized
 MPI.finalize_atexit()
 mpicomm = MPI.COMM_WORLD
 mpirank = MPI.Comm_rank(mpicomm)
 mpisize = MPI.Comm_size(mpicomm)
 
-# Generate a local view of a fully periodic Cartesian mesh.
+# ### Generate a local view of a fully periodic Cartesian mesh.
 if dim == 1
   (Nx, ) = brickN
   local x = range(DFloat(0); length=Nx+1, stop=1)
@@ -65,20 +67,23 @@ else
                    part=mpirank+1, numparts=mpisize)
 end
 
-# Partition the mesh using a Hilbert curve based partitioning
+# ### Partition the mesh using a Hilbert curve based partitioning
 mesh = partition(mpicomm, mesh...)
 
-# Connect the mesh in parallel
+# ### Connect the mesh in parallel
 mesh = connectmesh(mpicomm, mesh...)
 
-# Get the vmaps: the points in the element along faces (P=+/right and M=-/left)
+# ### Get the degrees of freedom along the faces of each element.
+# vmap(:,f,e) gives the list of local (mpirank) points for the face "f" of element "e".  vmapP points to the outward (or neighbor) element and vmapM for the current element. P=+ or right and M=- or left.
 (vmapM, vmapP) = mappings(N, mesh.elemtoelem, mesh.elemtoface, mesh.elemtoordr)
 
-# Create 1-D operators
+# ### Create 1-D operators
+# $\xi$ and $\omega$ are the 1D Lobatto points and weights and $D$ is the derivative of the basis function.
 (ξ, ω) = lglpoints(DFloat, N)
 D = spectralderivative(ξ)
 
-# Compute metric terms
+# ### Compute metric terms
+# nface and nelem refers to the total number of faces and elements for this MPI rank. Also, coord contains the dim-tuple coordinates in the mesh.
 (nface, nelem) = size(mesh.elemtoelem)
 coord = creategrid(Val(dim), mesh.elemtocoord, ξ)
 if dim == 1
@@ -104,15 +109,18 @@ elseif dim == 3
   end
 end
 
-# Dump the mesh
+# ### First VTK Call
+# This first VTK call dumps the mesh out for all mpiranks.
 include("vtk.jl")
 writemesh(@sprintf("Advection%dD_rank_%04d_mesh", dim, mpirank), coord...;
           realelems=mesh.realelems)
 
-# Compute the metric terms
+# ### Compute the metric terms
+# This call computes the metric terms of the grid such as $\xi_\mathbf{x}$, $\eta_\mathbf{x}$, $\zeta_\mathbf{x}$ for all spatial dimensions $\mathbf{x}$ depending on the dimension of $dim$.
 metric = computemetric(coord..., D)
 
-# Get the distance from the center
+# ### Generate the State Vectors
+# We need to create as many velocity vectors as there are dimensions.
 if dim == 1
   statesyms = (:ρ, :Ux)
 elseif dim == 2
