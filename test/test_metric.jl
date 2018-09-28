@@ -1,8 +1,8 @@
-const VGEO2D = (x=1, y=2, J=3, rx=4, sx=5, ry=6, sy=7)
+const VGEO2D = (x=1, y=2, J=3, ξx=4, ηx=5, ξy=6, ηy=7)
 const SGEO2D = (sJ = 1, nx = 2, ny = 3)
 
-const VGEO3D = (x = 1, y = 2, z = 3, J = 4, rx = 5, sx = 6, tx = 7, ry = 8,
-                sy = 9, ty = 10, rz = 11, sz = 12, tz = 13)
+const VGEO3D = (x = 1, y = 2, z = 3, J = 4, ξx = 5, ηx = 6, ζx = 7, ξy = 8,
+                ηy = 9, ζy = 10, ξz = 11, ηz = 12, ζz = 13)
 const SGEO3D = (sJ = 1, nx = 2, ny = 3, nz = 4)
 
 @testset "1-D Metric terms" begin
@@ -29,8 +29,8 @@ const SGEO3D = (sJ = 1, nx = 2, ny = 3, nz = 4)
       metric = Canary.computemetric(x, D)
       @test metric.J[:, 1] ≈ ones(T, Nq) / 2
       @test metric.J[:, 2] ≈ 5 * ones(T, Nq)
-      @test metric.rx[:, 1] ≈ 2 * ones(T, Nq)
-      @test metric.rx[:, 2] ≈ ones(T, Nq) / 5
+      @test metric.ξx[:, 1] ≈ 2 * ones(T, Nq)
+      @test metric.ξx[:, 2] ≈ ones(T, Nq) / 5
       @test metric.nx[1, 1, :] ≈ -ones(T, nelem)
       @test metric.nx[1, 2, :] ≈  ones(T, nelem)
       @test metric.sJ[1, 1, :] ≈  ones(T, nelem)
@@ -74,21 +74,21 @@ end
 
       J_exact = ones(Int, 3, 3, 4)
 
-      rx_exact = zeros(Int, 3, 3, 4)
-      rx_exact[:, :, 1] .= 1
-      rx_exact[:, :, 3] .= -1
+      ξx_exact = zeros(Int, 3, 3, 4)
+      ξx_exact[:, :, 1] .= 1
+      ξx_exact[:, :, 3] .= -1
 
-      ry_exact = zeros(Int, 3, 3, 4)
-      ry_exact[:, :, 2] .= 1
-      ry_exact[:, :, 4] .= -1
+      ξy_exact = zeros(Int, 3, 3, 4)
+      ξy_exact[:, :, 2] .= 1
+      ξy_exact[:, :, 4] .= -1
 
-      sx_exact = zeros(Int, 3, 3, 4)
-      sx_exact[:, :, 2] .= -1
-      sx_exact[:, :, 4] .= 1
+      ηx_exact = zeros(Int, 3, 3, 4)
+      ηx_exact[:, :, 2] .= -1
+      ηx_exact[:, :, 4] .= 1
 
-      sy_exact = zeros(Int, 3, 3, 4)
-      sy_exact[:, :, 1] .= 1
-      sy_exact[:, :, 3] .= -1
+      ηy_exact = zeros(Int, 3, 3, 4)
+      ηy_exact[:, :, 1] .= 1
+      ηy_exact[:, :, 3] .= -1
 
       sJ_exact = ones(Int, Nq, nfaces, nelem)
 
@@ -122,10 +122,10 @@ end
       @test (@view vgeo[:,:,VGEO2D.x,:]) ≈ x_exact
       @test (@view vgeo[:,:,VGEO2D.y,:]) ≈ y_exact
       @test (@view vgeo[:, :, VGEO2D.J, :]) ≈ J_exact
-      @test (@view vgeo[:, :, VGEO2D.rx, :]) ≈ rx_exact
-      @test (@view vgeo[:, :, VGEO2D.ry, :]) ≈ ry_exact
-      @test (@view vgeo[:, :, VGEO2D.sx, :]) ≈ sx_exact
-      @test (@view vgeo[:, :, VGEO2D.sy, :]) ≈ sy_exact
+      @test (@view vgeo[:, :, VGEO2D.ξx, :]) ≈ ξx_exact
+      @test (@view vgeo[:, :, VGEO2D.ξy, :]) ≈ ξy_exact
+      @test (@view vgeo[:, :, VGEO2D.ηx, :]) ≈ ηx_exact
+      @test (@view vgeo[:, :, VGEO2D.ηy, :]) ≈ ηy_exact
       @test (@view sgeo[:, :, SGEO2D.sJ, :]) ≈ sJ_exact
       @test (@view sgeo[:, :, SGEO2D.nx, :]) ≈ nx_exact
       @test (@view sgeo[:, :, SGEO2D.ny, :]) ≈ ny_exact
@@ -171,10 +171,10 @@ end
                             ntuple(j->(@view sgeo[:, :, j, :]), length(SGEO2D))...,
       D)
       @test J ≈ (@view vgeo[:, :, VGEO2D.J, :])
-      @test (@view vgeo[:, :, VGEO2D.rx, :]) ≈  ys ./ J
-      @test (@view vgeo[:, :, VGEO2D.sx, :]) ≈ -yr ./ J
-      @test (@view vgeo[:, :, VGEO2D.ry, :]) ≈ -xs ./ J
-      @test (@view vgeo[:, :, VGEO2D.sy, :]) ≈  xr ./ J
+      @test (@view vgeo[:, :, VGEO2D.ξx, :]) ≈  ys ./ J
+      @test (@view vgeo[:, :, VGEO2D.ηx, :]) ≈ -yr ./ J
+      @test (@view vgeo[:, :, VGEO2D.ξy, :]) ≈ -xs ./ J
+      @test (@view vgeo[:, :, VGEO2D.ηy, :]) ≈  xr ./ J
 
       # check the normals?
       nx = @view sgeo[:,:,SGEO2D.nx,:]
@@ -221,10 +221,10 @@ end
 
       metric = Canary.computemetric(x, y, D)
       @test J ≈ metric.J
-      @test metric.rx ≈  ys ./ J
-      @test metric.sx ≈ -yr ./ J
-      @test metric.ry ≈ -xs ./ J
-      @test metric.sy ≈  xr ./ J
+      @test metric.ξx ≈  ys ./ J
+      @test metric.ηx ≈ -yr ./ J
+      @test metric.ξy ≈ -xs ./ J
+      @test metric.ηy ≈  xr ./ J
 
       # check the normals?
       nx = metric.nx
@@ -282,18 +282,18 @@ end
     (Cx, Cy) = (zeros(T, Nq, Nq), zeros(T, Nq, Nq))
 
     J  = @view vgeo[:,:,VGEO2D.J ,:]
-    rx = @view vgeo[:,:,VGEO2D.rx,:]
-    ry = @view vgeo[:,:,VGEO2D.ry,:]
-    sx = @view vgeo[:,:,VGEO2D.sx,:]
-    sy = @view vgeo[:,:,VGEO2D.sy,:]
+    ξx = @view vgeo[:,:,VGEO2D.ξx,:]
+    ξy = @view vgeo[:,:,VGEO2D.ξy,:]
+    ηx = @view vgeo[:,:,VGEO2D.ηx,:]
+    ηy = @view vgeo[:,:,VGEO2D.ηy,:]
 
     e = 1
     for n = 1:Nq
-      Cx[:, n] += D * (J[:, n, e] .* rx[:, n, e])
-      Cx[n, :] += D * (J[n, :, e] .* sx[n, :, e])
+      Cx[:, n] += D * (J[:, n, e] .* ξx[:, n, e])
+      Cx[n, :] += D * (J[n, :, e] .* ηx[n, :, e])
 
-      Cy[:, n] += D * (J[:, n, e] .* rx[:, n, e])
-      Cy[n, :] += D * (J[n, :, e] .* sx[n, :, e])
+      Cy[:, n] += D * (J[:, n, e] .* ξx[:, n, e])
+      Cy[n, :] += D * (J[n, :, e] .* ηx[n, :, e])
     end
     @test maximum(abs.(Cx)) ≤ 1000 * eps(T)
     @test maximum(abs.(Cy)) ≤ 1000 * eps(T)
@@ -332,19 +332,19 @@ end
       x_exact[:, 2, :, 2] .= 1
       x_exact[:, 3, :, 2] .= 0
 
-      rx_exact = zeros(Int, 3, 3, 3, nelem)
-      rx_exact[:, :, :, 1] .= 1
+      ξx_exact = zeros(Int, 3, 3, 3, nelem)
+      ξx_exact[:, :, :, 1] .= 1
 
-      ry_exact = zeros(Int, 3, 3, 3, nelem)
-      ry_exact[:, :, :, 2] .= 1
+      ξy_exact = zeros(Int, 3, 3, 3, nelem)
+      ξy_exact[:, :, :, 2] .= 1
 
-      sx_exact = zeros(Int, 3, 3, 3, nelem)
-      sx_exact[:, :, :, 2] .= -1
+      ηx_exact = zeros(Int, 3, 3, 3, nelem)
+      ηx_exact[:, :, :, 2] .= -1
 
-      sy_exact = zeros(Int, 3, 3, 3, nelem)
-      sy_exact[:, :, :, 1] .= 1
+      ηy_exact = zeros(Int, 3, 3, 3, nelem)
+      ηy_exact[:, :, :, 1] .= 1
 
-      tz_exact = ones(Int, 3, 3, 3, nelem)
+      ζz_exact = ones(Int, 3, 3, 3, nelem)
 
       y_exact = Array{Int, 4}(undef, 3, 3, 3, nelem)
       y_exact[:, 1, :, 1] .= 0
@@ -391,15 +391,15 @@ end
       @test (@view vgeo[:,:,:,VGEO3D.y,:]) ≈ y_exact
       @test (@view vgeo[:,:,:,VGEO3D.z,:]) ≈ z_exact
       @test (@view vgeo[:,:,:,VGEO3D.J,:]) ≈ J_exact
-      @test (@view vgeo[:,:,:,VGEO3D.rx,:]) ≈ rx_exact
-      @test (@view vgeo[:,:,:,VGEO3D.ry,:]) ≈ ry_exact
-      @test maximum(abs.(@view vgeo[:,:,:,VGEO3D.rz,:])) ≤ 10 * eps(T)
-      @test (@view vgeo[:,:,:,VGEO3D.sx,:]) ≈ sx_exact
-      @test (@view vgeo[:,:,:,VGEO3D.sy,:]) ≈ sy_exact
-      @test maximum(abs.(@view vgeo[:,:,:,VGEO3D.sz,:])) ≤ 10 * eps(T)
-      @test maximum(abs.(@view vgeo[:,:,:,VGEO3D.tx,:])) ≤ 10 * eps(T)
-      @test maximum(abs.(@view vgeo[:,:,:,VGEO3D.ty,:])) ≤ 10 * eps(T)
-      @test (@view vgeo[:,:,:,VGEO3D.tz,:]) ≈ tz_exact
+      @test (@view vgeo[:,:,:,VGEO3D.ξx,:]) ≈ ξx_exact
+      @test (@view vgeo[:,:,:,VGEO3D.ξy,:]) ≈ ξy_exact
+      @test maximum(abs.(@view vgeo[:,:,:,VGEO3D.ξz,:])) ≤ 10 * eps(T)
+      @test (@view vgeo[:,:,:,VGEO3D.ηx,:]) ≈ ηx_exact
+      @test (@view vgeo[:,:,:,VGEO3D.ηy,:]) ≈ ηy_exact
+      @test maximum(abs.(@view vgeo[:,:,:,VGEO3D.ηz,:])) ≤ 10 * eps(T)
+      @test maximum(abs.(@view vgeo[:,:,:,VGEO3D.ζx,:])) ≤ 10 * eps(T)
+      @test maximum(abs.(@view vgeo[:,:,:,VGEO3D.ζy,:])) ≤ 10 * eps(T)
+      @test (@view vgeo[:,:,:,VGEO3D.ζz,:]) ≈ ζz_exact
       @test (@view sgeo[:,:,:,SGEO3D.sJ,:]) ≈ sJ_exact
       @test (@view sgeo[:,:,:,SGEO3D.nx,:]) ≈ nx_exact
       @test (@view sgeo[:,:,:,SGEO3D.ny,:]) ≈ ny_exact
@@ -469,7 +469,7 @@ end
       Je = ones(Int, 3, 3, 3, nelem)
 
       # By construction
-      # Q = [xr xs ys; yr ys yt; zr zs zt] = [rx sx tx; ry sy ty; rz sz tz]
+      # Q = [xr xs ys; yr ys yt; zr zs zt] = [ξx ηx ζx; ξy ηy ζy; ξz ηz ζz]
       rxe = fill(Q[1,1], 3, 3, 3, nelem)
       rye = fill(Q[2,1], 3, 3, 3, nelem)
       rze = fill(Q[3,1], 3, 3, 3, nelem)
@@ -517,15 +517,15 @@ end
       @test (@view vgeo[:,:,:,VGEO3D.y,:]) ≈ ye
       @test (@view vgeo[:,:,:,VGEO3D.z,:]) ≈ ze
       @test (@view vgeo[:,:,:,VGEO3D.J,:]) ≈ Je
-      @test (@view vgeo[:,:,:,VGEO3D.rx,:]) ≈ rxe
-      @test (@view vgeo[:,:,:,VGEO3D.ry,:]) ≈ rye
-      @test (@view vgeo[:,:,:,VGEO3D.rz,:]) ≈ rze
-      @test (@view vgeo[:,:,:,VGEO3D.sx,:]) ≈ sxe
-      @test (@view vgeo[:,:,:,VGEO3D.sy,:]) ≈ sye
-      @test (@view vgeo[:,:,:,VGEO3D.sz,:]) ≈ sze
-      @test (@view vgeo[:,:,:,VGEO3D.tx,:]) ≈ txe
-      @test (@view vgeo[:,:,:,VGEO3D.ty,:]) ≈ tye
-      @test (@view vgeo[:,:,:,VGEO3D.tz,:]) ≈ tze
+      @test (@view vgeo[:,:,:,VGEO3D.ξx,:]) ≈ rxe
+      @test (@view vgeo[:,:,:,VGEO3D.ξy,:]) ≈ rye
+      @test (@view vgeo[:,:,:,VGEO3D.ξz,:]) ≈ rze
+      @test (@view vgeo[:,:,:,VGEO3D.ηx,:]) ≈ sxe
+      @test (@view vgeo[:,:,:,VGEO3D.ηy,:]) ≈ sye
+      @test (@view vgeo[:,:,:,VGEO3D.ηz,:]) ≈ sze
+      @test (@view vgeo[:,:,:,VGEO3D.ζx,:]) ≈ txe
+      @test (@view vgeo[:,:,:,VGEO3D.ζy,:]) ≈ tye
+      @test (@view vgeo[:,:,:,VGEO3D.ζz,:]) ≈ tze
       @test (@view sgeo[:,:,:,SGEO3D.sJ,:]) ≈ sJe
       @test (@view sgeo[:,:,:,SGEO3D.nx,:]) ≈ nxe
       @test (@view sgeo[:,:,:,SGEO3D.ny,:]) ≈ nye
@@ -583,15 +583,15 @@ end
            yr .* (zs .* xt - zt .* xs) +
            zr .* (xs .* yt - xt .* ys))
 
-      rx =  (ys .* zt - yt .* zs) ./ J
-      ry =  (zs .* xt - zt .* xs) ./ J
-      rz =  (xs .* yt - xt .* ys) ./ J
-      sx =  (yt .* zr - yr .* zt) ./ J
-      sy =  (zt .* xr - zr .* xt) ./ J
-      sz =  (xt .* yr - xr .* yt) ./ J
-      tx =  (yr .* zs - ys .* zr) ./ J
-      ty =  (zr .* xs - zs .* xr) ./ J
-      tz =  (xr .* ys - xs .* yr) ./ J
+      ξx =  (ys .* zt - yt .* zs) ./ J
+      ξy =  (zs .* xt - zt .* xs) ./ J
+      ξz =  (xs .* yt - xt .* ys) ./ J
+      ηx =  (yt .* zr - yr .* zt) ./ J
+      ηy =  (zt .* xr - zr .* xt) ./ J
+      ηz =  (xt .* yr - xr .* yt) ./ J
+      ζx =  (yr .* zs - ys .* zr) ./ J
+      ζy =  (zr .* xs - zs .* xr) ./ J
+      ζz =  (xr .* ys - xs .* yr) ./ J
 
       foreach(j->(x[j], y[j], z[j]) = f(x[j], y[j], z[j]), 1:length(x))
 
@@ -601,15 +601,15 @@ end
       sgeo = reshape(sgeo, Nq, Nq, nfaces, length(SGEO3D), nelem)
 
       @test (@view vgeo[:,:,:,VGEO3D.J,:]) ≈ J
-      @test (@view vgeo[:,:,:,VGEO3D.rx,:]) ≈ rx
-      @test (@view vgeo[:,:,:,VGEO3D.ry,:]) ≈ ry
-      @test (@view vgeo[:,:,:,VGEO3D.rz,:]) ≈ rz
-      @test (@view vgeo[:,:,:,VGEO3D.sx,:]) ≈ sx
-      @test (@view vgeo[:,:,:,VGEO3D.sy,:]) ≈ sy
-      @test (@view vgeo[:,:,:,VGEO3D.sz,:]) ≈ sz
-      @test (@view vgeo[:,:,:,VGEO3D.tx,:]) ≈ tx
-      @test (@view vgeo[:,:,:,VGEO3D.ty,:]) ≈ ty
-      @test (@view vgeo[:,:,:,VGEO3D.tz,:]) ≈ tz
+      @test (@view vgeo[:,:,:,VGEO3D.ξx,:]) ≈ ξx
+      @test (@view vgeo[:,:,:,VGEO3D.ξy,:]) ≈ ξy
+      @test (@view vgeo[:,:,:,VGEO3D.ξz,:]) ≈ ξz
+      @test (@view vgeo[:,:,:,VGEO3D.ηx,:]) ≈ ηx
+      @test (@view vgeo[:,:,:,VGEO3D.ηy,:]) ≈ ηy
+      @test (@view vgeo[:,:,:,VGEO3D.ηz,:]) ≈ ηz
+      @test (@view vgeo[:,:,:,VGEO3D.ζx,:]) ≈ ζx
+      @test (@view vgeo[:,:,:,VGEO3D.ζy,:]) ≈ ζy
+      @test (@view vgeo[:,:,:,VGEO3D.ζz,:]) ≈ ζz
       nx = @view sgeo[:,:,:,SGEO3D.nx,:]
       ny = @view sgeo[:,:,:,SGEO3D.ny,:]
       nz = @view sgeo[:,:,:,SGEO3D.nz,:]
@@ -617,24 +617,24 @@ end
       @test hypot.(nx, ny, nz) ≈ ones(T, size(nx))
       @test ([sJ[:,:,1,:] .* nx[:,:,1,:], sJ[:,:,1,:] .* ny[:,:,1,:],
               sJ[:,:,1,:] .* nz[:,:,1,:]] ≈
-             [-J[ 1,:,:,:] .* rx[ 1,:,:,:], -J[ 1,:,:,:] .* ry[ 1,:,:,:],
-              -J[ 1,:,:,:] .* rz[ 1,:,:,:]])
+             [-J[ 1,:,:,:] .* ξx[ 1,:,:,:], -J[ 1,:,:,:] .* ξy[ 1,:,:,:],
+              -J[ 1,:,:,:] .* ξz[ 1,:,:,:]])
       @test ([sJ[:,:,2,:] .* nx[:,:,2,:], sJ[:,:,2,:] .* ny[:,:,2,:],
               sJ[:,:,2,:] .* nz[:,:,2,:]] ≈
-             [ J[Nq,:,:,:] .* rx[Nq,:,:,:],  J[Nq,:,:,:] .* ry[Nq,:,:,:],
-               J[Nq,:,:,:] .* rz[Nq,:,:,:]])
-      @test sJ[:,:,3,:] .* nx[:,:,3,:] ≈ -J[:, 1,:,:] .* sx[:, 1,:,:]
-      @test sJ[:,:,3,:] .* ny[:,:,3,:] ≈ -J[:, 1,:,:] .* sy[:, 1,:,:]
-      @test sJ[:,:,3,:] .* nz[:,:,3,:] ≈ -J[:, 1,:,:] .* sz[:, 1,:,:]
-      @test sJ[:,:,4,:] .* nx[:,:,4,:] ≈  J[:,Nq,:,:] .* sx[:,Nq,:,:]
-      @test sJ[:,:,4,:] .* ny[:,:,4,:] ≈  J[:,Nq,:,:] .* sy[:,Nq,:,:]
-      @test sJ[:,:,4,:] .* nz[:,:,4,:] ≈  J[:,Nq,:,:] .* sz[:,Nq,:,:]
-      @test sJ[:,:,5,:] .* nx[:,:,5,:] ≈ -J[:,:, 1,:] .* tx[:,:, 1,:]
-      @test sJ[:,:,5,:] .* ny[:,:,5,:] ≈ -J[:,:, 1,:] .* ty[:,:, 1,:]
-      @test sJ[:,:,5,:] .* nz[:,:,5,:] ≈ -J[:,:, 1,:] .* tz[:,:, 1,:]
-      @test sJ[:,:,6,:] .* nx[:,:,6,:] ≈  J[:,:,Nq,:] .* tx[:,:,Nq,:]
-      @test sJ[:,:,6,:] .* ny[:,:,6,:] ≈  J[:,:,Nq,:] .* ty[:,:,Nq,:]
-      @test sJ[:,:,6,:] .* nz[:,:,6,:] ≈  J[:,:,Nq,:] .* tz[:,:,Nq,:]
+             [ J[Nq,:,:,:] .* ξx[Nq,:,:,:],  J[Nq,:,:,:] .* ξy[Nq,:,:,:],
+               J[Nq,:,:,:] .* ξz[Nq,:,:,:]])
+      @test sJ[:,:,3,:] .* nx[:,:,3,:] ≈ -J[:, 1,:,:] .* ηx[:, 1,:,:]
+      @test sJ[:,:,3,:] .* ny[:,:,3,:] ≈ -J[:, 1,:,:] .* ηy[:, 1,:,:]
+      @test sJ[:,:,3,:] .* nz[:,:,3,:] ≈ -J[:, 1,:,:] .* ηz[:, 1,:,:]
+      @test sJ[:,:,4,:] .* nx[:,:,4,:] ≈  J[:,Nq,:,:] .* ηx[:,Nq,:,:]
+      @test sJ[:,:,4,:] .* ny[:,:,4,:] ≈  J[:,Nq,:,:] .* ηy[:,Nq,:,:]
+      @test sJ[:,:,4,:] .* nz[:,:,4,:] ≈  J[:,Nq,:,:] .* ηz[:,Nq,:,:]
+      @test sJ[:,:,5,:] .* nx[:,:,5,:] ≈ -J[:,:, 1,:] .* ζx[:,:, 1,:]
+      @test sJ[:,:,5,:] .* ny[:,:,5,:] ≈ -J[:,:, 1,:] .* ζy[:,:, 1,:]
+      @test sJ[:,:,5,:] .* nz[:,:,5,:] ≈ -J[:,:, 1,:] .* ζz[:,:, 1,:]
+      @test sJ[:,:,6,:] .* nx[:,:,6,:] ≈  J[:,:,Nq,:] .* ζx[:,:,Nq,:]
+      @test sJ[:,:,6,:] .* ny[:,:,6,:] ≈  J[:,:,Nq,:] .* ζy[:,:,Nq,:]
+      @test sJ[:,:,6,:] .* nz[:,:,6,:] ≈  J[:,:,Nq,:] .* ζz[:,:,Nq,:]
     end
   end
   #}}}
@@ -682,30 +682,30 @@ end
            yr .* (zs .* xt - zt .* xs) +
            zr .* (xs .* yt - xt .* ys))
 
-      rx =  (ys .* zt - yt .* zs) ./ J
-      ry =  (zs .* xt - zt .* xs) ./ J
-      rz =  (xs .* yt - xt .* ys) ./ J
-      sx =  (yt .* zr - yr .* zt) ./ J
-      sy =  (zt .* xr - zr .* xt) ./ J
-      sz =  (xt .* yr - xr .* yt) ./ J
-      tx =  (yr .* zs - ys .* zr) ./ J
-      ty =  (zr .* xs - zs .* xr) ./ J
-      tz =  (xr .* ys - xs .* yr) ./ J
+      ξx =  (ys .* zt - yt .* zs) ./ J
+      ξy =  (zs .* xt - zt .* xs) ./ J
+      ξz =  (xs .* yt - xt .* ys) ./ J
+      ηx =  (yt .* zr - yr .* zt) ./ J
+      ηy =  (zt .* xr - zr .* xt) ./ J
+      ηz =  (xt .* yr - xr .* yt) ./ J
+      ζx =  (yr .* zs - ys .* zr) ./ J
+      ζy =  (zr .* xs - zs .* xr) ./ J
+      ζz =  (xr .* ys - xs .* yr) ./ J
 
       foreach(j->(x[j], y[j], z[j]) = f(x[j], y[j], z[j]), 1:length(x))
 
       metric = computemetric(x, y, z, D)
 
       @test metric.J ≈ J
-      @test metric.rx ≈ rx
-      @test metric.ry ≈ ry
-      @test metric.rz ≈ rz
-      @test metric.sx ≈ sx
-      @test metric.sy ≈ sy
-      @test metric.sz ≈ sz
-      @test metric.tx ≈ tx
-      @test metric.ty ≈ ty
-      @test metric.tz ≈ tz
+      @test metric.ξx ≈ ξx
+      @test metric.ξy ≈ ξy
+      @test metric.ξz ≈ ξz
+      @test metric.ηx ≈ ηx
+      @test metric.ηy ≈ ηy
+      @test metric.ηz ≈ ηz
+      @test metric.ζx ≈ ζx
+      @test metric.ζy ≈ ζy
+      @test metric.ζz ≈ ζz
       ind = LinearIndices((1:Nq, 1:Nq))
       nx = metric.nx
       ny = metric.ny
@@ -714,24 +714,24 @@ end
       @test hypot.(nx, ny, nz) ≈ ones(T, size(nx))
       @test ([sJ[ind,1,:] .* nx[ind,1,:], sJ[ind,1,:] .* ny[ind,1,:],
               sJ[ind,1,:] .* nz[ind,1,:]] ≈
-             [-J[ 1,:,:,:] .* rx[ 1,:,:,:], -J[ 1,:,:,:] .* ry[ 1,:,:,:],
-              -J[ 1,:,:,:] .* rz[ 1,:,:,:]])
+             [-J[ 1,:,:,:] .* ξx[ 1,:,:,:], -J[ 1,:,:,:] .* ξy[ 1,:,:,:],
+              -J[ 1,:,:,:] .* ξz[ 1,:,:,:]])
       @test ([sJ[ind,2,:] .* nx[ind,2,:], sJ[ind,2,:] .* ny[ind,2,:],
               sJ[ind,2,:] .* nz[ind,2,:]] ≈
-             [ J[Nq,:,:,:] .* rx[Nq,:,:,:],  J[Nq,:,:,:] .* ry[Nq,:,:,:],
-               J[Nq,:,:,:] .* rz[Nq,:,:,:]])
-      @test sJ[ind,3,:] .* nx[ind,3,:] ≈ -J[:, 1,:,:] .* sx[:, 1,:,:]
-      @test sJ[ind,3,:] .* ny[ind,3,:] ≈ -J[:, 1,:,:] .* sy[:, 1,:,:]
-      @test sJ[ind,3,:] .* nz[ind,3,:] ≈ -J[:, 1,:,:] .* sz[:, 1,:,:]
-      @test sJ[ind,4,:] .* nx[ind,4,:] ≈  J[:,Nq,:,:] .* sx[:,Nq,:,:]
-      @test sJ[ind,4,:] .* ny[ind,4,:] ≈  J[:,Nq,:,:] .* sy[:,Nq,:,:]
-      @test sJ[ind,4,:] .* nz[ind,4,:] ≈  J[:,Nq,:,:] .* sz[:,Nq,:,:]
-      @test sJ[ind,5,:] .* nx[ind,5,:] ≈ -J[:,:, 1,:] .* tx[:,:, 1,:]
-      @test sJ[ind,5,:] .* ny[ind,5,:] ≈ -J[:,:, 1,:] .* ty[:,:, 1,:]
-      @test sJ[ind,5,:] .* nz[ind,5,:] ≈ -J[:,:, 1,:] .* tz[:,:, 1,:]
-      @test sJ[ind,6,:] .* nx[ind,6,:] ≈  J[:,:,Nq,:] .* tx[:,:,Nq,:]
-      @test sJ[ind,6,:] .* ny[ind,6,:] ≈  J[:,:,Nq,:] .* ty[:,:,Nq,:]
-      @test sJ[ind,6,:] .* nz[ind,6,:] ≈  J[:,:,Nq,:] .* tz[:,:,Nq,:]
+             [ J[Nq,:,:,:] .* ξx[Nq,:,:,:],  J[Nq,:,:,:] .* ξy[Nq,:,:,:],
+               J[Nq,:,:,:] .* ξz[Nq,:,:,:]])
+      @test sJ[ind,3,:] .* nx[ind,3,:] ≈ -J[:, 1,:,:] .* ηx[:, 1,:,:]
+      @test sJ[ind,3,:] .* ny[ind,3,:] ≈ -J[:, 1,:,:] .* ηy[:, 1,:,:]
+      @test sJ[ind,3,:] .* nz[ind,3,:] ≈ -J[:, 1,:,:] .* ηz[:, 1,:,:]
+      @test sJ[ind,4,:] .* nx[ind,4,:] ≈  J[:,Nq,:,:] .* ηx[:,Nq,:,:]
+      @test sJ[ind,4,:] .* ny[ind,4,:] ≈  J[:,Nq,:,:] .* ηy[:,Nq,:,:]
+      @test sJ[ind,4,:] .* nz[ind,4,:] ≈  J[:,Nq,:,:] .* ηz[:,Nq,:,:]
+      @test sJ[ind,5,:] .* nx[ind,5,:] ≈ -J[:,:, 1,:] .* ζx[:,:, 1,:]
+      @test sJ[ind,5,:] .* ny[ind,5,:] ≈ -J[:,:, 1,:] .* ζy[:,:, 1,:]
+      @test sJ[ind,5,:] .* nz[ind,5,:] ≈ -J[:,:, 1,:] .* ζz[:,:, 1,:]
+      @test sJ[ind,6,:] .* nx[ind,6,:] ≈  J[:,:,Nq,:] .* ζx[:,:,Nq,:]
+      @test sJ[ind,6,:] .* ny[ind,6,:] ≈  J[:,:,Nq,:] .* ζy[:,:,Nq,:]
+      @test sJ[ind,6,:] .* nz[ind,6,:] ≈  J[:,:,Nq,:] .* ζz[:,:,Nq,:]
     end
   end
   #}}}
@@ -777,30 +777,30 @@ end
                       zeros(T, Nq, Nq, Nq))
 
       J  = @view vgeo[:,:,:,VGEO3D.J ,:]
-      rx = @view vgeo[:,:,:,VGEO3D.rx,:]
-      ry = @view vgeo[:,:,:,VGEO3D.ry,:]
-      rz = @view vgeo[:,:,:,VGEO3D.rz,:]
-      sx = @view vgeo[:,:,:,VGEO3D.sx,:]
-      sy = @view vgeo[:,:,:,VGEO3D.sy,:]
-      sz = @view vgeo[:,:,:,VGEO3D.sz,:]
-      tx = @view vgeo[:,:,:,VGEO3D.tx,:]
-      ty = @view vgeo[:,:,:,VGEO3D.ty,:]
-      tz = @view vgeo[:,:,:,VGEO3D.tz,:]
+      ξx = @view vgeo[:,:,:,VGEO3D.ξx,:]
+      ξy = @view vgeo[:,:,:,VGEO3D.ξy,:]
+      ξz = @view vgeo[:,:,:,VGEO3D.ξz,:]
+      ηx = @view vgeo[:,:,:,VGEO3D.ηx,:]
+      ηy = @view vgeo[:,:,:,VGEO3D.ηy,:]
+      ηz = @view vgeo[:,:,:,VGEO3D.ηz,:]
+      ζx = @view vgeo[:,:,:,VGEO3D.ζx,:]
+      ζy = @view vgeo[:,:,:,VGEO3D.ζy,:]
+      ζz = @view vgeo[:,:,:,VGEO3D.ζz,:]
 
       e = 1
       for m = 1:Nq
         for n = 1:Nq
-          Cx[:, n, m] += D * (J[:, n, m, e] .* rx[:, n, m, e])
-          Cx[n, :, m] += D * (J[n, :, m, e] .* sx[n, :, m, e])
-          Cx[n, m, :] += D * (J[n, m, :, e] .* tx[n, m, :, e])
+          Cx[:, n, m] += D * (J[:, n, m, e] .* ξx[:, n, m, e])
+          Cx[n, :, m] += D * (J[n, :, m, e] .* ηx[n, :, m, e])
+          Cx[n, m, :] += D * (J[n, m, :, e] .* ζx[n, m, :, e])
 
-          Cy[:, n, m] += D * (J[:, n, m, e] .* rx[:, n, m, e])
-          Cy[n, :, m] += D * (J[n, :, m, e] .* sx[n, :, m, e])
-          Cy[n, m, :] += D * (J[n, m, :, e] .* tx[n, m, :, e])
+          Cy[:, n, m] += D * (J[:, n, m, e] .* ξx[:, n, m, e])
+          Cy[n, :, m] += D * (J[n, :, m, e] .* ηx[n, :, m, e])
+          Cy[n, m, :] += D * (J[n, m, :, e] .* ζx[n, m, :, e])
 
-          Cz[:, n, m] += D * (J[:, n, m, e] .* rx[:, n, m, e])
-          Cz[n, :, m] += D * (J[n, :, m, e] .* sx[n, :, m, e])
-          Cz[n, m, :] += D * (J[n, m, :, e] .* tx[n, m, :, e])
+          Cz[:, n, m] += D * (J[:, n, m, e] .* ξx[:, n, m, e])
+          Cz[n, :, m] += D * (J[n, :, m, e] .* ηx[n, :, m, e])
+          Cz[n, m, :] += D * (J[n, m, :, e] .* ζx[n, m, :, e])
         end
       end
       @test maximum(abs.(Cx)) ≤ 1000 * eps(T)
