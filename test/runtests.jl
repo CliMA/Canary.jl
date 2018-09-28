@@ -27,6 +27,7 @@ MPI.Finalize()
 
   for (n, f) in [(3, "mpi_test_centriod.jl")
                  (5, "mpi_test_connect_1d.jl")
+                 (2, "mpi_test_connect_ell.jl")
                  (3, "mpi_test_connect.jl")
                  (3, "mpi_test_getpartition.jl")
                  (5, "mpi_test_getpartition.jl")

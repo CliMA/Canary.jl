@@ -782,7 +782,7 @@ function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
     A[MO, j] = o
   end
 
-  A = parallelsortcolumns(comm, A)
+  A = parallelsortcolumns(comm, A, by=x->x[1:nfacevert])
   m, n = size(A)
 
   # match faces
