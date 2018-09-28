@@ -125,7 +125,7 @@ dt = [floatmax(DFloat)]
 if dim == 1
 
 elseif dim == 2
-  (ξx, ξy, ηx, ηy) = (metric.rx, metric.ry, metric.sx, metric.sy)
+  (ξx, ξy, ηx, ηy) = (metric.ξx, metric.ξy, metric.ηx, metric.ηy)
   (Ux, Uy) = (Q.Ux, Q.Uy)
   for n = 1:length(Ux)
     loc_dt = 2 ./ max(abs.(Ux[n] * ξx[n] + Uy[n] * ξy[n]),
@@ -133,9 +133,9 @@ elseif dim == 2
     dt[1] = min(dt[1], loc_dt)
   end
 elseif dim == 3
-  (ξx, ξy, ξz) = (metric.rx, metric.ry, metric.rz)
-  (ηx, ηy, ηz) = (metric.sx, metric.sy, metric.sz)
-  (ζx, ζy, ζz) = (metric.tx, metric.ty, metric.tz)
+  (ξx, ξy, ξz) = (metric.ξx, metric.ξy, metric.ξz)
+  (ηx, ηy, ηz) = (metric.ηx, metric.ηy, metric.ηz)
+  (ζx, ζy, ζz) = (metric.ζx, metric.ζy, metric.ζz)
   (Ux, Uy, Uz) = (Q.Ux, Q.Uy, Q.Uz)
   for n = 1:length(Ux)
     loc_dt = 2 ./ max(abs.(Ux[n] * ξx[n] + Uy[n] * ξy[n] + Uz[n] * ξz[n]),
@@ -207,7 +207,7 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, metric, D, ω,
   (ρ, Ux, Uy) = (Q.ρ, Q.Ux, Q.Uy)
   Nq = size(ρ, 1)
   J = metric.J
-  (ξx, ηx, ξy, ηy) = (metric.rx, metric.sx, metric.ry, metric.sy)
+  (ξx, ηx, ξy, ηy) = (metric.ξx, metric.ηx, metric.ξy, metric.ηy)
   # for each element
   for e ∈ elems
     # loop of ξ-grid lines
@@ -232,9 +232,9 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, D, ω,
   (ρ, Ux, Uy, Uz) = (Q.ρ, Q.Ux, Q.Uy, Q.Uz)
   Nq = size(ρ, 1)
   J = metric.J
-  (ξx, ηx, ζx) = (metric.rx, metric.sx, metric.tx)
-  (ξy, ηy, ζy) = (metric.ry, metric.sy, metric.ty)
-  (ξz, ηz, ζz) = (metric.rz, metric.sz, metric.tz)
+  (ξx, ηx, ζx) = (metric.ξx, metric.ηx, metric.ζx)
+  (ξy, ηy, ζy) = (metric.ξy, metric.ηy, metric.ζy)
+  (ξz, ηz, ζz) = (metric.ξz, metric.ηz, metric.ζz)
   for e ∈ elems
     # loop of ξ-grid lines
     for k = 1:Nq
@@ -307,10 +307,6 @@ function facerhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems, vmapM,
   (ρ, Ux, Uy, Uz) = (Q.ρ, Q.Ux, Q.Uy, Q.Uz)
   nface = 6
   (nx, ny, nz, sJ) = (metric.nx, metric.ny, metric.nz, metric.sJ)
-  nx = reshape(nx, size(vmapM))
-  ny = reshape(ny, size(vmapM))
-  nz = reshape(nz, size(vmapM))
-  sJ = reshape(sJ, size(vmapM))
   for e ∈ elems
     for f ∈ 1:nface
       ρM = ρ[vmapM[:, f, e]]

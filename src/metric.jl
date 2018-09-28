@@ -113,9 +113,9 @@ end
 """
     computemetric!(x::AbstractArray{T, 2},
                    J::AbstractArray{T, 2},
-                   rx::AbstractArray{T, 2},
-                   sJ::AbstractArray{T, 2},
-                   nx::AbstractArray{T, 2},
+                   ξx::AbstractArray{T, 2},
+                   sJ::AbstractArray{T, 3},
+                   nx::AbstractArray{T, 3},
                    D::AbstractMatrix{T}) where T
 
 Compute the 1-D metric terms from the element grid arrays `x`. All the arrays
@@ -123,14 +123,14 @@ are preallocated by the user and the (square) derivative matrix `D` should be
 consistent with the reference grid `r` used in [`creategrid!`](@ref).
 
 If `Nq = size(D, 1)` and `nelem = size(x, 2)` then the volume arrays `x`, `J`,
-and `rx` should all be of size `(Nq, nelem)`.  Similarly, the face arrays `sJ`
-and `nx` should be of size `(Nq, nfaces, nelem)` with `nfaces = 2`.
+and `ξx` should all be of size `(Nq, nelem)`.  Similarly, the face arrays `sJ`
+and `nx` should be of size `(1, nfaces, nelem)` with `nfaces = 2`.
 """
 function computemetric!(x::AbstractArray{T, 2},
                         J::AbstractArray{T, 2},
-                        rx::AbstractArray{T, 2},
-                        sJ::AbstractArray{T, 2},
-                        nx::AbstractArray{T, 2},
+                        ξx::AbstractArray{T, 2},
+                        sJ::AbstractArray{T, 3},
+                        nx::AbstractArray{T, 3},
                         D::AbstractMatrix{T}) where T
   nelem = size(J, 2)
   Nq = size(D, 1)
@@ -139,19 +139,19 @@ function computemetric!(x::AbstractArray{T, 2},
   for e = 1:nelem
     J[:, e] = D * x[:, e]
   end
-  rx .=  1 ./ J
+  ξx .=  1 ./ J
 
-  nx[1, :] .= -sign.(J[ 1, :])
-  nx[2, :] .=  sign.(J[Nq, :])
+  nx[1, 1, :] .= -sign.(J[ 1, :])
+  nx[1, 2, :] .=  sign.(J[Nq, :])
   sJ .= 1
-  (J, rx, sJ, nx)
+  (J, ξx, sJ, nx)
 end
 
 """
     computemetric!(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
                    J::AbstractArray{T, 3},
-                   rx::AbstractArray{T, 3}, sx::AbstractArray{T, 3},
-                   ry::AbstractArray{T, 3}, sy::AbstractArray{T, 3},
+                   ξx::AbstractArray{T, 3}, ηx::AbstractArray{T, 3},
+                   ξy::AbstractArray{T, 3}, ηy::AbstractArray{T, 3},
                    sJ::AbstractArray{T, 3},
                    nx::AbstractArray{T, 3}, ny::AbstractArray{T, 3},
                    D::AbstractMatrix{T}) where T
@@ -161,14 +161,14 @@ arrays are preallocated by the user and the (square) derivative matrix `D`
 should be consistent with the reference grid `r` used in [`creategrid!`](@ref).
 
 If `Nq = size(D, 1)` and `nelem = size(x, 3)` then the volume arrays `x`, `y`,
-`J`, `rx`, `sx`, `ry`, and `sy` should all be of size `(Nq, Nq, nelem)`.
+`J`, `ξx`, `ηx`, `ξy`, and `ηy` should all be of size `(Nq, Nq, nelem)`.
 Similarly, the face arrays `sJ`, `nx`, and `ny` should be of size `(Nq, nfaces,
 nelem)` with `nfaces = 4`.
 """
 function computemetric!(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
                         J::AbstractArray{T, 3},
-                        rx::AbstractArray{T, 3}, sx::AbstractArray{T, 3},
-                        ry::AbstractArray{T, 3}, sy::AbstractArray{T, 3},
+                        ξx::AbstractArray{T, 3}, ηx::AbstractArray{T, 3},
+                        ξy::AbstractArray{T, 3}, ηy::AbstractArray{T, 3},
                         sJ::AbstractArray{T, 3},
                         nx::AbstractArray{T, 3}, ny::AbstractArray{T, 3},
                         D::AbstractMatrix{T}) where T
@@ -177,7 +177,7 @@ function computemetric!(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
   d = 2
 
   # we can resuse this storage
-  (ys, yr, xs, xr) = (rx, sx, ry, sy)
+  (ys, yr, xs, xr) = (ξx, ηx, ξy, ηy)
 
   for e = 1:nelem
     for n = 1:Nq
@@ -216,45 +216,45 @@ function computemetric!(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
     end
   end
   @. J = xr * ys - yr * xs
-  @. rx =  ys / J
-  @. sx = -yr / J
-  @. ry = -xs / J
-  @. sy =  xr / J
+  @. ξx =  ys / J
+  @. ηx = -yr / J
+  @. ξy = -xs / J
+  @. ηy =  xr / J
 
-  @views nx[:, 1, :] .= -J[ 1,  :, :] .* rx[ 1,  :, :]
-  @views ny[:, 1, :] .= -J[ 1,  :, :] .* ry[ 1,  :, :]
-  @views nx[:, 2, :] .=  J[Nq,  :, :] .* rx[Nq,  :, :]
-  @views ny[:, 2, :] .=  J[Nq,  :, :] .* ry[Nq,  :, :]
-  @views nx[:, 3, :] .= -J[ :,  1, :] .* sx[ :,  1, :]
-  @views ny[:, 3, :] .= -J[ :,  1, :] .* sy[ :,  1, :]
-  @views nx[:, 4, :] .=  J[ :, Nq, :] .* sx[ :, Nq, :]
-  @views ny[:, 4, :] .=  J[ :, Nq, :] .* sy[ :, Nq, :]
+  @views nx[:, 1, :] .= -J[ 1,  :, :] .* ξx[ 1,  :, :]
+  @views ny[:, 1, :] .= -J[ 1,  :, :] .* ξy[ 1,  :, :]
+  @views nx[:, 2, :] .=  J[Nq,  :, :] .* ξx[Nq,  :, :]
+  @views ny[:, 2, :] .=  J[Nq,  :, :] .* ξy[Nq,  :, :]
+  @views nx[:, 3, :] .= -J[ :,  1, :] .* ηx[ :,  1, :]
+  @views ny[:, 3, :] .= -J[ :,  1, :] .* ηy[ :,  1, :]
+  @views nx[:, 4, :] .=  J[ :, Nq, :] .* ηx[ :, Nq, :]
+  @views ny[:, 4, :] .=  J[ :, Nq, :] .* ηy[ :, Nq, :]
   @. sJ = hypot(nx, ny)
   @. nx = nx / sJ
   @. ny = ny / sJ
 
-  (J, rx, sx, ry, sy, sJ, nx, ny)
+  (J, ξx, ηx, ξy, ηy, sJ, nx, ny)
 end
 
 """
     computemetric!(x::AbstractArray{T, 4}, y::AbstractArray{T, 4},
                    z::AbstractArray{T, 4}, J::AbstractArray{T, 4},
-                   rx::AbstractArray{T, 4}, sx::AbstractArray{T, 4},
-                   tx::AbstractArray{T, 4} ry::AbstractArray{T, 4},
-                   sy::AbstractArray{T, 4}, ty::AbstractArray{T, 4}
-                   rz::AbstractArray{T, 4}, sz::AbstractArray{T, 4},
-                   tz::AbstractArray{T, 4} sJ::AbstractArray{T, 4},
-                   nx::AbstractArray{T, 4}, ny::AbstractArray{T, 4},
-                   nz::AbstractArray{T, 4}, D::AbstractMatrix{T}) where T
+                   ξx::AbstractArray{T, 4}, ηx::AbstractArray{T, 4},
+                   ζx::AbstractArray{T, 4} ξy::AbstractArray{T, 4},
+                   ηy::AbstractArray{T, 4}, ζy::AbstractArray{T, 4}
+                   ξz::AbstractArray{T, 4}, ηz::AbstractArray{T, 4},
+                   ζz::AbstractArray{T, 4} sJ::AbstractArray{T, 3},
+                   nx::AbstractArray{T, 3}, ny::AbstractArray{T, 3},
+                   nz::AbstractArray{T, 3}, D::AbstractMatrix{T}) where T
 
 Compute the 3-D metric terms from the element grid arrays `x`, `y`, and `z`. All
 the arrays are preallocated by the user and the (square) derivative matrix `D`
 should be consistent with the reference grid `r` used in [`creategrid!`](@ref).
 
 If `Nq = size(D, 1)` and `nelem = size(x, 4)` then the volume arrays `x`, `y`,
-`z`, `J`, `rx`, `sx`, `tx`, `ry`, `sy`, `ty`, `rz`, `sz`, and `tz` should all be
+`z`, `J`, `ξx`, `ηx`, `ζx`, `ξy`, `ηy`, `ζy`, `ξz`, `ηz`, and `ζz` should all be
 of size `(Nq, Nq, Nq, nelem)`.  Similarly, the face arrays `sJ`, `nx`, `ny`, and
-`nz` should be of size `(Nq, Nq, nfaces, nelem)` with `nfaces = 6`.
+`nz` should be of size `(Nq^2, nfaces, nelem)` with `nfaces = 6`.
 
 The curl invariant formulation of Kopriva (2006), equation 37, is used.
 
@@ -267,26 +267,26 @@ function computemetric!(x::AbstractArray{T, 4},
                         y::AbstractArray{T, 4},
                         z::AbstractArray{T, 4},
                         J::AbstractArray{T, 4},
-                        rx::AbstractArray{T, 4},
-                        sx::AbstractArray{T, 4},
-                        tx::AbstractArray{T, 4},
-                        ry::AbstractArray{T, 4},
-                        sy::AbstractArray{T, 4},
-                        ty::AbstractArray{T, 4},
-                        rz::AbstractArray{T, 4},
-                        sz::AbstractArray{T, 4},
-                        tz::AbstractArray{T, 4},
-                        sJ::AbstractArray{T, 4},
-                        nx::AbstractArray{T, 4},
-                        ny::AbstractArray{T, 4},
-                        nz::AbstractArray{T, 4},
+                        ξx::AbstractArray{T, 4},
+                        ηx::AbstractArray{T, 4},
+                        ζx::AbstractArray{T, 4},
+                        ξy::AbstractArray{T, 4},
+                        ηy::AbstractArray{T, 4},
+                        ζy::AbstractArray{T, 4},
+                        ξz::AbstractArray{T, 4},
+                        ηz::AbstractArray{T, 4},
+                        ζz::AbstractArray{T, 4},
+                        sJ::AbstractArray{T, 3},
+                        nx::AbstractArray{T, 3},
+                        ny::AbstractArray{T, 3},
+                        nz::AbstractArray{T, 3},
                         D::AbstractMatrix{T}) where T
 
   nelem = size(J, 4)
   Nq = size(D, 1)
-  (xr, xs, xt) = (rx, sx, tx)
-  (yr, ys, yt) = (ry, sy, ty)
-  (zr, zs, zt) = (rz, sz, tz)
+  (xr, xs, xt) = (ξx, ηx, ζx)
+  (yr, ys, yt) = (ξy, ηy, ζy)
+  (zr, zs, zt) = (ξz, ηz, ζz)
 
   for e = 1:nelem
     for m = 1:Nq
@@ -314,17 +314,17 @@ function computemetric!(x::AbstractArray{T, 4},
   (zxr, zxs, zxt) = (similar(JI2), similar(JI2), similar(JI2))
   (xyr, xys, xyt) = (similar(JI2), similar(JI2), similar(JI2))
 
-  # rx .= (Ds * yzt_zyt - Dt * yzs_zys) ./ (T(2) * J)
-  # sx .= (Dt * yzr_zyr - Dr * yzt_zyt) ./ (T(2) * J)
-  # tx .= (Dr * yzs_zys - Ds * yzr_zyr) ./ (T(2) * J)
+  # ξx .= (Ds * yzt_zyt - Dt * yzs_zys) ./ (T(2) * J)
+  # ηx .= (Dt * yzr_zyr - Dr * yzt_zyt) ./ (T(2) * J)
+  # ζx .= (Dr * yzs_zys - Ds * yzr_zyr) ./ (T(2) * J)
 
-  # ry .= (Ds * zxt_xzt - Dt * zxs_xzs) ./ (T(2) * J)
-  # sy .= (Dt * zxr_xzr - Dr * zxt_xzt) ./ (T(2) * J)
-  # ty .= (Dr * zxs_xzs - Ds * zxr_xzr) ./ (T(2) * J)
+  # ξy .= (Ds * zxt_xzt - Dt * zxs_xzs) ./ (T(2) * J)
+  # ηy .= (Dt * zxr_xzr - Dr * zxt_xzt) ./ (T(2) * J)
+  # ζy .= (Dr * zxs_xzs - Ds * zxr_xzr) ./ (T(2) * J)
 
-  # rz .= (Ds * xyt_yxt - Dt * xys_yxs) ./ (T(2) * J)
-  # sz .= (Dt * xyr_yxr - Dr * xyt_yxt) ./ (T(2) * J)
-  # tz .= (Dr * xys_yxs - Ds * xyr_yxr) ./ (T(2) * J)
+  # ξz .= (Ds * xyt_yxt - Dt * xys_yxs) ./ (T(2) * J)
+  # ηz .= (Dt * xyr_yxr - Dr * xyt_yxt) ./ (T(2) * J)
+  # ζz .= (Dr * xys_yxs - Ds * xyr_yxr) ./ (T(2) * J)
 
   for e = 1:nelem
     for k = 1:Nq
@@ -346,83 +346,89 @@ function computemetric!(x::AbstractArray{T, 4},
         end
       end
     end
-    @views rx[:, :, :, e] .= 0
-    @views sx[:, :, :, e] .= 0
-    @views tx[:, :, :, e] .= 0
-    @views ry[:, :, :, e] .= 0
-    @views sy[:, :, :, e] .= 0
-    @views ty[:, :, :, e] .= 0
-    @views rz[:, :, :, e] .= 0
-    @views sz[:, :, :, e] .= 0
-    @views tz[:, :, :, e] .= 0
+    @views ξx[:, :, :, e] .= 0
+    @views ηx[:, :, :, e] .= 0
+    @views ζx[:, :, :, e] .= 0
+    @views ξy[:, :, :, e] .= 0
+    @views ηy[:, :, :, e] .= 0
+    @views ζy[:, :, :, e] .= 0
+    @views ξz[:, :, :, e] .= 0
+    @views ηz[:, :, :, e] .= 0
+    @views ζz[:, :, :, e] .= 0
     for m = 1:Nq
       for n = 1:Nq
-        @views rx[n, :, m, e] += D * yzt[n, :, m]
-        @views rx[n, m, :, e] -= D * yzs[n, m, :]
+        @views ξx[n, :, m, e] += D * yzt[n, :, m]
+        @views ξx[n, m, :, e] -= D * yzs[n, m, :]
 
-        @views sx[n, m, :, e] += D * yzr[n, m, :]
-        @views sx[:, n, m, e] -= D * yzt[:, n, m]
+        @views ηx[n, m, :, e] += D * yzr[n, m, :]
+        @views ηx[:, n, m, e] -= D * yzt[:, n, m]
 
-        @views tx[:, n, m, e] += D * yzs[:, n, m]
-        @views tx[n, :, m, e] -= D * yzr[n, :, m]
+        @views ζx[:, n, m, e] += D * yzs[:, n, m]
+        @views ζx[n, :, m, e] -= D * yzr[n, :, m]
 
-        @views ry[n, :, m, e] += D * zxt[n, :, m]
-        @views ry[n, m, :, e] -= D * zxs[n, m, :]
+        @views ξy[n, :, m, e] += D * zxt[n, :, m]
+        @views ξy[n, m, :, e] -= D * zxs[n, m, :]
 
-        @views sy[n, m, :, e] += D * zxr[n, m, :]
-        @views sy[:, n, m, e] -= D * zxt[:, n, m]
+        @views ηy[n, m, :, e] += D * zxr[n, m, :]
+        @views ηy[:, n, m, e] -= D * zxt[:, n, m]
 
-        @views ty[:, n, m, e] += D * zxs[:, n, m]
-        @views ty[n, :, m, e] -= D * zxr[n, :, m]
+        @views ζy[:, n, m, e] += D * zxs[:, n, m]
+        @views ζy[n, :, m, e] -= D * zxr[n, :, m]
 
-        @views rz[n, :, m, e] += D * xyt[n, :, m]
-        @views rz[n, m, :, e] -= D * xys[n, m, :]
+        @views ξz[n, :, m, e] += D * xyt[n, :, m]
+        @views ξz[n, m, :, e] -= D * xys[n, m, :]
 
-        @views sz[n, m, :, e] += D * xyr[n, m, :]
-        @views sz[:, n, m, e] -= D * xyt[:, n, m]
+        @views ηz[n, m, :, e] += D * xyr[n, m, :]
+        @views ηz[:, n, m, e] -= D * xyt[:, n, m]
 
-        @views tz[:, n, m, e] += D * xys[:, n, m]
-        @views tz[n, :, m, e] -= D * xyr[n, :, m]
+        @views ζz[:, n, m, e] += D * xys[:, n, m]
+        @views ζz[n, :, m, e] -= D * xyr[n, :, m]
       end
     end
-    @views rx[:, :, :, e] = rx[:, :, :, e] .* JI2
-    @views sx[:, :, :, e] = sx[:, :, :, e] .* JI2
-    @views tx[:, :, :, e] = tx[:, :, :, e] .* JI2
-    @views ry[:, :, :, e] = ry[:, :, :, e] .* JI2
-    @views sy[:, :, :, e] = sy[:, :, :, e] .* JI2
-    @views ty[:, :, :, e] = ty[:, :, :, e] .* JI2
-    @views rz[:, :, :, e] = rz[:, :, :, e] .* JI2
-    @views sz[:, :, :, e] = sz[:, :, :, e] .* JI2
-    @views tz[:, :, :, e] = tz[:, :, :, e] .* JI2
+    @views ξx[:, :, :, e] = ξx[:, :, :, e] .* JI2
+    @views ηx[:, :, :, e] = ηx[:, :, :, e] .* JI2
+    @views ζx[:, :, :, e] = ζx[:, :, :, e] .* JI2
+    @views ξy[:, :, :, e] = ξy[:, :, :, e] .* JI2
+    @views ηy[:, :, :, e] = ηy[:, :, :, e] .* JI2
+    @views ζy[:, :, :, e] = ζy[:, :, :, e] .* JI2
+    @views ξz[:, :, :, e] = ξz[:, :, :, e] .* JI2
+    @views ηz[:, :, :, e] = ηz[:, :, :, e] .* JI2
+    @views ζz[:, :, :, e] = ζz[:, :, :, e] .* JI2
   end
 
-  @views nx[:, :, 1, :] .= -J[ 1, :, :, :] .* rx[ 1, :, :, :]
-  @views nx[:, :, 2, :] .=  J[Nq, :, :, :] .* rx[Nq, :, :, :]
-  @views nx[:, :, 3, :] .= -J[ :, 1, :, :] .* sx[ :, 1, :, :]
-  @views nx[:, :, 4, :] .=  J[ :,Nq, :, :] .* sx[ :,Nq, :, :]
-  @views nx[:, :, 5, :] .= -J[ :, :, 1, :] .* tx[ :, :, 1, :]
-  @views nx[:, :, 6, :] .=  J[ :, :,Nq, :] .* tx[ :, :,Nq, :]
+  nx = reshape(nx, Nq, Nq, 6, nelem)
+  ny = reshape(ny, Nq, Nq, 6, nelem)
+  nz = reshape(nz, Nq, Nq, 6, nelem)
+  @views nx[:, :, 1, :] .= -J[ 1, :, :, :] .* ξx[ 1, :, :, :]
+  @views nx[:, :, 2, :] .=  J[Nq, :, :, :] .* ξx[Nq, :, :, :]
+  @views nx[:, :, 3, :] .= -J[ :, 1, :, :] .* ηx[ :, 1, :, :]
+  @views nx[:, :, 4, :] .=  J[ :,Nq, :, :] .* ηx[ :,Nq, :, :]
+  @views nx[:, :, 5, :] .= -J[ :, :, 1, :] .* ζx[ :, :, 1, :]
+  @views nx[:, :, 6, :] .=  J[ :, :,Nq, :] .* ζx[ :, :,Nq, :]
 
-  @views ny[:, :, 1, :] .= -J[ 1, :, :, :] .* ry[ 1, :, :, :]
-  @views ny[:, :, 2, :] .=  J[Nq, :, :, :] .* ry[Nq, :, :, :]
-  @views ny[:, :, 3, :] .= -J[ :, 1, :, :] .* sy[ :, 1, :, :]
-  @views ny[:, :, 4, :] .=  J[ :,Nq, :, :] .* sy[ :,Nq, :, :]
-  @views ny[:, :, 5, :] .= -J[ :, :, 1, :] .* ty[ :, :, 1, :]
-  @views ny[:, :, 6, :] .=  J[ :, :,Nq, :] .* ty[ :, :,Nq, :]
+  @views ny[:, :, 1, :] .= -J[ 1, :, :, :] .* ξy[ 1, :, :, :]
+  @views ny[:, :, 2, :] .=  J[Nq, :, :, :] .* ξy[Nq, :, :, :]
+  @views ny[:, :, 3, :] .= -J[ :, 1, :, :] .* ηy[ :, 1, :, :]
+  @views ny[:, :, 4, :] .=  J[ :,Nq, :, :] .* ηy[ :,Nq, :, :]
+  @views ny[:, :, 5, :] .= -J[ :, :, 1, :] .* ζy[ :, :, 1, :]
+  @views ny[:, :, 6, :] .=  J[ :, :,Nq, :] .* ζy[ :, :,Nq, :]
 
-  @views nz[:, :, 1, :] .= -J[ 1, :, :, :] .* rz[ 1, :, :, :]
-  @views nz[:, :, 2, :] .=  J[Nq, :, :, :] .* rz[Nq, :, :, :]
-  @views nz[:, :, 3, :] .= -J[ :, 1, :, :] .* sz[ :, 1, :, :]
-  @views nz[:, :, 4, :] .=  J[ :,Nq, :, :] .* sz[ :,Nq, :, :]
-  @views nz[:, :, 5, :] .= -J[ :, :, 1, :] .* tz[ :, :, 1, :]
-  @views nz[:, :, 6, :] .=  J[ :, :,Nq, :] .* tz[ :, :,Nq, :]
+  @views nz[:, :, 1, :] .= -J[ 1, :, :, :] .* ξz[ 1, :, :, :]
+  @views nz[:, :, 2, :] .=  J[Nq, :, :, :] .* ξz[Nq, :, :, :]
+  @views nz[:, :, 3, :] .= -J[ :, 1, :, :] .* ηz[ :, 1, :, :]
+  @views nz[:, :, 4, :] .=  J[ :,Nq, :, :] .* ηz[ :,Nq, :, :]
+  @views nz[:, :, 5, :] .= -J[ :, :, 1, :] .* ζz[ :, :, 1, :]
+  @views nz[:, :, 6, :] .=  J[ :, :,Nq, :] .* ζz[ :, :,Nq, :]
+  nx = reshape(nx, Nq * Nq, 6, nelem)
+  ny = reshape(ny, Nq * Nq, 6, nelem)
+  nz = reshape(nz, Nq * Nq, 6, nelem)
 
   @. sJ = hypot(nx, ny, nz)
   @. nx = nx / sJ
   @. ny = ny / sJ
   @. nz = nz / sJ
 
-  (J, rx, sx, tx, ry, sy, ty, rz, sz, tz, sJ, nx, ny, nz)
+  (J, ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz, sJ, nx, ny, nz)
 end
 
 creategrid1d(elemtocoord, r) = creategrid(Val(1), elemtocoord, r)
@@ -502,7 +508,7 @@ reference grid `r` used in [`creategrid!`](@ref).
 The metric terms are returned as a 'NamedTuple` of the following arrays:
 
  - `J` the Jacobian determinant
- - `rx` derivative ∂r / ∂x'
+ - `ξx` derivative ∂r / ∂x'
  - `sJ` the surface Jacobian
  - 'nx` outward pointing unit normal in \$x\$-direction
 """
@@ -514,14 +520,14 @@ function computemetric(x::AbstractArray{T, 2},
   nface = 2
 
   J = similar(x)
-  rx = similar(x)
+  ξx = similar(x)
 
-  sJ = Array{T, 2}(undef, nface, nelem)
-  nx = Array{T, 2}(undef, nface, nelem)
+  sJ = Array{T, 3}(undef, 1, nface, nelem)
+  nx = Array{T, 3}(undef, 1, nface, nelem)
 
-  computemetric!(x, J, rx, sJ, nx, D)
+  computemetric!(x, J, ξx, sJ, nx, D)
 
-  (J=J, rx=rx, sJ=sJ, nx=nx)
+  (J=J, ξx=ξx, sJ=sJ, nx=nx)
 end
 
 
@@ -536,10 +542,10 @@ reference grid `r` used in [`creategrid!`](@ref).
 The metric terms are returned as a 'NamedTuple` of the following arrays:
 
  - `J` the Jacobian determinant
- - `rx` derivative ∂r / ∂x'
- - `sx` derivative ∂s / ∂x'
- - `ry` derivative ∂r / ∂y'
- - `sy` derivative ∂s / ∂y'
+ - `ξx` derivative ∂r / ∂x'
+ - `ηx` derivative ∂s / ∂x'
+ - `ξy` derivative ∂r / ∂y'
+ - `ηy` derivative ∂s / ∂y'
  - `sJ` the surface Jacobian
  - 'nx` outward pointing unit normal in \$x\$-direction
  - 'ny` outward pointing unit normal in \$y\$-direction
@@ -553,18 +559,18 @@ function computemetric(x::AbstractArray{T, 3},
   nface = 4
 
   J = similar(x)
-  rx = similar(x)
-  sx = similar(x)
-  ry = similar(x)
-  sy = similar(x)
+  ξx = similar(x)
+  ηx = similar(x)
+  ξy = similar(x)
+  ηy = similar(x)
 
   sJ = Array{T, 3}(undef, Nq, nface, nelem)
   nx = Array{T, 3}(undef, Nq, nface, nelem)
   ny = Array{T, 3}(undef, Nq, nface, nelem)
 
-  computemetric!(x, y, J, rx, sx, ry, sy, sJ, nx, ny, D)
+  computemetric!(x, y, J, ξx, ηx, ξy, ηy, sJ, nx, ny, D)
 
-  (J=J, rx=rx, sx=sx, ry=ry, sy=sy, sJ=sJ, nx=nx, ny=ny)
+  (J=J, ξx=ξx, ηx=ηx, ξy=ξy, ηy=ηy, sJ=sJ, nx=nx, ny=ny)
 end
 
 """
@@ -578,15 +584,15 @@ with the reference grid `r` used in [`creategrid!`](@ref).
 The metric terms are returned as a 'NamedTuple` of the following arrays:
 
  - `J` the Jacobian determinant
- - `rx` derivative ∂r / ∂x'
- - `sx` derivative ∂s / ∂x'
- - `tx` derivative ∂t / ∂x'
- - `ry` derivative ∂r / ∂y'
- - `sy` derivative ∂s / ∂y'
- - `ty` derivative ∂t / ∂y'
- - `rz` derivative ∂r / ∂z'
- - `sz` derivative ∂s / ∂z'
- - `tz` derivative ∂t / ∂z'
+ - `ξx` derivative ∂r / ∂x'
+ - `ηx` derivative ∂s / ∂x'
+ - `ζx` derivative ∂t / ∂x'
+ - `ξy` derivative ∂r / ∂y'
+ - `ηy` derivative ∂s / ∂y'
+ - `ζy` derivative ∂t / ∂y'
+ - `ξz` derivative ∂r / ∂z'
+ - `ηz` derivative ∂s / ∂z'
+ - `ζz` derivative ∂t / ∂z'
  - `sJ` the surface Jacobian
  - 'nx` outward pointing unit normal in \$x\$-direction
  - 'ny` outward pointing unit normal in \$y\$-direction
@@ -603,24 +609,24 @@ function computemetric(x::AbstractArray{T, 4},
   nface = 6
 
   J = similar(x)
-  rx = similar(x)
-  sx = similar(x)
-  tx = similar(x)
-  ry = similar(x)
-  sy = similar(x)
-  ty = similar(x)
-  rz = similar(x)
-  sz = similar(x)
-  tz = similar(x)
+  ξx = similar(x)
+  ηx = similar(x)
+  ζx = similar(x)
+  ξy = similar(x)
+  ηy = similar(x)
+  ζy = similar(x)
+  ξz = similar(x)
+  ηz = similar(x)
+  ζz = similar(x)
 
-  sJ = Array{T, 4}(undef, Nq, Nq, nface, nelem)
-  nx = Array{T, 4}(undef, Nq, Nq, nface, nelem)
-  ny = Array{T, 4}(undef, Nq, Nq, nface, nelem)
-  nz = Array{T, 4}(undef, Nq, Nq, nface, nelem)
+  sJ = Array{T, 3}(undef, Nq^2, nface, nelem)
+  nx = Array{T, 3}(undef, Nq^2, nface, nelem)
+  ny = Array{T, 3}(undef, Nq^2, nface, nelem)
+  nz = Array{T, 3}(undef, Nq^2, nface, nelem)
 
-  computemetric!(x, y, z, J, rx, sx, tx, ry, sy, ty, rz, sz, tz, sJ,
+  computemetric!(x, y, z, J, ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz, sJ,
                  nx, ny, nz, D)
 
-  (J=J, rx=rx, sx=sx, tx=tx, ry=ry, sy=sy, ty=ty, rz=rz, sz=sz, tz=tz, sJ=sJ,
+  (J=J, ξx=ξx, ηx=ηx, ζx=ζx, ξy=ξy, ηy=ηy, ζy=ζy, ξz=ξz, ηz=ηz, ζz=ζz, sJ=sJ,
    nx=nx, ny=ny, nz=nz)
 end
