@@ -96,22 +96,29 @@ metric = computemetric(coord..., D)
 
 # Get the distance from the center
 if dim == 1
-  r = abs.(coord.x .- 0.5)
   statesyms = (:ρ, :Ux)
 elseif dim == 2
-  r = hypot.(coord.x .- 0.5, coord.y .- 0.5)
   statesyms = (:ρ, :Ux, :Uy)
 elseif dim == 3
-  r = hypot.(coord.x .- 0.5, coord.y .- 0.5, coord.z .- 0.5)
   statesyms = (:ρ, :Ux, :Uy, :Uz)
 end
 
 # Create storage for state vector and right-hand side
 Q   = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))
 rhs = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))
-Q.ρ .= exp.(-100 * r.^2)
-Q.Ux .= 1
-Q.Uy .= -1
+if dim == 1
+  Q.ρ .= sin.(2 * π * x)
+  Q.Ux .= 1
+elseif dim == 2
+  Q.ρ .= sin.(2 * π * x) .* sin.(2 *  π * y)
+  Q.Ux .= 1
+  Q.Uy .= -1
+elseif dim == 3
+  Q.ρ .= sin.(2 * π * x) .* sin.(2 *  π * y) .* sin.(2 * π * y)
+  Q.Ux .= 1
+  Q.Uy .= -1
+  Q.Uz .= 1
+end
 
 # set dt and number of steps
 dt = [floatmax(DFloat)]
@@ -139,10 +146,28 @@ elseif dim == 3
 end
 dt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
 dt = DFloat(dt / N^sqrt(2))
-tend = DFloat(1)
+tend = DFloat(0.1)
 nsteps = ceil(Int64, tend / dt)
 dt = tend / nsteps
 @show (dt, nsteps)
+
+# Here we store the exact solution at the end time.  Later Δ will be used to
+# store the difference between exact and the computed solution
+Δ   = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))
+if dim == 1
+  Δ.ρ .= sin.(2 * π * (x - tend * Q.Ux))
+  Δ.Ux .=  Q.Ux
+elseif dim == 2
+  Δ.ρ .= sin.(2 * π * (x - tend * Q.Ux)) .* sin.(2 *  π * (y - tend * Q.Uy))
+  Δ.Ux .=  Q.Ux
+  Δ.Uy .=  Q.Uy
+elseif dim == 3
+  Δ.ρ .= sin.(2 * π * (x - tend * Q.Ux)) .* sin.(2 *  π * (y - tend * Q.Uy)) .*
+         sin.(2 * π * (z - tend * Q.Uz))
+  Δ.Ux .=  Q.Ux
+  Δ.Uy .=  Q.Uy
+  Δ.Uz .=  Q.Uz
+end
 
 # Fourth-order, low-storage, Runge–Kutta scheme of Carpenter and Kennedy (1994)
 # ((5,4) 2N-Storage RK scheme.
@@ -343,6 +368,60 @@ function updatesolution!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems,
   end
 end
 
+# L2 Error: 1-D
+function L2energy(Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems) where {S, T}
+  J = metric.J
+  Nq = length(ω)
+  M = ω
+  index = CartesianIndices(ntuple(j->1:Nq, Val(1)))
+
+  energy = [zero(J[1])]
+  for q ∈ Q
+    for e ∈ elems
+      for ind ∈ index
+        energy[1] += M[ind] * J[ind, e] * q[ind, e]^2
+      end
+    end
+  end
+  energy[1]
+end
+
+# L2 Error: 2-D
+function L2energy(Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems) where {S, T}
+  J = metric.J
+  Nq = length(ω)
+  M = reshape(kron(ω, ω), Nq, Nq)
+  index = CartesianIndices(ntuple(j->1:Nq, Val(2)))
+
+  energy = [zero(J[1])]
+  for q ∈ Q
+    for e ∈ elems
+      for ind ∈ index
+        energy[1] += M[ind] * J[ind, e] * q[ind, e]^2
+      end
+    end
+  end
+  energy[1]
+end
+
+# L2 Error: 3-D
+function L2energy(Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems) where {S, T}
+  J = metric.J
+  Nq = length(ω)
+  M = reshape(kron(ω, ω, ω), Nq, Nq, Nq)
+  index = CartesianIndices(ntuple(j->1:Nq, Val(3)))
+
+  energy = [zero(J[1])]
+  for q ∈ Q
+    for e ∈ elems
+      for ind ∈ index
+        energy[1] += M[ind] * J[ind, e] * q[ind, e]^2
+      end
+    end
+  end
+  energy[1]
+end
+
 # How many MPI neighbors do we have?
 numnabr = length(mesh.nabrtorank)
 
@@ -367,7 +446,7 @@ writemesh(@sprintf("Advection%dD_rank_%04d_step_%05d", dim, mpirank, 0),
           coord...; fields=(("ρ", Q.ρ),), realelems=mesh.realelems)
 
 for step = 1:nsteps
-  @show step
+  mpirank == 0 && @show step
   for s = 1:length(RKA)
     # post MPI receives
     for (nnabr, nabrrank, nabrelem) ∈ zip(1:numnabr, mesh.nabrtorank,
@@ -417,5 +496,17 @@ for step = 1:nsteps
   writemesh(@sprintf("Advection%dD_rank_%04d_step_%05d", dim, mpirank, step),
             coord...; fields=(("ρ", Q.ρ),), realelems=mesh.realelems)
 end
+
+for (δ, q) ∈ zip(Δ, Q)
+  δ .-= q
+end
+eng = L2energy(Q, metric, ω, mesh.realelems)
+eng = MPI.Allreduce(eng, MPI.SUM, mpicomm)
+mpirank == 0 && @show sqrt(eng)
+
+err = L2energy(Δ, metric, ω, mesh.realelems)
+err = MPI.Allreduce(err, MPI.SUM, mpicomm)
+mpirank == 0 && @show sqrt(err)
+
 
 nothing
