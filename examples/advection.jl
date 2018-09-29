@@ -2,7 +2,7 @@
 # # Advection Equation Example
 #
 #
-# ![](advection.png)
+# ![](advection2d.png)
 #-
 #
 #-
@@ -43,8 +43,8 @@
 # N is polynomial order and
 # brickN(Ne) generates a brick-grid with Ne elements in each direction
 N = 4 #polynomial order
-#brickN = (10) #1D brickmesh
-brickN = (1 * 12, 1 * 12) #2D brickmesh
+brickN = (10) #1D brickmesh
+#brickN = (1 * 12, 1 * 12) #2D brickmesh
 # brickN = (10, 10, 10) #3D brickmesh
 DFloat = Float64 #Number Type
 
@@ -202,7 +202,7 @@ elseif dim == 3
 end
 dt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
 dt = DFloat(dt / N^sqrt(2))
-tend = DFloat(0.1)
+tend = DFloat(1.0)
 nsteps = ceil(Int64, tend / dt)
 dt = tend / nsteps
 @show (dt, nsteps)
