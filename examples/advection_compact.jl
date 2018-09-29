@@ -114,6 +114,12 @@ function computegeometry(dim, mesh, D, ξ, ω, meshwarp)
 
   # TODO: scale metric terms with ω (J, sJ, etc.) and compute (scaled) JI
 
+  M = reshape(kron(1, fill(ω, dim)...), fill(length(ω), dim)...)
+  MJ = M .* metric.J
+  MJI = 1 ./ MJ
+
+  metric = NamedTuple{(keys(metric)..., :MJ, :MJI)}((metric..., MJ, MJI))
+
   (crd, metric)
 end
 
@@ -126,32 +132,6 @@ function facerhs!(rhs, (ρ, Ux)::NamedTuple{(:ρ, :Ux)}, metric, ω, elems, vmap
                   vmapP)
   # FIXME
 end
-
-# Update for 1-D
-function updatesolution!(rhs, Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems,
-                         rka, rkb, dt) where {S, T}
-  # FIXME
-end
-
-# L2 Error: 1-D
-# TODO: Clean up!
-function L2energy(Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems) where {S, T}
-  J = metric.J
-  Nq = length(ω)
-  M = ω
-  index = CartesianIndices(ntuple(j->1:Nq, Val(1)))
-
-  energy = [zero(J[1])]
-  for q ∈ Q
-    for e ∈ elems
-      for ind ∈ index
-        energy[1] += M[ind] * J[ind, e] * q[ind, e]^2
-      end
-    end
-  end
-  energy[1]
-end
-
 
 # Volume RHS for 2-D
 # TODO: Clean up!
@@ -207,39 +187,6 @@ function facerhs!(rhs, (ρ, Ux, Uy)::NamedTuple{(:ρ, :Ux, :Uy)}, metric, ω,
       rhsρ[vmapM[:, f, e]] -= ω .* sJ[:, f, e] .* F
     end
   end
-end
-
-# Update for 2-D
-# TODO: Clean up!
-function updatesolution!(rhs, Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems,
-                         rka, rkb, dt) where {S, T}
-  J = metric.J
-  M = reshape(kron(ω, ω), length(ω), length(ω))
-  for (rhsq, q) ∈ zip(rhs, Q)
-    for e ∈ elems
-      q[:, :, e] += rkb * dt * rhsq[:, :, e] ./ (M .* J[:, :, e])
-      rhsq[:, :, e] *= rka
-    end
-  end
-end
-
-# L2 Error: 2-D
-# TODO: Clean up!
-function L2energy(Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems) where {S, T}
-  J = metric.J
-  Nq = length(ω)
-  M = reshape(kron(ω, ω), Nq, Nq)
-  index = CartesianIndices(ntuple(j->1:Nq, Val(2)))
-
-  energy = [zero(J[1])]
-  for q ∈ Q
-    for e ∈ elems
-      for ind ∈ index
-        energy[1] += M[ind] * J[ind, e] * q[ind, e]^2
-      end
-    end
-  end
-  energy[1]
 end
 
 # Volume RHS for 3-D
@@ -324,39 +271,24 @@ function facerhs!(rhs, (ρ, Ux, Uy, Uz)::NamedTuple{(:ρ, :Ux, :Uy, :Uz)}, metri
   end
 end
 
-# Update for 3-D
-# TODO: Clean up!
-function updatesolution!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems,
-                         rka, rkb, dt) where {S, T}
-  J = metric.J
-  M = reshape(kron(ω, ω, ω), length(ω), length(ω), length(ω))
+# Update solution (for all dimensions)
+function updatesolution!(rhs, Q, metric, ω, elems, rka, rkb, dt)
+  MJI = metric.MJI
   for (rhsq, q) ∈ zip(rhs, Q)
-    for e ∈ elems
-      q[:, :, :, e] += rkb * dt * rhsq[:, :, :, e] ./ (M .* J[:, :, :, e])
-      rhsq[:, :, :, e] *= rka
-    end
+    q .+= rkb .* dt .* rhsq .* MJI
+    rhsq .*= rka
   end
 end
 
-# L2 Error: 3-D
-# TODO: Clean up!
-function L2energy(Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems) where {S, T}
-  J = metric.J
-  Nq = length(ω)
-  M = reshape(kron(ω, ω, ω), Nq, Nq, Nq)
-  index = CartesianIndices(ntuple(j->1:Nq, Val(3)))
-
-  energy = [zero(J[1])]
+# L2 Error (for all dimensions)
+function L2energysquared(Q, metric, ω, elems)
+  MJ = metric.MJ
+  energy = [DFloat(0)]
   for q ∈ Q
-    for e ∈ elems
-      for ind ∈ index
-        energy[1] += M[ind] * J[ind, e] * q[ind, e]^2
-      end
-    end
+    energy[1] += mapreduce(((MJ, q),) -> MJ * q^2, +, zip(MJ, q))
   end
   energy[1]
 end
-
 
 function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
                       vmapP)
@@ -472,10 +404,10 @@ function main(ic, N, brickN::NTuple{dim, Int}, tend;
 
   # Do time stepping
   eng = [DFloat(0),  DFloat(0)]
-  eng[1] = √MPI.Allreduce(L2energy(Q, metric, ω, mesh.realelems), MPI.SUM,
+  eng[1] = √MPI.Allreduce(L2energysquared(Q, metric, ω, mesh.realelems), MPI.SUM,
                           mpicomm)
   lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM, vmapP)
-  eng[2] = √MPI.Allreduce(L2energy(Q, metric, ω, mesh.realelems), MPI.SUM,
+  eng[2] = √MPI.Allreduce(L2energysquared(Q, metric, ω, mesh.realelems), MPI.SUM,
                           mpicomm)
   mpirank == 0 && @show eng
   mpirank == 0 && @show diff(eng)
@@ -485,7 +417,7 @@ function main(ic, N, brickN::NTuple{dim, Int}, tend;
     Q.ρ[i] - ic.ρ(ntuple(j -> x[j] - Q[(:Ux, :Uy, :Uz)[j]][i] * tend,
                          Val(dim))...)
   end
-  err = √MPI.Allreduce(L2energy(Δ, metric, ω, mesh.realelems), MPI.SUM, mpicomm)
+  err = √MPI.Allreduce(L2energysquared(Δ, metric, ω, mesh.realelems), MPI.SUM, mpicomm)
   mpirank == 0 && @show err
 end
 
