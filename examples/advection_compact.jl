@@ -358,7 +358,8 @@ function L2energy(Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems) where {S, T
 end
 
 
-function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, vmapM, vmapP)
+function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
+                      vmapP)
   # TODO: Think about output?
 
   # Exact polynomial order
@@ -378,8 +379,12 @@ function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, vmapM, vmapP
   index = CartesianIndices(ntuple(j->1:N+1, dim))
   nrealelem = length(mesh.realelems)
 
+  t1 = time_ns()
   for step = 1:nsteps
-    mpirank == 0 && @show (step, nsteps)
+    if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
+      t1 = time_ns()
+      @show (step, nsteps)
+    end
     for s = 1:length(RKA)
       # post MPI receives
       map!(recvreq, mesh.nabrtorank, mesh.nabrtorecv) do nabrrank, nabrelem
@@ -425,7 +430,8 @@ function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, vmapM, vmapP
 end
 
 function main(ic, N, brickN::NTuple{dim, Int}, tend;
-              meshwarp=(x...)->identity(x)) where dim
+              meshwarp=(x...)->identity(x),
+              tout = 1) where dim
 
   mesh = createmesh(brickN)
 
@@ -466,9 +472,11 @@ function main(ic, N, brickN::NTuple{dim, Int}, tend;
 
   # Do time stepping
   eng = [DFloat(0),  DFloat(0)]
-  eng[1] = √MPI.Allreduce(L2energy(Q, metric, ω, mesh.realelems), MPI.SUM, mpicomm)
-  lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, vmapM, vmapP)
-  eng[2] = √MPI.Allreduce(L2energy(Q, metric, ω, mesh.realelems), MPI.SUM, mpicomm)
+  eng[1] = √MPI.Allreduce(L2energy(Q, metric, ω, mesh.realelems), MPI.SUM,
+                          mpicomm)
+  lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM, vmapP)
+  eng[2] = √MPI.Allreduce(L2energy(Q, metric, ω, mesh.realelems), MPI.SUM,
+                          mpicomm)
   mpirank == 0 && @show eng
   mpirank == 0 && @show diff(eng)
 
@@ -496,8 +504,15 @@ Ux(x...) = -1.5
 Uy(x...) = -π
 Uz(x...) =  exp(1)
 
+println("Running 1d...")
 main((ρ=ρ1D, Ux=Ux), 5, (2, ), π; meshwarp=warping1D)
+println()
+
+println("Running 2d...")
 main((ρ=ρ2D, Ux=Ux, Uy=Uy), 5, (2, 2), π; meshwarp=warping2D)
+println()
+
+println("Running 3d...")
 main((ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), 5, (3, 3, 3), π; meshwarp=warping3D)
 
 nothing
