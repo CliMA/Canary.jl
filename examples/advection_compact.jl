@@ -135,6 +135,7 @@ end
 
 # Volume RHS for 2-D
 # TODO: Clean up!
+# TODO: Optimize
 function volumerhs!(rhs, (ρ, Ux, Uy)::NamedTuple{(:ρ, :Ux, :Uy)}, metric, D, ω,
                     elems)
   rhsρ = rhs.ρ
@@ -160,6 +161,7 @@ end
 
 # Face RHS for 2-D
 # TODO: Clean up!
+# TODO: Optimize
 function facerhs!(rhs, (ρ, Ux, Uy)::NamedTuple{(:ρ, :Ux, :Uy)}, metric, ω,
                   elems, vmapM, vmapP)
   rhsρ = rhs.ρ
@@ -191,6 +193,7 @@ end
 
 # Volume RHS for 3-D
 # TODO: Clean up!
+# TODO: Optimize
 function volumerhs!(rhs, (ρ, Ux, Uy, Uz)::NamedTuple{(:ρ, :Ux, :Uy, :Uz)},
                     metric, D, ω, elems)
   rhsρ = rhs.ρ
@@ -235,6 +238,7 @@ end
 
 # Face RHS for 3-D
 # TODO: Clean up!
+# TODO: Optimize
 function facerhs!(rhs, (ρ, Ux, Uy, Uz)::NamedTuple{(:ρ, :Ux, :Uy, :Uz)}, metric,
                   ω, elems, vmapM, vmapP)
   rhsρ = rhs.ρ
@@ -272,20 +276,33 @@ function facerhs!(rhs, (ρ, Ux, Uy, Uz)::NamedTuple{(:ρ, :Ux, :Uy, :Uz)}, metri
 end
 
 # Update solution (for all dimensions)
-function updatesolution!(rhs, Q, metric, ω, elems, rka, rkb, dt)
+function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, metric, ω, elems, rka,
+                         rkb, dt) where {dim, N}
   MJI = metric.MJI
-  for (rhsq, q) ∈ zip(rhs, Q)
-    q .+= rkb .* dt .* rhsq .* MJI
-    rhsq .*= rka
+  ind = CartesianIndices(ntuple(j->1:N+1, Val(dim)))
+  @inbounds for (rhsq, q) ∈ zip(rhs, Q)
+    for e ∈ elems
+      @simd for i ∈ ind
+        q[i, e] += rkb * dt * rhsq[i, e] * MJI[i, e]
+        rhsq[i, e] *= rka
+      end
+    end
   end
 end
 
 # L2 Error (for all dimensions)
-function L2energysquared(Q, metric, ω, elems)
+# TODO: Optimize
+function L2energysquared(::Val{dim}, Q, metric, ω, elems) where dim
   MJ = metric.MJ
+  Nq = size(MJ, 1)
   energy = [DFloat(0)]
+  ind = CartesianIndices(ntuple(j->1:Nq, Val(dim)))
   for q ∈ Q
-    energy[1] += mapreduce(((MJ, q),) -> MJ * q^2, +, zip(MJ, q))
+    for e ∈ elems
+      for i ∈ ind
+        energy[1] += MJ[i, e] * q[i, e]^2
+      end
+    end
   end
   energy[1]
 end
@@ -355,8 +372,8 @@ function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
       facerhs!(rhs, Q, metric, ω, mesh.realelems, vmapM, vmapP)
 
       # update solution and scale RHS
-      updatesolution!(rhs, Q, metric, ω, mesh.realelems, RKA[s%length(RKA)+1],
-                      RKB[s], dt)
+      updatesolution!(Val(dim), Val(N), rhs, Q, metric, ω, mesh.realelems,
+                      RKA[s%length(RKA)+1], RKB[s], dt)
     end
   end
 end
@@ -404,11 +421,11 @@ function main(ic, N, brickN::NTuple{dim, Int}, tend;
 
   # Do time stepping
   eng = [DFloat(0),  DFloat(0)]
-  eng[1] = √MPI.Allreduce(L2energysquared(Q, metric, ω, mesh.realelems), MPI.SUM,
-                          mpicomm)
+  eng[1] = √MPI.Allreduce(L2energysquared(Val(dim), Q, metric, ω,
+                                          mesh.realelems), MPI.SUM, mpicomm)
   lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM, vmapP)
-  eng[2] = √MPI.Allreduce(L2energysquared(Q, metric, ω, mesh.realelems), MPI.SUM,
-                          mpicomm)
+  eng[2] = √MPI.Allreduce(L2energysquared(Val(dim), Q, metric, ω,
+                                          mesh.realelems), MPI.SUM, mpicomm)
   mpirank == 0 && @show eng
   mpirank == 0 && @show diff(eng)
 
@@ -417,7 +434,8 @@ function main(ic, N, brickN::NTuple{dim, Int}, tend;
     Q.ρ[i] - ic.ρ(ntuple(j -> x[j] - Q[(:Ux, :Uy, :Uz)[j]][i] * tend,
                          Val(dim))...)
   end
-  err = √MPI.Allreduce(L2energysquared(Δ, metric, ω, mesh.realelems), MPI.SUM, mpicomm)
+  err = √MPI.Allreduce(L2energysquared(Val(dim), Δ, metric, ω, mesh.realelems),
+                       MPI.SUM, mpicomm)
   mpirank == 0 && @show err
 end
 
@@ -436,15 +454,15 @@ Ux(x...) = -1.5
 Uy(x...) = -π
 Uz(x...) =  exp(1)
 
-println("Running 1d...")
+mpirank == 0 && println("Running 1d...")
 main((ρ=ρ1D, Ux=Ux), 5, (2, ), π; meshwarp=warping1D)
-println()
+mpirank == 0 && println()
 
-println("Running 2d...")
+mpirank == 0 && println("Running 2d...")
 main((ρ=ρ2D, Ux=Ux, Uy=Uy), 5, (2, 2), π; meshwarp=warping2D)
-println()
+mpirank == 0 && println()
 
-println("Running 3d...")
+mpirank == 0 && println("Running 3d...")
 main((ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), 5, (3, 3, 3), π; meshwarp=warping3D)
 
 nothing
