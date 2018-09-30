@@ -16,7 +16,7 @@
 # ```math
 # \frac{\partial \rho}{\partial t} + \nabla \cdot \left( \rho \mathbf{u} \right) = 0 \; \; (1)
 # ```
-# where $\mathbf{u}=(u,v,w)$ depending on how many spatial dimensions we are using.  We only solve passive transport here so $\mathbf{u}$ is given for all time and does not change.
+# where $\mathbf{u}=(u,v,w)$ depending on how many spatial dimensions we are using.  We only solve passive transport here so $\mathbf{u}$ is given for all time and does not change. We employ periodic boundary conditions across all the walls of the domain.
 #
 #-
 # ## Discontinous Galerkin Method
@@ -43,10 +43,11 @@
 # N is polynomial order and
 # brickN(Ne) generates a brick-grid with Ne elements in each direction
 N = 4 #polynomial order
-brickN = (10) #1D brickmesh
-#brickN = (1 * 12, 1 * 12) #2D brickmesh
-# brickN = (10, 10, 10) #3D brickmesh
+#brickN = (10) #1D brickmesh
+#brickN = (10, 10) #2D brickmesh
+brickN = (10, 10, 10) #3D brickmesh
 DFloat = Float64 #Number Type
+tend = DFloat(1.0) #Final Time
 
 # ### Load the MPI and Canary packages where Canary builds the mesh, generates basis functions, and metric terms.
 using MPI
@@ -161,11 +162,12 @@ if dim == 1
 elseif dim == 2
   Q.ρ .= sin.(2 * π * x) .* sin.(2 *  π * y)
   Q.Ux .= 1
-  Q.Uy .= -1
+  Q.Uy .= 1
 elseif dim == 3
-  Q.ρ .= sin.(2 * π * x) .* sin.(2 *  π * y) .* sin.(2 * π * y)
+  Q.ρ .= sin.(2 * π * x) .* sin.(2 *  π * y) .* sin.(2 * π * z)
+#  Q.ρ .= sin.(2 * π * x) .* sin.(2 *  π * y)
   Q.Ux .= 1
-  Q.Uy .= -1
+  Q.Uy .= 1
   Q.Uz .= 1
 end
 
@@ -202,7 +204,6 @@ elseif dim == 3
 end
 dt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
 dt = DFloat(dt / N^sqrt(2))
-tend = DFloat(1.0)
 nsteps = ceil(Int64, tend / dt)
 dt = tend / nsteps
 @show (dt, nsteps)
@@ -218,8 +219,8 @@ elseif dim == 2
   Δ.Ux .=  Q.Ux
   Δ.Uy .=  Q.Uy
 elseif dim == 3
-  Δ.ρ .= sin.(2 * π * (x - tend * Q.Ux)) .* sin.(2 *  π * (y - tend * Q.Uy)) .*
-         sin.(2 * π * (z - tend * Q.Uz))
+  Δ.ρ .= sin.(2 * π * (x - tend * Q.Ux)) .* sin.(2 *  π * (y - tend * Q.Uy)) .* sin.(2 * π * (z - tend * Q.Uz))
+#  Δ.ρ .= sin.(2 * π * (x - tend * Q.Ux)) .* sin.(2 *  π * (y - tend * Q.Uy))
   Δ.Ux .=  Q.Ux
   Δ.Uy .=  Q.Uy
   Δ.Uz .=  Q.Uz
@@ -452,7 +453,6 @@ end #function fluxrhs-3d
 function updatesolution!(rhs, Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems,
                          rka, rkb, dt) where {S, T}
     J = metric.J
-    #M = reshape(kron(ω, ω), length(ω), length(ω))
     M =  ω
     for (rhsq, q) ∈ zip(rhs, Q)
         for e ∈ elems
