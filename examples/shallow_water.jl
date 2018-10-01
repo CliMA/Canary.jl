@@ -192,14 +192,14 @@ end
 # This is done for each mpirank and then we do an MPI_Allreduce to find the global minimum.
 dt = [floatmax(DFloat)]
 if dim == 1
-    (ξx) = (metric.rx)
+    (ξx) = (metric.ξx)
     (h,U) = (Q.h,Q.U)
     for n = 1:length(U)
         loc_dt = (2h[n])  ./ (abs.(U[n] * ξx[n]))
         dt[1] = min(dt[1], loc_dt)
     end
 elseif dim == 2
-    (ξx, ξy, ηx, ηy) = (metric.rx, metric.ry, metric.sx, metric.sy)
+    (ξx, ξy, ηx, ηy) = (metric.ξx, metric.ξy, metric.ηx, metric.ηy)
     (h,U,V) = (Q.h,Q.U,Q.V)
     for n = 1:length(U)
         loc_dt = (2h[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n]),
@@ -207,9 +207,9 @@ elseif dim == 2
         dt[1] = min(dt[1], loc_dt)
     end
 elseif dim == 3
-    (ξx, ξy, ξz) = (metric.rx, metric.ry, metric.rz)
-    (ηx, ηy, ηz) = (metric.sx, metric.sy, metric.sz)
-    (ζx, ζy, ζz) = (metric.tx, metric.ty, metric.tz)
+    (ξx, ξy, ξz) = (metric.ξx, metric.ξy, metric.ξz)
+    (ηx, ηy, ηz) = (metric.ηx, metric.ηy, metric.ηz)
+    (ζx, ζy, ζz) = (metric.ζx, metric.ζy, metric.ζz)
     (h,U,V,W) = (Q.h,Q.U,Q.V,Q.W)
     for n = 1:length(U)
         loc_dt = (2h[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n] + W[n] * ξz[n]),
@@ -291,7 +291,7 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, D, 
   (h, U) = (Q.h, Q.U)
   Nq = size(h, 1)
   J = metric.J
-  ξx = metric.rx
+  ξx = metric.ξx
   for e ∈ elems
       #Get primitive variables and fluxes
       hb=bathymetry[:,e]
@@ -314,7 +314,7 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, metric, D, ω,
     (h, U, V) = (Q.h, Q.U, Q.V)
     Nq = size(h, 1)
     J = metric.J
-    (ξx, ηx, ξy, ηy) = (metric.rx, metric.sx, metric.ry, metric.sy)
+    (ξx, ηx, ξy, ηy) = (metric.ξx, metric.ηx, metric.ξy, metric.ηy)
     for e ∈ elems
         # loop of ξ-grid lines
         for j = 1:Nq
@@ -336,9 +336,9 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, D, ω,
     (h, U, V, W) = (Q.h, Q.U, Q.V, Q.W)
     Nq = size(h, 1)
     J = metric.J
-    (ξx, ηx, ζx) = (metric.rx, metric.sx, metric.tx)
-    (ξy, ηy, ζy) = (metric.ry, metric.sy, metric.ty)
-    (ξz, ηz, ζz) = (metric.rz, metric.sz, metric.tz)
+    (ξx, ηx, ζx) = (metric.ξx, metric.ηx, metric.ζx)
+    (ξy, ηy, ζy) = (metric.ξy, metric.ηy, metric.ζy)
+    (ξz, ηz, ζz) = (metric.ξz, metric.ηz, metric.ζz)
     for e ∈ elems
         # loop of ξ-grid lines
         for k = 1:Nq
