@@ -26,7 +26,7 @@
 # ```math
 # \int_{\Omega_e} \psi \frac{\partial \rho^{(e)}_N}{\partial t} d\Omega_e + \int_{\Omega_e} \psi \nabla \cdot \left( \rho \mathbf{u} \right)^{(e)}_N d\Omega_e = 0 \; \; (2)
 # ```
-# where $ \rho^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) \rho_i(t)$ is the finite dimensional expansion with basis functions $\psi(\mathbf{x})$.  Integrating Eq. (2) by parts yields
+# where $\rho^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) \rho_i(t)$ is the finite dimensional expansion with basis functions $\psi(\mathbf{x})$.  Integrating Eq. (2) by parts yields
 #
 # ```math
 # \int_{\Omega_e} \psi \frac{\partial \rho^{(e)}_N}{\partial t} d\Omega_e + \int_{\Gamma_e} \psi \mathbf{n} \cdot \left( \rho \mathbf{u} \right)^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \nabla \psi \cdot \left( \rho \mathbf{u} \right)^{(e)}_N d\Omega_e = 0 \; \; (3)
@@ -261,7 +261,7 @@ RKC = (DFloat(0),
 #-----Begin Volume, Flux, Update, and Error Functions for Multiple Dispatch-----#
 #-------------------------------------------------------------------------------#
 # ### Volume RHS Routines
-# These functions solve volume term $\int_{\Omega_e} \nabla \psi \cdot \left( \rho \mathbf{u} \right)^{(e)}_N$ for:
+# These functions solve the volume term $\int_{\Omega_e} \nabla \psi \cdot \left( \rho \mathbf{u} \right)^{(e)}_N$ for:
 # Volume RHS for 1D
 function volumerhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, metric, D, ω,
                     elems) where {S, T}
@@ -345,7 +345,7 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, D, ω,
 end
 
 # ### Flux RHS Routines
-# These functions solve the flux integral term $\int_{\Gamma_e} \psi \mathbf{n} \cdot \left( \rho \mathbf{u} \right)^{(*,e)_N$ for:
+# These functions solve the flux integral term $\int_{\Gamma_e} \psi \mathbf{n} \cdot \left( \rho \mathbf{u} \right)^{(*,e)}_N$ for:
 # Flux RHS for 1D
 function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems, vmapM,
                   vmapP) where {S, T}

@@ -1,5 +1,5 @@
 #--------------------------------Markdown Language Header-----------------------
-# # Advection Equation Example: Conservation Form
+# # Shallow Water Equations Example
 #
 #
 # ![](advection2d.png)
@@ -8,16 +8,18 @@
 #-
 # ## Introduction
 #
-# This example shows how to solve the Advection equation in conservation form for 1D and 2D.
+# This example shows how to solve the Shallow Water Equations in 1D and 2D.
 #
 # ## Continuous Governing Equations
 # We solve the following equation:
 #
 # ```math
-# \frac{\partial \rho}{\partial t} + \nabla \cdot \mathbf{U} = 0 \; \; (1)
+# \frac{\partial h}{\partial t} + \nabla \cdot \mathbf{U} = 0 \; \; (1.1)
 # ```
-# where $\mathbf{u}=(u,v)$ depending on how many spatial dimensions we are using, and $\mathbf{U}=\rho \mathbf{u},
-# We employ periodic boundary conditions across all four walls of the square domain.
+# ```math
+# \frac{\partial \mathbf{U}}{\partial t} + \nabla \cdot \left( \frac{\mathbf{U} \otimes \mathbf{U}}{h} + g (h^2 - h^2_b) \mathbf{I}_2 \right) + h_s \nabla h_b = 0 \; \; (1.2)
+# ```
+# where $\mathbf{u}=(u,v)$ depending on how many spatial dimensions we are using, and $\mathbf{U}=h \mathbf{u}, with $h=h_s(\mathbf{x},t) + h_b(\mathbf{x})$ being the total water column with $h_s$ and $h_b$ being the height of the water surface and depth of the bathymetry, respectively, measured from a zero mean sea-level.  We employ periodic boundary conditions across all four walls of the square domain.
 #
 #-
 # ## Discontinous Galerkin Method
@@ -25,16 +27,16 @@
 # of one-dimensional Lagrange polynomials based on Lobatto points. Multiplying Eq. (1) by a test function $\psi$ and integrating within each element $\Omega_e$ such that $\Omega = \bigcup_{e=1}^{N_e} \Omega_e$ we get
 #
 # ```math
-# \int_{\Omega_e} \psi \frac{\partial \rho^{(e)}_N}{\partial t} d\Omega_e + \int_{\Omega_e} \psi \nabla \cdot \mathbf{f}^{(e)}_N d\Omega_e =  0 \; \; (2)
+# \int_{\Omega_e} \psi \frac{\partial \mathbf{q}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Omega_e} \psi \nabla \cdot \mathbf{f}^{(e)}_N d\Omega_e =  \int_{\Omega_e} \psi S\left( q^{(e)}_N} \right) d\Omega_e \; \; (2)
 # ```
 # where $\mathbf{q}^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) \mathbf{q}_i(t)$ is the finite dimensional expansion with basis functions $\psi(\mathbf{x})$, where $\mathbf{q}=\left( h, \mathbf{U}^T \right)^T$ and
-# ```math
-# \mathbf{f}=\left( \mathbf{U}, \frac{\mathbf{U} \otimes \mathbf{U}}{h} + g (h^2 - h^2_b) \mathbf{I}_2 \right).
+```math
+ \mathbf{f}=\left( \mathbf{U}, \frac{\mathbf{U} \otimes \mathbf{U}}{h} + g (h^2 - h^2_b) \mathbf{I}_2 \right).
 # ```
 # Integrating Eq. (2) by parts yields
 #
 # ```math
-# \int_{\Omega_e} \psi \frac{\partial \rho}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Gamma_e} \psi \mathbf{n} \cdot \mathbf{f}^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \nabla \psi \cdot \mathbf{f}^{(e)}_N d\Omega_e = 0 \; \; (3)
+# \int_{\Omega_e} \psi \frac{\partial \mathbf{q}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Gamma_e} \psi \mathbf{n} \cdot \mathbf{f}^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \nabla \psi \cdot \mathbf{f}^{(e)}_N d\Omega_e = \int_{\Omega_e} \psi S\left( q^{(e)}_N} \right) d\Omega_e \; \; (3)
 # ```
 #
 # where the second term on the left denotes the flux integral term (computed in "function fluxrhs") and the third term denotes the volume integral term (computed in "function volumerhs").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the Rusanov flux.
@@ -53,7 +55,9 @@ brickN = (10) #1D brickmesh
 #brickN = (10, 10) #2D brickmesh
 #brickN = (10, 10, 10) #3D brickmesh
 DFloat = Float64 #Number Type
-tend = DFloat(1.0) #Final Time
+tend = DFloat(0.25) #Final Time
+δnl = 1.0
+gravity = 10.0
 
 # ### Load the MPI and Canary packages where Canary builds the mesh, generates basis functions, and metric terms.
 using MPI
@@ -68,6 +72,8 @@ println("N= ",N)
 println("dim= ",dim)
 println("brickN= ",brickN)
 println("DFloat= ",DFloat)
+println("δnl= ",δnl)
+println("gravity= ",gravity)
 
 # ### Initialize MPI and get the communicator, rank, and size
 MPI.Initialized() || MPI.Init() # only initialize MPI if not initialized
@@ -117,7 +123,7 @@ if dim == 1
   x = coord.x
   for j = 1:length(x)
     x[j] = x[j]
-  end
+ end
 elseif dim == 2
   (x, y) = (coord.x, coord.y)
   for j = 1:length(x)
@@ -149,11 +155,11 @@ metric = computemetric(coord..., D)
 # ### Generate the State Vectors
 # We need to create as many velocity vectors as there are dimensions.
 if dim == 1
-  statesyms = (:ρ, :U)
+  statesyms = (:h, :U)
 elseif dim == 2
-  statesyms = (:ρ, :U, :V)
+  statesyms = (:h, :U, :V)
 elseif dim == 3
-  statesyms = (:ρ, :U, :V, :W)
+  statesyms = (:h, :U, :V, :W)
 end
 
 # ### Create storage for state vector and right-hand side
@@ -162,18 +168,23 @@ end
 Q   = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))
 rhs = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))
 if dim == 1
-  Q.ρ .= sin.(2 * π * x) .+ 2.0
-  Q.U .= Q.ρ .* (1.0)
+    bathymetry = zero(coord.x)
+    for i=1:length(coord.x)
+        bathymetry[i]=0.1
+    end
+    Q.h .= 0.5 .* exp.(-8.0 .* (x .- 0.5).*(x .- 0.5))
+    Q.U .= 0
+#    Q.h .= sin.(2 * π * x) .+ 2.0
+#    Q.U .= Q.h .* (1.0)
 elseif dim == 2
-  Q.ρ .= sin.(2 * π * x) .* sin.(2 *  π * y) .+ 2.0
-  Q.U .= Q.ρ .* (1.0)
-  Q.V .= Q.ρ .* (1.0)
+  Q.h .= sin.(2 * π * x) .* sin.(2 *  π * y) .+ 2.0
+  Q.U .= Q.h .* (1.0)
+  Q.V .= Q.h .* (1.0)
 elseif dim == 3
-  Q.ρ .= sin.(2 * π * x) .* sin.(2 *  π * y) .* sin.(2 * π * z) .+ 2.0
-#  Q.ρ .= sin.(2 * π * x) .* sin.(2 *  π * y) .+ 2.0
-  Q.U .= Q.ρ .* (1.0)
-  Q.V .= Q.ρ .* (1.0)
-  Q.W .= Q.ρ .* (1.0)
+  Q.h .= sin.(2 * π * x) .* sin.(2 *  π * y) .* sin.(2 * π * z) .+ 2.0
+  Q.U .= Q.h .* (1.0)
+  Q.V .= Q.h .* (1.0)
+  Q.W .= Q.h .* (1.0)
 end
 
 # ### Compute the time-step size and number of time-steps
@@ -182,16 +193,16 @@ end
 dt = [floatmax(DFloat)]
 if dim == 1
     (ξx) = (metric.rx)
-    (ρ,U) = (Q.ρ,Q.U)
+    (h,U) = (Q.h,Q.U)
     for n = 1:length(U)
-        loc_dt = (2ρ[n])  ./ (abs.(U[n] * ξx[n]))
+        loc_dt = (2h[n])  ./ (abs.(U[n] * ξx[n]))
         dt[1] = min(dt[1], loc_dt)
     end
 elseif dim == 2
     (ξx, ξy, ηx, ηy) = (metric.rx, metric.ry, metric.sx, metric.sy)
-    (ρ,U,V) = (Q.ρ,Q.U,Q.V)
+    (h,U,V) = (Q.h,Q.U,Q.V)
     for n = 1:length(U)
-        loc_dt = (2ρ[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n]),
+        loc_dt = (2h[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n]),
                           abs.(U[n] * ηx[n] + V[n] * ηy[n]))
         dt[1] = min(dt[1], loc_dt)
     end
@@ -199,9 +210,9 @@ elseif dim == 3
     (ξx, ξy, ξz) = (metric.rx, metric.ry, metric.rz)
     (ηx, ηy, ηz) = (metric.sx, metric.sy, metric.sz)
     (ζx, ζy, ζz) = (metric.tx, metric.ty, metric.tz)
-    (ρ,U,V,W) = (Q.ρ,Q.U,Q.V,Q.W)
+    (h,U,V,W) = (Q.h,Q.U,Q.V,Q.W)
     for n = 1:length(U)
-        loc_dt = (2ρ[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n] + W[n] * ξz[n]),
+        loc_dt = (2h[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n] + W[n] * ξz[n]),
                           abs.(U[n] * ηx[n] + V[n] * ηy[n] + W[n] * ηz[n]),
                           abs.(U[n] * ζx[n] + V[n] * ζy[n] + W[n] * ζz[n]))
         dt[1] = min(dt[1], loc_dt)
@@ -209,6 +220,7 @@ elseif dim == 3
 end
 dt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
 dt = DFloat(dt / N^sqrt(2))
+dt = 0.001
 nsteps = ceil(Int64, tend / dt)
 dt = tend / nsteps
 @show (dt, nsteps)
@@ -217,22 +229,21 @@ dt = tend / nsteps
 # Later Δ will be used to store the difference between the exact and computed solutions.
 Δ   = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))
 if dim == 1
-  u = Q.U ./ Q.ρ
-  Δ.ρ .= sin.(2 * π * (x - tend * u)) .+ 2
+  u = Q.U ./ Q.h
+  Δ.h .= sin.(2 * π * (x - tend * u)) .+ 2
   Δ.U .=  Q.U
 elseif dim == 2
-  u = Q.U ./ Q.ρ
-  v = Q.V ./ Q.ρ
-  Δ.ρ .= sin.(2 * π * (x - tend * u)) .* sin.(2 *  π * (y - tend * v)) .+ 2
+  u = Q.U ./ Q.h
+  v = Q.V ./ Q.h
+  Δ.h .= sin.(2 * π * (x - tend * u)) .* sin.(2 *  π * (y - tend * v)) .+ 2
   Δ.U .=  Q.U
   Δ.V .=  Q.V
 elseif dim == 3
-  u = Q.U ./ Q.ρ
-  v = Q.V ./ Q.ρ
-  w = Q.W ./ Q.ρ
-  Δ.ρ .= sin.(2 * π * (x - tend * u)) .* sin.(2 *  π * (y - tend * v)) .*
+  u = Q.U ./ Q.h
+  v = Q.V ./ Q.h
+  w = Q.W ./ Q.h
+  Δ.h .= sin.(2 * π * (x - tend * u)) .* sin.(2 *  π * (y - tend * v)) .*
          sin.(2 * π * (z - tend * w)) .+ 2
-  #Δ.ρ .= sin.(2 * π * (x - tend * u)) .* sin.(2 *  π * (y - tend * v)) .+ 2
   Δ.U .=  Q.U
   Δ.V .=  Q.V
   Δ.W .=  Q.W
@@ -275,36 +286,44 @@ RKC = (DFloat(0),
 # ### Volume RHS Routines
 # These functions solve the volume term $\int_{\Omega_e} \nabla \psi \cdot \left( \rho \mathbf{u} \right)^{(e)}_N$ for:
 # Volume RHS for 1D
-function volumerhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, metric, D, ω,
-                    elems) where {S, T}
-  rhsρ = rhs.ρ
-  (ρ, U) = (Q.ρ, Q.U)
-  Nq = size(ρ, 1)
+function volumerhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, D, ω, elems, gravity, δnl) where {S, T}
+  (rhsh, rhsU) = (rhs.h, rhs.U)
+  (h, U) = (Q.h, Q.U)
+  Nq = size(h, 1)
   J = metric.J
   ξx = metric.rx
   for e ∈ elems
+      #Get primitive variables and fluxes
+      hb=bathymetry[:,e]
+      hs=h[:,e]
+      ht=hs + hb
+      u=U[:,e] ./ ht
+      fluxh=U[:,e]
+      fluxU=(ht .* u .* u + 0.5 .* gravity .* hs .* hs) .* δnl + gravity .* hs .* hb
+
       # loop of ξ-grid lines
-      rhsρ[:,e] += D' * (ω .* J[:,e] .* (ξx[:,e] .* U[:,e]))
+      rhsh[:,e] += D' * (ω .* J[:,e] .* (ξx[:,e] .* fluxh[:]))
+      rhsU[:,e] += D' * (ω .* J[:,e] .* (ξx[:,e] .* fluxU[:])) #assuming dhb/dx=0: need to include it
   end #e ∈ elems
 end #function volumerhs-1d
 
 # Volume RHS for 2D
 function volumerhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, metric, D, ω,
                     elems) where {S, T}
-    rhsρ = rhs.ρ
-    (ρ, U, V) = (Q.ρ, Q.U, Q.V)
-    Nq = size(ρ, 1)
+    rhsh = rhs.h
+    (h, U, V) = (Q.h, Q.U, Q.V)
+    Nq = size(h, 1)
     J = metric.J
     (ξx, ηx, ξy, ηy) = (metric.rx, metric.sx, metric.ry, metric.sy)
     for e ∈ elems
         # loop of ξ-grid lines
         for j = 1:Nq
-            rhsρ[:, j, e] +=
+            rhsh[:, j, e] +=
                 D' * (ω[j] * ω .* J[:, j, e].* (ξx[:, j, e] .* U[:, j, e] + ξy[:, j, e] .* V[:, j, e]))
         end #j
         # loop of η-grid lines
         for i = 1:Nq
-            rhsρ[i, :, e] +=
+            rhsh[i, :, e] +=
                 D' * (ω[i] * ω .* J[i, :, e].* (ηx[i, :, e] .* U[i, :, e] + ηy[i, :, e] .* V[i, :, e]))
         end #i
     end #e ∈ elems
@@ -313,9 +332,9 @@ end #function volumerhs-2d
 # Volume RHS for 3D
 function volumerhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, D, ω,
                     elems) where {S, T}
-    rhsρ = rhs.ρ
-    (ρ, U, V, W) = (Q.ρ, Q.U, Q.V, Q.W)
-    Nq = size(ρ, 1)
+    rhsh = rhs.h
+    (h, U, V, W) = (Q.h, Q.U, Q.V, Q.W)
+    Nq = size(h, 1)
     J = metric.J
     (ξx, ηx, ζx) = (metric.rx, metric.sx, metric.tx)
     (ξy, ηy, ζy) = (metric.ry, metric.sy, metric.ty)
@@ -324,7 +343,7 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, D, ω,
         # loop of ξ-grid lines
         for k = 1:Nq
             for j = 1:Nq
-                rhsρ[:, j, k, e] +=
+                rhsh[:, j, k, e] +=
                     D' * (ω[j] * ω[k] * ω .* J[:, j, k, e] .*
                           (ξx[:, j, k, e] .* U[:, j, k, e] +
                            ξy[:, j, k, e] .* V[:, j, k, e] +
@@ -334,7 +353,7 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, D, ω,
         # loop of η-grid lines
         for k = 1:Nq
             for i = 1:Nq
-                rhsρ[i, :, k, e] +=
+                rhsh[i, :, k, e] +=
                     D' * (ω[i] * ω[k] * ω .* J[i, :, k, e] .*
                           (ηx[i, :, k, e] .* U[i, :, k, e] +
                            ηy[i, :, k, e] .* V[i, :, k, e] +
@@ -344,7 +363,7 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, D, ω,
         # loop of ζ-grid lines
         for j = 1:Nq
             for i = 1:Nq
-                rhsρ[i, j, :, e] +=
+                rhsh[i, j, :, e] +=
                     D' * (ω[i] * ω[j] * ω .* J[i, j, :, e] .*
                           (ζx[i, j, :, e] .* U[i, j, :, e] +
                            ζy[i, j, :, e] .* V[i, j, :, e] +
@@ -352,15 +371,15 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, D, ω,
             end #i
         end #j
     end #e ∈ elems
-end
+end #function volumerhs-3d
 
 # ### Flux RHS Routines
 # These functions solve the flux integral term $\int_{\Gamma_e} \psi \mathbf{n} \cdot \left( \rho \mathbf{u} \right)^{(*,e)}_N$ for:
 # Flux RHS for 1D
-function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems, vmapM,
-                  vmapP) where {S, T}
-    rhsρ = rhs.ρ
-    (ρ, U) = (Q.ρ, Q.U)
+function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, elems, vmapM, vmapP, gravity, δnl) where {S, T}
+
+    (rhsh, rhsU) = (rhs.h, rhs.U)
+    (h, U) = (Q.h, Q.U)
     nface = 2
     (nx, sJ) = (metric.nx, metric.sJ)
     nx = reshape(nx, size(vmapM))
@@ -368,19 +387,42 @@ function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems, vmapM,
 
     for e ∈ elems
         for f ∈ 1:nface
-            ρM = ρ[vmapM[1, f, e]]
-            uM = U[vmapM[1, f, e]] ./ ρM
-            fM = ρM .* uM
+            #Compute fluxes on M/Left/- side
+            hsM = h[vmapM[1, f, e]]
+            hbM=bathymetry[vmapM[1, f, e]]
+            hM=hsM + hbM
+            UM = U[vmapM[1, f, e]]
+            uM = UM ./ hM
+            fluxhM = UM
+            fluxUM = ( hM .* uM .* uM + 0.5 .* gravity .* hsM .* hsM) .* δnl + gravity .* hsM .* hbM
+            #fluxUM = gravity .* hsM .* hbM #Linear
 
-            ρP = ρ[vmapP[1, f, e]]
-            uP = U[vmapP[1, f, e]] ./ ρP
-            fP = ρP .* uP
+            #Compute fluxes on P/Right/+ side
+            hsP = h[vmapP[1, f, e]]
+            hbP=bathymetry[vmapP[1, f, e]]
+            hP=hsP + hbP
+            UP = U[vmapP[1, f, e]]
+            uP = UP ./ hP
+            fluxhP = UP
+            fluxUP = (hP .* uP .* uP + 0.5 .* gravity .* hsP .* hsP) .* δnl + gravity .* hsP .* hbP
+            #fluxUP = gravity .* hsP .* hbP #Linear
 
             nxM = nx[1, f, e]
-            λ = max.(abs.(nxM .* uM), abs.(nxM .* uP))
+            if δnl == 0
+                λM=( sqrt(gravity*hbM) )
+                λP=( sqrt(gravity*hbP) )
+            else
+                λM=( abs.(nxM .* uM) + sqrt(gravity*hM) )
+                λP=( abs.(nxM .* uP) + sqrt(gravity*hP) )
+#                λM=( sqrt(gravity*hbM) )
+#                λP=( sqrt(gravity*hbP) )
+            end
+            λ = max.( λM, λP )
 
-            F = (nxM .* (fM + fP) - λ .* (ρP - ρM)) / 2
-            rhsρ[vmapM[1, f, e]] -= sJ[1, f, e] .* F
+            Fluxh_star = (nxM .* (fluxhM + fluxhP) - λ .* (hsP - hsM)) / 2
+            FluxU_star = (nxM .* (fluxUM + fluxUP) - λ .* (UP - UM)) / 2
+            rhsh[vmapM[1, f, e]] -= sJ[1, f, e] .* Fluxh_star
+            rhsU[vmapM[1, f, e]] -= sJ[1, f, e] .* FluxU_star
         end #for f ∈ 1:nface
     end #e ∈ elems
 end #function fluxrhs-1d
@@ -388,30 +430,30 @@ end #function fluxrhs-1d
 # Flux RHS for 2D
 function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems, vmapM,
                   vmapP) where {S, T}
-    rhsρ = rhs.ρ
-    (ρ, U, V) = (Q.ρ, Q.U, Q.V)
+    rhsh = rhs.h
+    (h, U, V) = (Q.h, Q.U, Q.V)
     nface = 4
     (nx, ny, sJ) = (metric.nx, metric.ny, metric.sJ)
     for e ∈ elems
         for f ∈ 1:nface
-            ρM = ρ[vmapM[:, f, e]]
-            uM = U[vmapM[:, f, e]] ./ ρM
-            vM = V[vmapM[:, f, e]] ./ ρM
-            fM = ρM .* uM
-            gM = ρM .* vM
+            hM = h[vmapM[:, f, e]]
+            uM = U[vmapM[:, f, e]] ./ hM
+            vM = V[vmapM[:, f, e]] ./ hM
+            fM = hM .* uM
+            gM = hM .* vM
 
-            ρP = ρ[vmapP[:, f, e]]
-            uP = U[vmapP[:, f, e]] ./ ρP
-            vP = V[vmapP[:, f, e]] ./ ρP
-            fP = ρP .* uP
-            gP = ρP .* vP
+            hP = h[vmapP[:, f, e]]
+            uP = U[vmapP[:, f, e]] ./ hP
+            vP = V[vmapP[:, f, e]] ./ hP
+            fP = hP .* uP
+            gP = hP .* vP
 
             nxM = nx[:, f, e]
             nyM = ny[:, f, e]
             λ = max.(abs.(nxM .* uM + nyM .* vM), abs.(nxM .* uP + nyM .* vP))
 
-            F = (nxM .* (fM + fP) + nyM .* (gM + gP) - λ .* (ρP - ρM)) / 2
-            rhsρ[vmapM[:, f, e]] -= ω .* sJ[:, f, e] .* F
+            F = (nxM .* (fM + fP) + nyM .* (gM + gP) - λ .* (hP - hM)) / 2
+            rhsh[vmapM[:, f, e]] -= ω .* sJ[:, f, e] .* F
         end #f ∈ 1:nface
     end #e ∈ elems
 end #function fluxrhs-2d
@@ -419,8 +461,8 @@ end #function fluxrhs-2d
 # FLux RHS for 3D
 function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems, vmapM,
                   vmapP) where {S, T}
-    rhsρ = rhs.ρ
-    (ρ, U, V, W) = (Q.ρ, Q.U, Q.V, Q.W)
+    rhsh = rhs.h
+    (h, U, V, W) = (Q.h, Q.U, Q.V, Q.W)
     nface = 6
     (nx, ny, nz, sJ) = (metric.nx, metric.ny, metric.nz, metric.sJ)
     nx = reshape(nx, size(vmapM))
@@ -429,21 +471,21 @@ function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems, vmapM,
     sJ = reshape(sJ, size(vmapM))
     for e ∈ elems
         for f ∈ 1:nface
-            ρM = ρ[vmapM[:, f, e]]
-            uM = U[vmapM[:, f, e]] ./ ρM
-            vM = V[vmapM[:, f, e]] ./ ρM
-            wM = W[vmapM[:, f, e]] ./ ρM
-            fM = ρM .* uM
-            gM = ρM .* vM
-            hM = ρM .* wM
+            hM = h[vmapM[:, f, e]]
+            uM = U[vmapM[:, f, e]] ./ hM
+            vM = V[vmapM[:, f, e]] ./ hM
+            wM = W[vmapM[:, f, e]] ./ hM
+            fM = hM .* uM
+            gM = hM .* vM
+            hM = hM .* wM
 
-            ρP = ρ[vmapP[:, f, e]]
-            uP = U[vmapP[:, f, e]] ./ ρP
-            vP = V[vmapP[:, f, e]] ./ ρP
-            wP = W[vmapP[:, f, e]] ./ ρP
-            fP = ρP .* uP
-            gP = ρP .* vP
-            hP = ρP .* wP
+            hP = h[vmapP[:, f, e]]
+            uP = U[vmapP[:, f, e]] ./ hP
+            vP = V[vmapP[:, f, e]] ./ hP
+            wP = W[vmapP[:, f, e]] ./ hP
+            fP = hP .* uP
+            gP = hP .* vP
+            hP = hP .* wP
 
             nxM = nx[:, f, e]
             nyM = ny[:, f, e]
@@ -452,8 +494,8 @@ function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems, vmapM,
                      abs.(nxM .* uP + nyM .* vP + nzM .* wP))
 
             F = (nxM .* (fM + fP) + nyM .* (gM + gP) + nzM .* (hM + hP) -
-                 λ .* (ρP - ρM)) / 2
-            rhsρ[vmapM[:, f, e]] -= kron(ω, ω) .* sJ[:, f, e] .* F
+                 λ .* (hP - hM)) / 2
+            rhsh[vmapM[:, f, e]] -= kron(ω, ω) .* sJ[:, f, e] .* F
         end #f ∈ 1:nface
     end #e ∈ elems
 end #function fluxrhs-3d
@@ -464,7 +506,7 @@ function updatesolution!(rhs, Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems,
                          rka, rkb, dt) where {S, T}
 
     #Save original velocity
-    u = Q.U ./ Q.ρ
+    u = Q.U ./ Q.h
 
     J = metric.J
     M =  ω
@@ -476,15 +518,15 @@ function updatesolution!(rhs, Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems,
     end
 
     #Reset velocity
-    Q.U .= Q.ρ .* u
-end
+#    Q.U .= Q.h .* u
+end #function update-1d
 
 # Update 2D
 function updatesolution!(rhs, Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems,
                          rka, rkb, dt) where {S, T}
     #Save original velocity
-    u = Q.U ./ Q.ρ
-    v = Q.V ./ Q.ρ
+    u = Q.U ./ Q.h
+    v = Q.V ./ Q.h
 
     J = metric.J
     M = reshape(kron(ω, ω), length(ω), length(ω))
@@ -496,17 +538,17 @@ function updatesolution!(rhs, Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems,
     end
 
     #Reset velocity
-    Q.U .= Q.ρ .* u
-    Q.V .= Q.ρ .* v
-end
+    Q.U .= Q.h .* u
+    Q.V .= Q.h .* v
+end #function update-2d
 
 # Update 3D
 function updatesolution!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems,
                          rka, rkb, dt) where {S, T}
    #Save original velocity
-    u = Q.U ./ Q.ρ
-    v = Q.V ./ Q.ρ
-    w = Q.W ./ Q.ρ
+    u = Q.U ./ Q.h
+    v = Q.V ./ Q.h
+    w = Q.W ./ Q.h
 
     J = metric.J
     M = reshape(kron(ω, ω, ω), length(ω), length(ω), length(ω))
@@ -518,10 +560,10 @@ function updatesolution!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems,
     end
 
     #Reset velocity
-    Q.U .= Q.ρ .* u
-    Q.V .= Q.ρ .* v
-    Q.W .= Q.ρ .* w
-end
+    Q.U .= Q.h .* u
+    Q.V .= Q.h .* v
+    Q.W .= Q.h .* w
+end #function update-3d
 
 # ### Compute L2 Error Norm for:
 # 1D Error
@@ -540,7 +582,7 @@ function L2energy(Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems) where {S, T
     end
   end
   energy[1]
-end
+end #end function L2energy-1d
 
 # 2D Error
 function L2energy(Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems) where {S, T}
@@ -558,7 +600,7 @@ function L2energy(Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems) where {S, T
     end
   end
   energy[1]
-end
+end #end function L2energy-2d
 
 # 3D Error
 function L2energy(Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems) where {S, T}
@@ -576,7 +618,7 @@ function L2energy(Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems) where {S, T
     end
   end
   energy[1]
-end
+end #end function L2energy-3d
 
 #-------------------------------------------------------------------------------#
 #--------End Volume, Flux, Update, Error Functions for Multiple Dispatch--------#
@@ -604,8 +646,9 @@ nrealelem = length(mesh.realelems)
 # ### Dump the initial condition
 # Dump out the initial conditin to VTK prior to entering the time-step loop.
 include("vtk.jl")
+temp=Q.h .+ bathymetry
 writemesh(@sprintf("SWE%dD_rank_%04d_step_%05d", dim, mpirank, 0),
-          coord...; fields=(("ρ", Q.ρ),), realelems=mesh.realelems)
+          coord...; fields=(("hs+hb", temp),), realelems=mesh.realelems)
 
 # ### Begin Time-step loop
 # Go through nsteps time-steps and for each time-step, loop through the s-stages of the explicit RK method.
@@ -645,7 +688,8 @@ for step = 1:nsteps
         # #### Compute RHS Volume Integral
         # Note that it is not necessary to have received all the MPI messages. Here we are interleaving computation
         # with communication in order to curtail latency.  Here we perform the RHS volume integrals.
-        volumerhs!(rhs, Q, metric, D, ω, mesh.realelems)
+        # call volumerhs
+        volumerhs!(rhs, Q, bathymetry, metric, D, ω, mesh.realelems, gravity, δnl)
 
         # #### Wait on MPI receives
         # We need to wait to receive the messages before we move on to t=e flux integrals.
@@ -662,7 +706,8 @@ for step = 1:nsteps
 
         # #### Compute RHS Flux Integral
         # We compute the flux integral on all "realelems" which are the elements owned by the current mpirank.
-        fluxrhs!(rhs, Q, metric, ω, mesh.realelems, vmapM, vmapP)
+        # call fluxrhs
+        fluxrhs!(rhs, Q, bathymetry, metric, ω, mesh.realelems, vmapM, vmapP, gravity, δnl)
 
         # #### Update solution and scale RHS
         # We need to update/evolve the solution in time and multiply by the inverse mass matrix.
@@ -672,8 +717,9 @@ for step = 1:nsteps
 
     # #### Write VTK Output
     # After each time-step, we dump out VTK data for Paraview/VisIt.
+    temp=Q.h .+ bathymetry
     writemesh(@sprintf("SWE%dD_rank_%04d_step_%05d", dim, mpirank, step),
-              coord...; fields=(("ρ", Q.ρ),), realelems=mesh.realelems)
+              coord...; fields=(("hs+hb", temp),), realelems=mesh.realelems)
 end
 
 # ### Compute L2 Error Norms
@@ -681,26 +727,26 @@ end
 
 #extract velocity fields
 if dim == 1
-    Q.U .= Q.U ./ Q.ρ
-    Δ.U .= Δ.U ./ Δ.ρ
-    Q.ρ .= Q.ρ .- 2
-    Δ.ρ .= Δ.ρ .- 2
+    Q.U .= Q.U ./ Q.h
+    Δ.U .= Δ.U ./ Δ.h
+    Q.h .= Q.h .- 2
+    Δ.h .= Δ.h .- 2
 elseif dim == 2
-    Q.U .= Q.U ./ Q.ρ
-    Δ.U .= Δ.U ./ Δ.ρ
-    Q.V .= Q.V ./ Q.ρ
-    Δ.V .= Δ.V ./ Δ.ρ
-    Q.ρ .= Q.ρ .- 2
-    Δ.ρ .= Δ.ρ .- 2
+    Q.U .= Q.U ./ Q.h
+    Δ.U .= Δ.U ./ Δ.h
+    Q.V .= Q.V ./ Q.h
+    Δ.V .= Δ.V ./ Δ.h
+    Q.h .= Q.h .- 2
+    Δ.h .= Δ.h .- 2
 elseif dim == 3
-    Q.U .= Q.U ./ Q.ρ
-    Δ.U .= Δ.U ./ Δ.ρ
-    Q.V .= Q.V ./ Q.ρ
-    Δ.V .= Δ.V ./ Δ.ρ
-    Q.W .= Q.W ./ Q.ρ
-    Δ.W .= Δ.W ./ Δ.ρ
-    Q.ρ .= Q.ρ .- 2
-    Δ.ρ .= Δ.ρ .- 2
+    Q.U .= Q.U ./ Q.h
+    Δ.U .= Δ.U ./ Δ.h
+    Q.V .= Q.V ./ Q.h
+    Δ.V .= Δ.V ./ Δ.h
+    Q.W .= Q.W ./ Q.h
+    Δ.W .= Δ.W ./ Δ.h
+    Q.h .= Q.h .- 2
+    Δ.h .= Δ.h .- 2
 end
 
 #Compute Norms
