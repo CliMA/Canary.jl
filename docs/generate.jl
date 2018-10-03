@@ -1,18 +1,20 @@
 # generate examples
 import Literate
 
+
+EXAMPLES = ("advection", "shallow_water")
 EXAMPLEDIR = joinpath(@__DIR__, "..", "examples")
-EXAMPLES = [joinpath(EXAMPLEDIR, f) for f in ("advection.jl",)]
+EXAMPLEFILES = [joinpath(EXAMPLEDIR, "$f.jl") for f in EXAMPLES]
 GENERATEDDIR = joinpath(@__DIR__, "src", "examples", "generated")
 
 
 mkpath(GENERATEDDIR)
 
-for f in ("vtk.jl", "advection2d.png")
+for f in ("vtk.jl", "advection2d.png", "shallow_water2d.png")
   cp(joinpath(EXAMPLEDIR, f), joinpath(GENERATEDDIR, f); force = true)
 end
 
-for input in EXAMPLES
+for input in EXAMPLEFILES
   script = Literate.script(input, GENERATEDDIR)
   code = strip(read(script, String))
   mdpost(str) = replace(str, "@__CODE__" => code)
