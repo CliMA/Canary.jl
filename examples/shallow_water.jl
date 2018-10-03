@@ -225,15 +225,15 @@ end
 # This is done for each mpirank and then we do an MPI_Allreduce to find the global minimum.
 dt = [floatmax(DFloat)]
 if dim == 1
-    (ξx) = (metric.rx)
+    (ξx) = (metric.ξx)
     (h,U) = (Q.h+bathymetry,Q.U)
     for n = 1:length(U)
         loc_dt = (2h[n])  ./ (abs.(U[n] * ξx[n]))
         dt[1] = min(dt[1], loc_dt)
     end
 elseif dim == 2
-    (ξx, ξy) = (metric.rx, metric.ry)
-    (ηx, ηy) = (metric.sx, metric.sy)
+    (ξx, ξy) = (metric.ξx, metric.ξy)
+    (ηx, ηy) = (metric.ηx, metric.ηy)
     (h,U,V) = (Q.h+bathymetry,Q.U,Q.V)
     for n = 1:length(U)
         loc_dt = (2h[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n]),
@@ -241,9 +241,9 @@ elseif dim == 2
         dt[1] = min(dt[1], loc_dt)
     end
 elseif dim == 3
-    (ξx, ξy, ξz) = (metric.rx, metric.ry, metric.rz)
-    (ηx, ηy, ηz) = (metric.sx, metric.sy, metric.sz)
-    (ζx, ζy, ζz) = (metric.tx, metric.ty, metric.tz)
+    (ξx, ξy, ξz) = (metric.ξx, metric.ξy, metric.ξz)
+    (ηx, ηy, ηz) = (metric.ηx, metric.ηy, metric.ηz)
+    (ζx, ζy, ζz) = (metric.ζx, metric.ζy, metric.ζz)
     (h,U,V,W) = (Q.h,Q.U,Q.V,Q.W)
     for n = 1:length(U)
         loc_dt = (2h[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n] + W[n] * ξz[n]),
@@ -322,7 +322,7 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, D, 
   (h, U) = (Q.h, Q.U)
   Nq = size(h, 1)
   J = metric.J
-  ξx = metric.rx
+  ξx = metric.ξx
   for e ∈ elems
       #Get primitive variables and fluxes
       hb=bathymetry[:,e]
@@ -345,8 +345,8 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, D, 
     Nq = size(h, 1)
     J = metric.J
     dim=2
-    (ξx, ξy) = (metric.rx, metric.ry)
-    (ηx, ηy) = (metric.sx, metric.sy)
+    (ξx, ξy) = (metric.ξx, metric.ξy)
+    (ηx, ηy) = (metric.ηx, metric.ηy)
     fluxh=Array{DFloat,3}(undef,dim,Nq,Nq)
     fluxU=Array{DFloat,3}(undef,dim,Nq,Nq)
     fluxV=Array{DFloat,3}(undef,dim,Nq,Nq)
