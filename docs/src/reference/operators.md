@@ -5,7 +5,7 @@ DocTestSetup = :(using Canary)
 # Element Operators
 
 ```@docs
-barycentricweights
+baryweights
 interpolationmatrix
 lglpoints
 lgpoints
