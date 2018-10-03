@@ -449,6 +449,366 @@ var documenterSearchIndex = {"docs": [
 },
 
 {
+    "location": "examples/generated/shallow_water/#",
+    "page": "Shallow Water Equations Example",
+    "title": "Shallow Water Equations Example",
+    "category": "page",
+    "text": "EditURL = \"https://github.com/climate-machine/Canary.jl/blob/master/examples/shallow_water.jl\""
+},
+
+{
+    "location": "examples/generated/shallow_water/#Shallow-Water-Equations-Example-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Shallow Water Equations Example",
+    "category": "section",
+    "text": "(Image: )"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Introduction-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Introduction",
+    "category": "section",
+    "text": "This example shows how to solve the Shallow Water Equations in 1D and 2D."
+},
+
+{
+    "location": "examples/generated/shallow_water/#Continuous-Governing-Equations-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Continuous Governing Equations",
+    "category": "section",
+    "text": "We solve the following equation:fracpartial h_spartial t + nabla cdot mathbfU = 0   (11)fracpartial mathbfUpartial t + nabla cdot left( fracmathbfU otimes mathbfUh + g (h^2 - h^2_b) mathbfI_2 right) + h_s nabla h_b = 0   (12)where mathbfu=(uv) depending on how many spatial dimensions we are using, and mathbfU=h mathbfu with h=h_s(mathbfxt) + h_b(mathbfx) being the total water column with h_s and h_b being the height of the water surface and depth of the bathymetry, respectively, measured from a zero mean sea-level.  We employ periodic boundary conditions across all four walls of the square domain."
+},
+
+{
+    "location": "examples/generated/shallow_water/#Discontinous-Galerkin-Method-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Discontinous Galerkin Method",
+    "category": "section",
+    "text": "To solve Eq. (1) in one, two, and three dimensions we use the Discontinuous Galerkin method with basis functions comprised of tensor products of one-dimensional Lagrange polynomials based on Lobatto points. Multiplying Eq. (1) by a test function psi and integrating within each element Omega_e such that Omega = bigcup_e=1^N_e Omega_e we getint_Omega_e psi fracpartial mathbfq^(e)_Npartial t dOmega_e + int_Omega_e psi nabla cdot mathbff^(e)_N dOmega_e =  int_Omega_e psi Sleft( q^(e)_N right) dOmega_e   (2)where mathbfq^(e)_N=sum_i=1^(N+1)^dim psi_i(mathbfx) mathbfq_i(t) is the finite dimensional expansion with basis functions psi(mathbfx), where mathbfq=left( h mathbfU^T right)^T andmath  \\mathbf{f}=\\left( \\mathbf{U}, \\frac{\\mathbf{U} \\otimes \\mathbf{U}}{h} + g (h^2 - h^2b) \\mathbf{I}2 \\right).Integrating Eq. (2) by parts yieldsint_Omega_e psi fracpartial mathbfq^(e)_Npartial t dOmega_e + int_Gamma_e psi mathbfn cdot mathbff^(*e)_N dGamma_e - int_Omega_e nabla psi cdot mathbff^(e)_N dOmega_e = int_Omega_e psi Sleft( q^(e)_N right) dOmega_e   (3)where the second term on the left denotes the flux integral term (computed in \"function fluxrhs\") and the third term denotes the volume integral term (computed in \"function volumerhs\").  The superscript (*e) in the flux integral term denotes the numerical flux. Here we use the Rusanov flux."
+},
+
+{
+    "location": "examples/generated/shallow_water/#Commented-Program-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Commented Program",
+    "category": "section",
+    "text": ""
+},
+
+{
+    "location": "examples/generated/shallow_water/#Define-Input-Parameters:-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Define Input Parameters:",
+    "category": "section",
+    "text": "N is polynomial order and brickN(Ne) generates a brick-grid with Ne elements in each directionN = 1 #polynomial order\n#brickN = (10) #1D brickmesh\nbrickN = (100, 100) #2D brickmesh\nDFloat = Float64 #Number Type\ntend = DFloat(0.005) #Final Time\nδnl = 1.0 #switch to turn on/off nonlinear equations\ngravity = 10.0 #gravity\nadvection=false #Boolean to turn on/off advection or swe"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Load-the-MPI-and-Canary-packages-where-Canary-builds-the-mesh,-generates-basis-functions,-and-metric-terms.-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Load the MPI and Canary packages where Canary builds the mesh, generates basis functions, and metric terms.",
+    "category": "section",
+    "text": "using MPI\nusing Canary\nusing Printf: @sprintf"
+},
+
+{
+    "location": "examples/generated/shallow_water/#The-grid-that-we-create-determines-the-number-of-spatial-dimensions-that-we-are-going-to-use.-1",
+    "page": "Shallow Water Equations Example",
+    "title": "The grid that we create determines the number of spatial dimensions that we are going to use.",
+    "category": "section",
+    "text": "dim = length(brickN)###Output the polynomial order, space dimensions, and element configurationprintln(\"N= \",N)\nprintln(\"dim= \",dim)\nprintln(\"brickN= \",brickN)\nprintln(\"DFloat= \",DFloat)\nprintln(\"δnl= \",δnl)\nprintln(\"gravity= \",gravity)\nprintln(\"advection= \",advection)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Initialize-MPI-and-get-the-communicator,-rank,-and-size-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Initialize MPI and get the communicator, rank, and size",
+    "category": "section",
+    "text": "MPI.Initialized() || MPI.Init() # only initialize MPI if not initialized\nMPI.finalize_atexit()\nmpicomm = MPI.COMM_WORLD\nmpirank = MPI.Comm_rank(mpicomm)\nmpisize = MPI.Comm_size(mpicomm)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Generate-a-local-view-of-a-fully-periodic-Cartesian-mesh.-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Generate a local view of a fully periodic Cartesian mesh.",
+    "category": "section",
+    "text": "if dim == 1\n  (Nx, ) = brickN\n  local x = range(DFloat(0); length=Nx+1, stop=1)\n  mesh = brickmesh((x, ), (true, ); part=mpirank+1, numparts=mpisize)\nelseif dim == 2\n  (Nx, Ny) = brickN\n  local x = range(DFloat(0); length=Nx+1, stop=1)\n  local y = range(DFloat(0); length=Ny+1, stop=1)\n  mesh = brickmesh((x, y), (true, true); part=mpirank+1, numparts=mpisize)\nelse\n  (Nx, Ny, Nz) = brickN\n  local x = range(DFloat(0); length=Nx+1, stop=1)\n  local y = range(DFloat(0); length=Ny+1, stop=1)\n  local z = range(DFloat(0); length=Nz+1, stop=1)\n  mesh = brickmesh((x, y, z), (true, true, true); part=mpirank+1, numparts=mpisize)\nend"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Partition-the-mesh-using-a-Hilbert-curve-based-partitioning-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Partition the mesh using a Hilbert curve based partitioning",
+    "category": "section",
+    "text": "mesh = partition(mpicomm, mesh...)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Connect-the-mesh-in-parallel-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Connect the mesh in parallel",
+    "category": "section",
+    "text": "mesh = connectmesh(mpicomm, mesh...)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Get-the-degrees-of-freedom-along-the-faces-of-each-element.-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Get the degrees of freedom along the faces of each element.",
+    "category": "section",
+    "text": "vmap(:,f,e) gives the list of local (mpirank) points for the face \"f\" of element \"e\".  vmapP points to the outward (or neighbor) element and vmapM for the current element. P=+ or right and M=- or left.(vmapM, vmapP) = mappings(N, mesh.elemtoelem, mesh.elemtoface, mesh.elemtoordr)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Create-1-D-operators-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Create 1-D operators",
+    "category": "section",
+    "text": "xiand omega are the 1D Lobatto points and weights and D is the derivative of the basis function.(ξ, ω) = lglpoints(DFloat, N)\nD = spectralderivative(ξ)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Compute-metric-terms-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Compute metric terms",
+    "category": "section",
+    "text": "nface and nelem refers to the total number of faces and elements for this MPI rank. Also, coord contains the dim-tuple coordinates in the mesh.(nface, nelem) = size(mesh.elemtoelem)\ncoord = creategrid(Val(dim), mesh.elemtocoord, ξ)\nif dim == 1\n  x = coord.x\n  for j = 1:length(x)\n    x[j] = x[j]\n end\nelseif dim == 2\n  (x, y) = (coord.x, coord.y)\n  for j = 1:length(x)\n#=    (x[j], y[j]) = (x[j] .+ sin.(π * x[j]) .* sin.(2 * π * y[j]) / 10,\n                    y[j] .+ sin.(2 * π * x[j]) .* sin.(π * y[j]) / 10)\n=#\n  end\nelseif dim == 3\n  (x, y, z) = (coord.x, coord.y, coord.z)\n  for j = 1:length(x)\n    (x[j], y[j], z[j]) = (x[j] + (sin(π * x[j]) * sin(2 * π * y[j]) *\n                                  cos(2 * π * z[j])) / 10,\n                          y[j] + (sin(π * y[j]) * sin(2 * π * x[j]) *\n                                  cos(2 * π * z[j])) / 10,\n                          z[j] + (sin(π * z[j]) * sin(2 * π * x[j]) *\n                                  cos(2 * π * y[j])) / 10)\n  end\nend"
+},
+
+{
+    "location": "examples/generated/shallow_water/#First-VTK-Call-1",
+    "page": "Shallow Water Equations Example",
+    "title": "First VTK Call",
+    "category": "section",
+    "text": "This first VTK call dumps the mesh out for all mpiranks.include(joinpath(@__DIR__, \"vtk.jl\"))\nwritemesh(@sprintf(\"SWE%dD_rank_%04d_mesh\", dim, mpirank), coord...;\n          realelems=mesh.realelems)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Compute-the-metric-terms-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Compute the metric terms",
+    "category": "section",
+    "text": "This call computes the metric terms of the grid such as xi_mathbfx, eta_mathbfx, zeta_mathbfx for all spatial dimensions mathbfx depending on the dimension of dim.metric = computemetric(coord..., D)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Generate-the-State-Vectors-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Generate the State Vectors",
+    "category": "section",
+    "text": "We need to create as many velocity vectors as there are dimensions.if dim == 1\n  statesyms = (:h, :U)\nelseif dim == 2\n  statesyms = (:h, :U, :V)\nelseif dim == 3\n  statesyms = (:h, :U, :V, :W)\nend"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Create-storage-for-state-vector-and-right-hand-side-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Create storage for state vector and right-hand side",
+    "category": "section",
+    "text": "Q holds the solution vector and rhs the rhs-vector which are dim+1 tuples In addition, here we generate the initial conditionsQ   = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))\nrhs = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))\nif dim == 1\n    bathymetry = zero(coord.x)\n    for i=1:length(coord.x)\n        bathymetry[i]=0.1\n    end\n    r=(x .- 0.5).^2\n    Q.h .= 0.5 .* exp.(-32.0 .* r)\n    Q.U .= 0\n    if (advection)\n        δnl=1.0\n        gravity=0.0\n        Q.U .= (Q.h+bathymetry) .* (1.0)\n    end\n    #=\n  for i=1:length(coord.x)\n     bathymetry[i]=2.0\n  end\n  Q.h .= sin.(2 * π * x) .+ 0.0\n  Q.U .= (Q.h+bathymetry) .* (1.0)\n=#\nelseif dim == 2\n    bathymetry = zero(coord.x)\n    for i=1:length(coord.x)\n        bathymetry[i]=0.2\n    end\n    r=(x .- 0.5).^2 + (y .- 0.5).^2\n    Q.h .= 0.5 .* exp.(-100.0 .* r)\n    Q.U .= 0\n    Q.V .= 0\n    if (advection)\n        δnl=1.0\n        gravity=0.0\n        Q.U .= (Q.h+bathymetry) .* (1.0)\n        Q.V .= (Q.h+bathymetry) .* (0.0)\n    end\n#=\n    for i=1:length(coord.x)\n     bathymetry[i]=2.0\n  end\n  r=(x .- 0.5).^2 + (y .- 0.5).^2\n  Q.h .= sin.(2 * π * x) .* sin.(2 *  π * y)\n  #Q.h .= 0.5 .* exp.(-8.0 .* r)\n  Q.U .= (Q.h+bathymetry) .* (1.0)\n  Q.V .= (Q.h+bathymetry) .* (1.0)\n=#\nelseif dim == 3\n  Q.h .= sin.(2 * π * x) .* sin.(2 *  π * y) .* sin.(2 * π * z) .+ 2.0\n  Q.U .= Q.h .* (1.0)\n  Q.V .= Q.h .* (1.0)\n  Q.W .= Q.h .* (1.0)\nend"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Compute-the-time-step-size-and-number-of-time-steps-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Compute the time-step size and number of time-steps",
+    "category": "section",
+    "text": "Compute a Delta t such that the Courant number is 1. This is done for each mpirank and then we do an MPI_Allreduce to find the global minimum.dt = [floatmax(DFloat)]\nif dim == 1\n    (ξx) = (metric.ξx)\n    (h,U) = (Q.h+bathymetry,Q.U)\n    for n = 1:length(U)\n        loc_dt = (2h[n])  ./ (abs.(U[n] * ξx[n]))\n        dt[1] = min(dt[1], loc_dt)\n    end\nelseif dim == 2\n    (ξx, ξy) = (metric.ξx, metric.ξy)\n    (ηx, ηy) = (metric.ηx, metric.ηy)\n    (h,U,V) = (Q.h+bathymetry,Q.U,Q.V)\n    for n = 1:length(U)\n        loc_dt = (2h[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n]),\n                          abs.(U[n] * ηx[n] + V[n] * ηy[n]))\n        dt[1] = min(dt[1], loc_dt)\n    end\nelseif dim == 3\n    (ξx, ξy, ξz) = (metric.ξx, metric.ξy, metric.ξz)\n    (ηx, ηy, ηz) = (metric.ηx, metric.ηy, metric.ηz)\n    (ζx, ζy, ζz) = (metric.ζx, metric.ζy, metric.ζz)\n    (h,U,V,W) = (Q.h,Q.U,Q.V,Q.W)\n    for n = 1:length(U)\n        loc_dt = (2h[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n] + W[n] * ξz[n]),\n                          abs.(U[n] * ηx[n] + V[n] * ηy[n] + W[n] * ηz[n]),\n                          abs.(U[n] * ζx[n] + V[n] * ζy[n] + W[n] * ζz[n]))\n        dt[1] = min(dt[1], loc_dt)\n    end\nend\ndt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm)\ndt = DFloat(dt / N^sqrt(2))\ndt = 0.0025\nnsteps = ceil(Int64, tend / dt)\ndt = tend / nsteps\n@show (dt, nsteps)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Compute-the-exact-solution-at-the-final-time.-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Compute the exact solution at the final time.",
+    "category": "section",
+    "text": "Later Δ will be used to store the difference between the exact and computed solutions.Δ   = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))\nif dim == 1\n  Δ.h .= Q.h\n  Δ.U .= Q.U\nelseif dim == 2\n  Δ.h .= Q.h\n  Δ.U .= Q.U\n  Δ.V .= Q.V\nelseif dim == 3\n  u = Q.U ./ Q.h\n  v = Q.V ./ Q.h\n  w = Q.W ./ Q.h\n  Δ.h .= sin.(2 * π * (x - tend * u)) .* sin.(2 *  π * (y - tend * v)) .*\n         sin.(2 * π * (z - tend * w)) .+ 2\n  Δ.U .=  Q.U\n  Δ.V .=  Q.V\n  Δ.W .=  Q.W\nend"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Store-Explicit-RK-Time-stepping-Coefficients-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Store Explicit RK Time-stepping Coefficients",
+    "category": "section",
+    "text": "We use the fourth-order, low-storage, Runge–Kutta scheme of Carpenter and Kennedy (1994) ((5,4) 2N-Storage RK scheme.Ref: @TECHREPORT{CarpenterKennedy1994,   author = {M.~H. Carpenter and C.~A. Kennedy},   title = {Fourth-order {2N-storage} {Runge-Kutta} schemes},   institution = {National Aeronautics and Space Administration},   year = {1994},   number = {NASA TM-109112},   address = {Langley Research Center, Hampton, VA}, }RKA = (DFloat(0),\n       DFloat(-567301805773)  / DFloat(1357537059087),\n       DFloat(-2404267990393) / DFloat(2016746695238),\n       DFloat(-3550918686646) / DFloat(2091501179385),\n       DFloat(-1275806237668) / DFloat(842570457699 ))\n\nRKB = (DFloat(1432997174477) / DFloat(9575080441755 ),\n       DFloat(5161836677717) / DFloat(13612068292357),\n       DFloat(1720146321549) / DFloat(2090206949498 ),\n       DFloat(3134564353537) / DFloat(4481467310338 ),\n       DFloat(2277821191437) / DFloat(14882151754819))\n\nRKC = (DFloat(0),\n       DFloat(1432997174477) / DFloat(9575080441755),\n       DFloat(2526269341429) / DFloat(6820363962896),\n       DFloat(2006345519317) / DFloat(3224310063776),\n       DFloat(2802321613138) / DFloat(2924317926251))"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Volume-RHS-Routines-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Volume RHS Routines",
+    "category": "section",
+    "text": "These functions solve the volume term int_Omega_e nabla psi cdot left( rho mathbfu right)^(e)_N for: Volume RHS for 1Dfunction volumerhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, D, ω, elems, gravity, δnl) where {S, T}\n  (rhsh, rhsU) = (rhs.h, rhs.U)\n  (h, U) = (Q.h, Q.U)\n  Nq = size(h, 1)\n  J = metric.J\n  ξx = metric.ξx\n  for e ∈ elems\n      #Get primitive variables and fluxes\n      hb=bathymetry[:,e]\n      hs=h[:,e]\n      ht=hs + hb\n      u=U[:,e] ./ ht\n      fluxh=U[:,e]\n      fluxU=(ht .* u .* u + 0.5 .* gravity .* hs .^2) .* δnl + gravity .* hs .* hbloop of ξ-grid lines      rhsh[:,e] += D\' * (ω .* J[:,e] .* (ξx[:,e] .* fluxh[:]))\n      rhsU[:,e] += D\' * (ω .* J[:,e] .* (ξx[:,e] .* fluxU[:])) #assuming dhb/dx=0: need to include it\n  end #e ∈ elems\nend #function volumerhs-1dVolume RHS for 2Dfunction volumerhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, D, ω, elems, gravity, δnl) where {S, T}\n    (rhsh, rhsU, rhsV) = (rhs.h, rhs.U, rhs.V)\n    (h, U, V) = (Q.h, Q.U, Q.V)\n    Nq = size(h, 1)\n    J = metric.J\n    dim=2\n    (ξx, ξy) = (metric.ξx, metric.ξy)\n    (ηx, ηy) = (metric.ηx, metric.ηy)\n    fluxh=Array{DFloat,3}(undef,dim,Nq,Nq)\n    fluxU=Array{DFloat,3}(undef,dim,Nq,Nq)\n    fluxV=Array{DFloat,3}(undef,dim,Nq,Nq)\n    for e ∈ elems\n        #Get primitive variables and fluxes\n        hb=bathymetry[:,:,e]\n        hs=h[:,:,e]\n        ht=hs + hb\n        u=U[:,:,e] ./ ht\n        v=V[:,:,e] ./ ht\n        fluxh[1,:,:]=U[:,:,e]\n        fluxh[2,:,:]=V[:,:,e]\n        fluxU[1,:,:]=(ht .* u .* u + 0.5 .* gravity .* hs .^2) .* δnl + gravity .* hs .* hb\n        fluxU[2,:,:]=(ht .* u .* v) .* δnl\n        fluxV[1,:,:]=(ht .* v .* u) .* δnl\n        fluxV[2,:,:]=(ht .* v .* v + 0.5 .* gravity .* hs .^2) .* δnl + gravity .* hs .* hbloop of ξ-grid lines        for j = 1:Nq\n            rhsh[:,j,e] += D\' * (ω[j] * ω .* J[:,j,e].* (ξx[:,j,e] .* fluxh[1,:,j] + ξy[:,j,e] .* fluxh[2,:,j]))\n            rhsU[:,j,e] += D\' * (ω[j] * ω .* J[:,j,e].* (ξx[:,j,e] .* fluxU[1,:,j] + ξy[:,j,e] .* fluxU[2,:,j]))\n            rhsV[:,j,e] += D\' * (ω[j] * ω .* J[:,j,e].* (ξx[:,j,e] .* fluxV[1,:,j] + ξy[:,j,e] .* fluxV[2,:,j]))\n        end #jloop of η-grid lines        for i = 1:Nq\n            rhsh[i,:,e] += D\' * (ω[i] * ω .* J[i,:,e].* (ηx[i,:,e] .* fluxh[1,i,:] + ηy[i,:,e] .* fluxh[2,i,:]))\n            rhsU[i,:,e] += D\' * (ω[i] * ω .* J[i,:,e].* (ηx[i,:,e] .* fluxU[1,i,:] + ηy[i,:,e] .* fluxU[2,i,:]))\n            rhsV[i,:,e] += D\' * (ω[i] * ω .* J[i,:,e].* (ηx[i,:,e] .* fluxV[1,i,:] + ηy[i,:,e] .* fluxV[2,i,:]))\n        end #i\n    end #e ∈ elems\nend #function volumerhs-2d"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Flux-RHS-Routines-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Flux RHS Routines",
+    "category": "section",
+    "text": "These functions solve the flux integral term int_Gamma_e psi mathbfn cdot left( rho mathbfu right)^(*e)_N for: Flux RHS for 1Dfunction fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, elems, vmapM, vmapP, gravity, N, δnl) where {S, T}\n\n    (rhsh, rhsU) = (rhs.h, rhs.U)\n    (h, U) = (Q.h, Q.U)\n    nface = 2\n    (nx, sJ) = (metric.nx, metric.sJ)\n    nx = reshape(nx, size(vmapM))\n    sJ = reshape(sJ, size(vmapM))\n\n    for e ∈ elems\n        for f ∈ 1:nface\n            #Compute fluxes on M/Left/- side\n            hsM = h[vmapM[1, f, e]]\n            hbM=bathymetry[vmapM[1, f, e]]\n            hM=hsM + hbM\n            UM = U[vmapM[1, f, e]]\n            uM = UM ./ hM\n            fluxhM = UM\n            fluxUM = ( hM .* uM .* uM + 0.5 .* gravity .* hsM .^2) .* δnl + gravity .* hsM .* hbM\n\n            #Compute fluxes on P/Right/+ side\n            hsP = h[vmapP[1, f, e]]\n            hbP=bathymetry[vmapP[1, f, e]]\n            hP=hsP + hbP\n            UP = U[vmapP[1, f, e]]\n            uP = UP ./ hP\n            fluxhP = UP\n            fluxUP = (hP .* uP .* uP + 0.5 .* gravity .* hsP .^2) .* δnl + gravity .* hsP .* hbP\n\n            #Compute wave speed\n            nxM = nx[1, f, e]\n            λM=( abs.(nxM .* uM) + sqrt(gravity*hM) ) .* δnl + ( sqrt(gravity*hbM) ) .* (1.0-δnl)\n            λP=( abs.(nxM .* uP) + sqrt(gravity*hP) ) .* δnl + ( sqrt(gravity*hbP) ) .* (1.0-δnl)\n            λ = max.( λM, λP )\n\n            #Compute Numerical Flux and Update\n            fluxh_star = (nxM .* (fluxhM + fluxhP) - λ .* (hsP - hsM)) / 2\n            fluxU_star = (nxM .* (fluxUM + fluxUP) - λ .* (UP - UM)) / 2\n            rhsh[vmapM[1, f, e]] -= sJ[1, f, e] .* fluxh_star\n            rhsU[vmapM[1, f, e]] -= sJ[1, f, e] .* fluxU_star\n        end #for f ∈ 1:nface\n    end #e ∈ elems\nend #function fluxrhs-1dFlux RHS for 2Dfunction fluxrhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, ω, elems, vmapM, vmapP, gravity, N, δnl) where {S, T}\n    (rhsh, rhsU, rhsV) = (rhs.h, rhs.U, rhs.V)\n    (h, U, V) = (Q.h, Q.U, Q.V)\n    nface = 4\n    Nq=N+1\n    dim=2\n    (nx, ny, sJ) = (metric.nx, metric.ny, metric.sJ)\n    fluxhM=Array{DFloat,2}(undef,dim,Nq)\n    fluxUM=Array{DFloat,2}(undef,dim,Nq)\n    fluxVM=Array{DFloat,2}(undef,dim,Nq)\n    fluxhP=Array{DFloat,2}(undef,dim,Nq)\n    fluxUP=Array{DFloat,2}(undef,dim,Nq)\n    fluxVP=Array{DFloat,2}(undef,dim,Nq)\n    for e ∈ elems\n        for f ∈ 1:nface\n            #Compute fluxes on M/Left/- side\n            hsM = h[vmapM[:, f, e]]\n            hbM=bathymetry[vmapM[:, f, e]]\n            hM=hsM + hbM\n            UM = U[vmapM[:, f, e]]\n            uM = UM ./ hM\n            VM = V[vmapM[:, f, e]]\n            vM = VM ./ hM\n            fluxhM[1,:] = UM\n            fluxhM[2,:] = VM\n            fluxUM[1,:] = ( hM .* uM .* uM + 0.5 .* gravity .* hsM .^2) .* δnl + gravity .* hsM .* hbM\n            fluxUM[2,:] = ( hM .* uM .* vM ) .* δnl\n            fluxVM[1,:] = ( hM .* vM .* uM ) .* δnl\n            fluxVM[2,:] = ( hM .* vM .* vM + 0.5 .* gravity .* hsM .^2) .* δnl + gravity .* hsM .* hbM\n\n            #Compute fluxes on P/right/+ side\n            hsP = h[vmapP[:, f, e]]\n            hbP=bathymetry[vmapP[:, f, e]]\n            hP=hsP + hbP\n            UP = U[vmapP[:, f, e]]\n            uP = UP ./ hP\n            VP = V[vmapP[:, f, e]]\n            vP = VP ./ hP\n            fluxhP[1,:] = UP\n            fluxhP[2,:] = VP\n            fluxUP[1,:] = ( hP .* uP .* uP + 0.5 .* gravity .* hsP .^2) .* δnl + gravity .* hsP .* hbP\n            fluxUP[2,:] = ( hP .* uP .* vP ) .* δnl\n            fluxVP[1,:] = ( hP .* vP .* uP ) .* δnl\n            fluxVP[2,:] = ( hP .* vP .* vP + 0.5 .* gravity .* hsP .^2) .* δnl + gravity .* hsP .* hbP\n\n            #Compute wave speed\n            nxM = nx[:, f, e]\n            nyM = ny[:, f, e]\n            λM=( abs.(nxM .* uM + nyM .* vM) + sqrt.(gravity*hM) ) .* δnl + ( sqrt.(gravity*hbM) ) .* (1.0-δnl)\n            λP=( abs.(nxM .* uP + nyM .* vP) + sqrt.(gravity*hP) ) .* δnl + ( sqrt.(gravity*hbP) ) .* (1.0-δnl)\n            λ = max.( λM, λP )\n\n            #Compute Numerical Flux and Update\n            fluxh_star = (nxM .* (fluxhM[1,:] + fluxhP[1,:]) + nyM .* (fluxhM[2,:] + fluxhP[2,:]) - λ .* (hsP - hsM)) / 2\n            fluxU_star = (nxM .* (fluxUM[1,:] + fluxUP[1,:]) + nyM .* (fluxUM[2,:] + fluxUP[2,:]) - λ .* (UP - UM)) / 2\n            fluxV_star = (nxM .* (fluxVM[1,:] + fluxVP[1,:]) + nyM .* (fluxVM[2,:] + fluxVP[2,:]) - λ .* (VP - VM)) / 2\n            rhsh[vmapM[:, f, e]] -= ω .* sJ[:, f, e] .* fluxh_star\n            rhsU[vmapM[:, f, e]] -= ω .* sJ[:, f, e] .* fluxU_star\n            rhsV[vmapM[:, f, e]] -= ω .* sJ[:, f, e] .* fluxV_star\n        end #f ∈ 1:nface\n    end #e ∈ elems\nend #function fluxrhs-2d"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Update-the-solution-via-RK-Method-for:-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Update the solution via RK Method for:",
+    "category": "section",
+    "text": "Update 1Dfunction updatesolution!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, elems, rka, rkb, dt, advection) where {S, T}\n    #Save original velocity\n    if advection\n        h = Q.h + bathymetry\n        u = Q.U ./ h\n    end\n\n    J = metric.J\n    M =  ω\n    for (rhsq, q) ∈ zip(rhs, Q)\n        for e ∈ elems\n            q[:, e] += rkb * dt * rhsq[:, e] ./ ( M .* J[:, e])\n            rhsq[:, e] *= rka\n        end\n    end\n    #Reset velocity\n    if advection\n        Q.U .= (Q.h+bathymetry) .* u\n    end\nend #function update-1dUpdate 2Dfunction updatesolution!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, ω, elems, rka, rkb, dt, advection) where {S, T}\n    #Save original velocity\n    if (advection)\n        h = Q.h + bathymetry\n        u = Q.U ./ h\n        v = Q.V ./ h\n    end\n\n    J = metric.J\n    M = reshape(kron(ω, ω), length(ω), length(ω))\n    for (rhsq, q) ∈ zip(rhs, Q)\n        for e ∈ elems\n            q[:, :, e] += rkb * dt * rhsq[:, :, e] ./ (M .* J[:, :, e])\n            rhsq[:, :, e] *= rka\n        end\n    end\n    #Reset velocity\n    if (advection)\n        Q.U .= (Q.h+bathymetry) .* u\n        Q.V .= (Q.h+bathymetry) .* v\n    end\nend #function update-2d"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Compute-L2-Error-Norm-for:-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Compute L2 Error Norm for:",
+    "category": "section",
+    "text": "1D Errorfunction L2energy(Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems) where {S, T}\n  J = metric.J\n  Nq = length(ω)\n  M = ω\n  index = CartesianIndices(ntuple(j->1:Nq, Val(1)))\n\n  energy = [zero(J[1])]\n  for q ∈ Q\n    for e ∈ elems\n      for ind ∈ index\n        energy[1] += M[ind] * J[ind, e] * q[ind, e]^2\n      end\n    end\n  end\n  energy[1]\nend #end function L2energy-1d2D Errorfunction L2energy(Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems) where {S, T}\n  J = metric.J\n  Nq = length(ω)\n  M = reshape(kron(ω, ω), Nq, Nq)\n  index = CartesianIndices(ntuple(j->1:Nq, Val(2)))\n\n  energy = [zero(J[1])]\n  for q ∈ Q\n    for e ∈ elems\n      for ind ∈ index\n        energy[1] += M[ind] * J[ind, e] * q[ind, e]^2\n      end\n    end\n  end\n  energy[1]\nend #end function L2energy-2d"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Compute-how-many-MPI-neighbors-we-have-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Compute how many MPI neighbors we have",
+    "category": "section",
+    "text": "\"mesh.nabrtorank\" stands for \"Neighbors to rank\"numnabr = length(mesh.nabrtorank)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Create-send/recv-request-arrays-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Create send/recv request arrays",
+    "category": "section",
+    "text": "\"sendreq\" is the array that we use to send the communication request. It needs to be of the same length as the number of neighboring ranks. Similarly, \"recvreq\" is the array that we use to receive the neighboring rank information.sendreq = fill(MPI.REQUEST_NULL, numnabr)\nrecvreq = fill(MPI.REQUEST_NULL, numnabr)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Create-send/recv-buffer-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Create send/recv buffer",
+    "category": "section",
+    "text": "The dimensions of these arrays are (1) degrees of freedom within an element, (2) number of solution vectors, and (3) the number of \"send elements\" and \"ghost elements\", respectively.sendQ = Array{DFloat, 3}(undef, (N+1)^dim, length(Q), length(mesh.sendelems))\nrecvQ = Array{DFloat, 3}(undef, (N+1)^dim, length(Q), length(mesh.ghostelems))Build CartesianIndex map for moving between Cartesian and linear storage of dofsindex = CartesianIndices(ntuple(j->1:N+1, dim))\nnrealelem = length(mesh.realelems)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Dump-the-initial-condition-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Dump the initial condition",
+    "category": "section",
+    "text": "Dump out the initial conditin to VTK prior to entering the time-step loop.include(joinpath(@__DIR__, \"vtk.jl\"))\ntemp=Q.h + bathymetry\nwritemesh(@sprintf(\"SWE%dD_rank_%04d_step_%05d\", dim, mpirank, 0),\n          coord...; fields=((\"hs+hb\", temp),), realelems=mesh.realelems)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Begin-Time-step-loop-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Begin Time-step loop",
+    "category": "section",
+    "text": "Go through nsteps time-steps and for each time-step, loop through the s-stages of the explicit RK method.for step = 1:nsteps\n    mpirank == 0 && @show step\n    for s = 1:length(RKA)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Post-MPI-receives-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Post MPI receives",
+    "category": "section",
+    "text": "We assume that an MPI_Isend has been posted (non-blocking send) and are waiting to receive any message that has been posted for receiving.  We are looping through the : (1) number of neighbors, (2) neighbor ranks, and (3) neighbor elements.        for (nnabr, nabrrank, nabrelem) ∈ zip(1:numnabr, mesh.nabrtorank,\n                                              mesh.nabrtorecv)\n            recvreq[nnabr] = MPI.Irecv!((@view recvQ[:, :, nabrelem]), nabrrank, 777,\n                                        mpicomm)\n        end"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Wait-on-(prior)-MPI-sends-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Wait on (prior) MPI sends",
+    "category": "section",
+    "text": "WE assume that non-blocking sends have been sent and wait for this to happen. FXG: Why do we need to wait?        MPI.Waitall!(sendreq)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Pack-data-to-send-buffer-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Pack data to send buffer",
+    "category": "section",
+    "text": "For all faces \"nf\" and all elements \"ne\" we pack the send data.        for (ne, e) ∈ enumerate(mesh.sendelems)\n            for (nf, f) ∈ enumerate(Q)\n                sendQ[:, nf, ne] = f[index[:], e]\n            end\n        end"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Post-MPI-sends-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Post MPI sends",
+    "category": "section",
+    "text": "For all: (1) number of neighbors, (2) neighbor ranks, and (3) neighbor elements we perform a non-blocking send.        for (nnabr, nabrrank, nabrelem) ∈ zip(1:numnabr, mesh.nabrtorank,\n                                              mesh.nabrtosend)\n            sendreq[nnabr] = MPI.Isend((@view sendQ[:, :, nabrelem]), nabrrank, 777,\n                                       mpicomm)\n        end"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Compute-RHS-Volume-Integral-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Compute RHS Volume Integral",
+    "category": "section",
+    "text": "Note that it is not necessary to have received all the MPI messages. Here we are interleaving computation with communication in order to curtail latency.  Here we perform the RHS volume integrals. call volumerhs        volumerhs!(rhs, Q, bathymetry, metric, D, ω, mesh.realelems, gravity, δnl)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Wait-on-MPI-receives-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Wait on MPI receives",
+    "category": "section",
+    "text": "We need to wait to receive the messages before we move on to t=e flux integrals.        MPI.Waitall!(recvreq)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Unpack-data-from-receive-buffer-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Unpack data from receive buffer",
+    "category": "section",
+    "text": "The inverse of the Pack datat to send buffer. We now unpack the receive buffer in order to use it in the RHS flux integral.        for elems ∈ mesh.nabrtorecv\n            for (nf, f) ∈ enumerate(Q)\n                f[index[:], nrealelem .+ elems] = recvQ[:, nf, elems]\n            end\n        end"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Compute-RHS-Flux-Integral-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Compute RHS Flux Integral",
+    "category": "section",
+    "text": "We compute the flux integral on all \"realelems\" which are the elements owned by the current mpirank. call fluxrhs        fluxrhs!(rhs, Q, bathymetry, metric, ω, mesh.realelems, vmapM, vmapP, gravity, N, δnl)"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Update-solution-and-scale-RHS-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Update solution and scale RHS",
+    "category": "section",
+    "text": "We need to update/evolve the solution in time and multiply by the inverse mass matrix.        #call updatesolution\n        updatesolution!(rhs, Q, bathymetry, metric, ω, mesh.realelems, RKA[s%length(RKA)+1], RKB[s], dt, advection)\n    end #s-stages"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Write-VTK-Output-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Write VTK Output",
+    "category": "section",
+    "text": "After each time-step, we dump out VTK data for Paraview/VisIt.    temp=Q.h + bathymetry\n    writemesh(@sprintf(\"SWE%dD_rank_%04d_step_%05d\", dim, mpirank, step),\n              coord...; fields=((\"hs+hb\", temp),), realelems=mesh.realelems)\nend #step"
+},
+
+{
+    "location": "examples/generated/shallow_water/#Compute-L2-Error-Norms-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Compute L2 Error Norms",
+    "category": "section",
+    "text": "Since we stored the initial condition, we can now compute the L2 error norms for both the solution and energy.#extract velocity fields\nif dim == 1\n    Q.U .= Q.U ./ (Q.h+bathymetry)\n    Δ.U .= Δ.U ./ (Δ.h+bathymetry)\n    Q.h .= Q.h\n    Δ.h .= Δ.h\nelseif dim == 2\n    Q.U .= Q.U ./ (Q.h+bathymetry)\n    Δ.U .= Δ.U ./ (Δ.h+bathymetry)\n    Q.V .= Q.V ./ (Q.h+bathymetry)\n    Δ.V .= Δ.V ./ (Δ.h+bathymetry)\n    Q.h .= Q.h\n    Δ.h .= Δ.h\nelseif dim == 3\n    Q.U .= Q.U ./ Q.h\n    Δ.U .= Δ.U ./ Δ.h\n    Q.V .= Q.V ./ Q.h\n    Δ.V .= Δ.V ./ Δ.h\n    Q.W .= Q.W ./ Q.h\n    Δ.W .= Δ.W ./ Δ.h\n    Q.h .= Q.h\n    Δ.h .= Δ.h\nend\n\n#Compute Norms\nfor (δ, q) ∈ zip(Δ, Q)\n    δ .-= q\nend\neng = L2energy(Q, metric, ω, mesh.realelems)\neng = MPI.Allreduce(eng, MPI.SUM, mpicomm)\nmpirank == 0 && @show sqrt(eng)\n\nerr = L2energy(Δ, metric, ω, mesh.realelems)\nerr = MPI.Allreduce(err, MPI.SUM, mpicomm)\nmpirank == 0 && @show sqrt(err)\n\nnothing"
+},
+
+{
+    "location": "examples/generated/shallow_water/#shallow_water-plain-program-1",
+    "page": "Shallow Water Equations Example",
+    "title": "Plain Program",
+    "category": "section",
+    "text": "Below follows a version of the program without any comments. The file is also available here: shallow_water.jlmath  \\mathbf{f}=\\left( \\mathbf{U}, \\frac{\\mathbf{U} \\otimes \\mathbf{U}}{h} + g (h^2 - h^2b) \\mathbf{I}2 \\right).N = 1 #polynomial order #brickN = (10) #1D brickmesh brickN = (100, 100) #2D brickmesh DFloat = Float64 #Number Type tend = DFloat(0.005) #Final Time δnl = 1.0 #switch to turn on/off nonlinear equations gravity = 10.0 #gravity advection=false #Boolean to turn on/off advection or sweusing MPI using Canary using Printf: @sprintfdim = length(brickN)println(\"N= \",N) println(\"dim= \",dim) println(\"brickN= \",brickN) println(\"DFloat= \",DFloat) println(\"δnl= \",δnl) println(\"gravity= \",gravity) println(\"advection= \",advection)MPI.Initialized() || MPI.Init() # only initialize MPI if not initialized MPI.finalizeatexit() mpicomm = MPI.COMMWORLD mpirank = MPI.Commrank(mpicomm) mpisize = MPI.Commsize(mpicomm)if dim == 1   (Nx, ) = brickN   local x = range(DFloat(0); length=Nx+1, stop=1)   mesh = brickmesh((x, ), (true, ); part=mpirank+1, numparts=mpisize) elseif dim == 2   (Nx, Ny) = brickN   local x = range(DFloat(0); length=Nx+1, stop=1)   local y = range(DFloat(0); length=Ny+1, stop=1)   mesh = brickmesh((x, y), (true, true); part=mpirank+1, numparts=mpisize) else   (Nx, Ny, Nz) = brickN   local x = range(DFloat(0); length=Nx+1, stop=1)   local y = range(DFloat(0); length=Ny+1, stop=1)   local z = range(DFloat(0); length=Nz+1, stop=1)   mesh = brickmesh((x, y, z), (true, true, true); part=mpirank+1, numparts=mpisize) endmesh = partition(mpicomm, mesh...)mesh = connectmesh(mpicomm, mesh...)(vmapM, vmapP) = mappings(N, mesh.elemtoelem, mesh.elemtoface, mesh.elemtoordr)(ξ, ω) = lglpoints(DFloat, N) D = spectralderivative(ξ)(nface, nelem) = size(mesh.elemtoelem) coord = creategrid(Val(dim), mesh.elemtocoord, ξ) if dim == 1   x = coord.x   for j = 1:length(x)     x[j] = x[j]  end elseif dim == 2   (x, y) = (coord.x, coord.y)   for j = 1:length(x) #=    (x[j], y[j]) = (x[j] .+ sin.(π * x[j]) .* sin.(2 * π * y[j]) / 10,                     y[j] .+ sin.(2 * π * x[j]) .* sin.(π * y[j]) / 10) =#   end elseif dim == 3   (x, y, z) = (coord.x, coord.y, coord.z)   for j = 1:length(x)     (x[j], y[j], z[j]) = (x[j] + (sin(π * x[j]) * sin(2 * π * y[j]) *                                   cos(2 * π * z[j])) / 10,                           y[j] + (sin(π * y[j]) * sin(2 * π * x[j]) *                                   cos(2 * π * z[j])) / 10,                           z[j] + (sin(π * z[j]) * sin(2 * π * x[j]) *                                   cos(2 * π * y[j])) / 10)   end endinclude(joinpath(@DIR, \"vtk.jl\")) writemesh(@sprintf(\"SWE%dDrank%04d_mesh\", dim, mpirank), coord...;           realelems=mesh.realelems)metric = computemetric(coord..., D)if dim == 1   statesyms = (:h, :U) elseif dim == 2   statesyms = (:h, :U, :V) elseif dim == 3   statesyms = (:h, :U, :V, :W) endQ   = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms))) rhs = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms))) if dim == 1     bathymetry = zero(coord.x)     for i=1:length(coord.x)         bathymetry[i]=0.1     end     r=(x .- 0.5).^2     Q.h .= 0.5 .* exp.(-32.0 .* r)     Q.U .= 0     if (advection)         δnl=1.0         gravity=0.0         Q.U .= (Q.h+bathymetry) .* (1.0)     end     #=   for i=1:length(coord.x)      bathymetry[i]=2.0   end   Q.h .= sin.(2 * π * x) .+ 0.0   Q.U .= (Q.h+bathymetry) .* (1.0) =# elseif dim == 2     bathymetry = zero(coord.x)     for i=1:length(coord.x)         bathymetry[i]=0.2     end     r=(x .- 0.5).^2 + (y .- 0.5).^2     Q.h .= 0.5 .* exp.(-100.0 .* r)     Q.U .= 0     Q.V .= 0     if (advection)         δnl=1.0         gravity=0.0         Q.U .= (Q.h+bathymetry) .* (1.0)         Q.V .= (Q.h+bathymetry) .* (0.0)     end #=     for i=1:length(coord.x)      bathymetry[i]=2.0   end   r=(x .- 0.5).^2 + (y .- 0.5).^2   Q.h .= sin.(2 * π * x) .* sin.(2 *  π * y)   #Q.h .= 0.5 .* exp.(-8.0 .* r)   Q.U .= (Q.h+bathymetry) .* (1.0)   Q.V .= (Q.h+bathymetry) .* (1.0) =# elseif dim == 3   Q.h .= sin.(2 * π * x) .* sin.(2 *  π * y) .* sin.(2 * π * z) .+ 2.0   Q.U .= Q.h .* (1.0)   Q.V .= Q.h .* (1.0)   Q.W .= Q.h .* (1.0) enddt = [floatmax(DFloat)] if dim == 1     (ξx) = (metric.ξx)     (h,U) = (Q.h+bathymetry,Q.U)     for n = 1:length(U)         locdt = (2h[n])  ./ (abs.(U[n] * ξx[n]))         dt[1] = min(dt[1], locdt)     end elseif dim == 2     (ξx, ξy) = (metric.ξx, metric.ξy)     (ηx, ηy) = (metric.ηx, metric.ηy)     (h,U,V) = (Q.h+bathymetry,Q.U,Q.V)     for n = 1:length(U)         locdt = (2h[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n]),                           abs.(U[n] * ηx[n] + V[n] * ηy[n]))         dt[1] = min(dt[1], locdt)     end elseif dim == 3     (ξx, ξy, ξz) = (metric.ξx, metric.ξy, metric.ξz)     (ηx, ηy, ηz) = (metric.ηx, metric.ηy, metric.ηz)     (ζx, ζy, ζz) = (metric.ζx, metric.ζy, metric.ζz)     (h,U,V,W) = (Q.h,Q.U,Q.V,Q.W)     for n = 1:length(U)         locdt = (2h[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n] + W[n] * ξz[n]),                           abs.(U[n] * ηx[n] + V[n] * ηy[n] + W[n] * ηz[n]),                           abs.(U[n] * ζx[n] + V[n] * ζy[n] + W[n] * ζz[n]))         dt[1] = min(dt[1], locdt)     end end dt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm) dt = DFloat(dt / N^sqrt(2)) dt = 0.0025 nsteps = ceil(Int64, tend / dt) dt = tend / nsteps @show (dt, nsteps)Δ   = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms))) if dim == 1   Δ.h .= Q.h   Δ.U .= Q.U elseif dim == 2   Δ.h .= Q.h   Δ.U .= Q.U   Δ.V .= Q.V elseif dim == 3   u = Q.U ./ Q.h   v = Q.V ./ Q.h   w = Q.W ./ Q.h   Δ.h .= sin.(2 * π * (x - tend * u)) .* sin.(2 *  π * (y - tend * v)) .*          sin.(2 * π * (z - tend * w)) .+ 2   Δ.U .=  Q.U   Δ.V .=  Q.V   Δ.W .=  Q.W endRKA = (DFloat(0),        DFloat(-567301805773)  / DFloat(1357537059087),        DFloat(-2404267990393) / DFloat(2016746695238),        DFloat(-3550918686646) / DFloat(2091501179385),        DFloat(-1275806237668) / DFloat(842570457699 ))RKB = (DFloat(1432997174477) / DFloat(9575080441755 ),        DFloat(5161836677717) / DFloat(13612068292357),        DFloat(1720146321549) / DFloat(2090206949498 ),        DFloat(3134564353537) / DFloat(4481467310338 ),        DFloat(2277821191437) / DFloat(14882151754819))RKC = (DFloat(0),        DFloat(1432997174477) / DFloat(9575080441755),        DFloat(2526269341429) / DFloat(6820363962896),        DFloat(2006345519317) / DFloat(3224310063776),        DFloat(2802321613138) / DFloat(2924317926251))function volumerhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, D, ω, elems, gravity, δnl) where {S, T}   (rhsh, rhsU) = (rhs.h, rhs.U)   (h, U) = (Q.h, Q.U)   Nq = size(h, 1)   J = metric.J   ξx = metric.ξx   for e ∈ elems       #Get primitive variables and fluxes       hb=bathymetry[:,e]       hs=h[:,e]       ht=hs + hb       u=U[:,e] ./ ht       fluxh=U[:,e]       fluxU=(ht .* u .* u + 0.5 .* gravity .* hs .^2) .* δnl + gravity .* hs .* hb  rhsh[:,e] += D\' * (ω .* J[:,e] .* (ξx[:,e] .* fluxh[:]))\n  rhsU[:,e] += D\' * (ω .* J[:,e] .* (ξx[:,e] .* fluxU[:])) #assuming dhb/dx=0: need to include itend #e ∈ elems end #function volumerhs-1dfunction volumerhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, D, ω, elems, gravity, δnl) where {S, T}     (rhsh, rhsU, rhsV) = (rhs.h, rhs.U, rhs.V)     (h, U, V) = (Q.h, Q.U, Q.V)     Nq = size(h, 1)     J = metric.J     dim=2     (ξx, ξy) = (metric.ξx, metric.ξy)     (ηx, ηy) = (metric.ηx, metric.ηy)     fluxh=Array{DFloat,3}(undef,dim,Nq,Nq)     fluxU=Array{DFloat,3}(undef,dim,Nq,Nq)     fluxV=Array{DFloat,3}(undef,dim,Nq,Nq)     for e ∈ elems         #Get primitive variables and fluxes         hb=bathymetry[:,:,e]         hs=h[:,:,e]         ht=hs + hb         u=U[:,:,e] ./ ht         v=V[:,:,e] ./ ht         fluxh[1,:,:]=U[:,:,e]         fluxh[2,:,:]=V[:,:,e]         fluxU[1,:,:]=(ht .* u .* u + 0.5 .* gravity .* hs .^2) .* δnl + gravity .* hs .* hb         fluxU[2,:,:]=(ht .* u .* v) .* δnl         fluxV[1,:,:]=(ht .* v .* u) .* δnl         fluxV[2,:,:]=(ht .* v .* v + 0.5 .* gravity .* hs .^2) .* δnl + gravity .* hs .* hb    for j = 1:Nq\n        rhsh[:,j,e] += D\' * (ω[j] * ω .* J[:,j,e].* (ξx[:,j,e] .* fluxh[1,:,j] + ξy[:,j,e] .* fluxh[2,:,j]))\n        rhsU[:,j,e] += D\' * (ω[j] * ω .* J[:,j,e].* (ξx[:,j,e] .* fluxU[1,:,j] + ξy[:,j,e] .* fluxU[2,:,j]))\n        rhsV[:,j,e] += D\' * (ω[j] * ω .* J[:,j,e].* (ξx[:,j,e] .* fluxV[1,:,j] + ξy[:,j,e] .* fluxV[2,:,j]))\n    end #j\n\n    for i = 1:Nq\n        rhsh[i,:,e] += D\' * (ω[i] * ω .* J[i,:,e].* (ηx[i,:,e] .* fluxh[1,i,:] + ηy[i,:,e] .* fluxh[2,i,:]))\n        rhsU[i,:,e] += D\' * (ω[i] * ω .* J[i,:,e].* (ηx[i,:,e] .* fluxU[1,i,:] + ηy[i,:,e] .* fluxU[2,i,:]))\n        rhsV[i,:,e] += D\' * (ω[i] * ω .* J[i,:,e].* (ηx[i,:,e] .* fluxV[1,i,:] + ηy[i,:,e] .* fluxV[2,i,:]))\n    end #i\nend #e ∈ elemsend #function volumerhs-2dfunction fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, elems, vmapM, vmapP, gravity, N, δnl) where {S, T}(rhsh, rhsU) = (rhs.h, rhs.U)\n(h, U) = (Q.h, Q.U)\nnface = 2\n(nx, sJ) = (metric.nx, metric.sJ)\nnx = reshape(nx, size(vmapM))\nsJ = reshape(sJ, size(vmapM))\n\nfor e ∈ elems\n    for f ∈ 1:nface\n        #Compute fluxes on M/Left/- side\n        hsM = h[vmapM[1, f, e]]\n        hbM=bathymetry[vmapM[1, f, e]]\n        hM=hsM + hbM\n        UM = U[vmapM[1, f, e]]\n        uM = UM ./ hM\n        fluxhM = UM\n        fluxUM = ( hM .* uM .* uM + 0.5 .* gravity .* hsM .^2) .* δnl + gravity .* hsM .* hbM\n\n        #Compute fluxes on P/Right/+ side\n        hsP = h[vmapP[1, f, e]]\n        hbP=bathymetry[vmapP[1, f, e]]\n        hP=hsP + hbP\n        UP = U[vmapP[1, f, e]]\n        uP = UP ./ hP\n        fluxhP = UP\n        fluxUP = (hP .* uP .* uP + 0.5 .* gravity .* hsP .^2) .* δnl + gravity .* hsP .* hbP\n\n        #Compute wave speed\n        nxM = nx[1, f, e]\n        λM=( abs.(nxM .* uM) + sqrt(gravity*hM) ) .* δnl + ( sqrt(gravity*hbM) ) .* (1.0-δnl)\n        λP=( abs.(nxM .* uP) + sqrt(gravity*hP) ) .* δnl + ( sqrt(gravity*hbP) ) .* (1.0-δnl)\n        λ = max.( λM, λP )\n\n        #Compute Numerical Flux and Update\n        fluxh_star = (nxM .* (fluxhM + fluxhP) - λ .* (hsP - hsM)) / 2\n        fluxU_star = (nxM .* (fluxUM + fluxUP) - λ .* (UP - UM)) / 2\n        rhsh[vmapM[1, f, e]] -= sJ[1, f, e] .* fluxh_star\n        rhsU[vmapM[1, f, e]] -= sJ[1, f, e] .* fluxU_star\n    end #for f ∈ 1:nface\nend #e ∈ elemsend #function fluxrhs-1dfunction fluxrhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, ω, elems, vmapM, vmapP, gravity, N, δnl) where {S, T}     (rhsh, rhsU, rhsV) = (rhs.h, rhs.U, rhs.V)     (h, U, V) = (Q.h, Q.U, Q.V)     nface = 4     Nq=N+1     dim=2     (nx, ny, sJ) = (metric.nx, metric.ny, metric.sJ)     fluxhM=Array{DFloat,2}(undef,dim,Nq)     fluxUM=Array{DFloat,2}(undef,dim,Nq)     fluxVM=Array{DFloat,2}(undef,dim,Nq)     fluxhP=Array{DFloat,2}(undef,dim,Nq)     fluxUP=Array{DFloat,2}(undef,dim,Nq)     fluxVP=Array{DFloat,2}(undef,dim,Nq)     for e ∈ elems         for f ∈ 1:nface             #Compute fluxes on M/Left/- side             hsM = h[vmapM[:, f, e]]             hbM=bathymetry[vmapM[:, f, e]]             hM=hsM + hbM             UM = U[vmapM[:, f, e]]             uM = UM ./ hM             VM = V[vmapM[:, f, e]]             vM = VM ./ hM             fluxhM[1,:] = UM             fluxhM[2,:] = VM             fluxUM[1,:] = ( hM .* uM .* uM + 0.5 .* gravity .* hsM .^2) .* δnl + gravity .* hsM .* hbM             fluxUM[2,:] = ( hM .* uM .* vM ) .* δnl             fluxVM[1,:] = ( hM .* vM .* uM ) .* δnl             fluxVM[2,:] = ( hM .* vM .* vM + 0.5 .* gravity .* hsM .^2) .* δnl + gravity .* hsM .* hbM        #Compute fluxes on P/right/+ side\n        hsP = h[vmapP[:, f, e]]\n        hbP=bathymetry[vmapP[:, f, e]]\n        hP=hsP + hbP\n        UP = U[vmapP[:, f, e]]\n        uP = UP ./ hP\n        VP = V[vmapP[:, f, e]]\n        vP = VP ./ hP\n        fluxhP[1,:] = UP\n        fluxhP[2,:] = VP\n        fluxUP[1,:] = ( hP .* uP .* uP + 0.5 .* gravity .* hsP .^2) .* δnl + gravity .* hsP .* hbP\n        fluxUP[2,:] = ( hP .* uP .* vP ) .* δnl\n        fluxVP[1,:] = ( hP .* vP .* uP ) .* δnl\n        fluxVP[2,:] = ( hP .* vP .* vP + 0.5 .* gravity .* hsP .^2) .* δnl + gravity .* hsP .* hbP\n\n        #Compute wave speed\n        nxM = nx[:, f, e]\n        nyM = ny[:, f, e]\n        λM=( abs.(nxM .* uM + nyM .* vM) + sqrt.(gravity*hM) ) .* δnl + ( sqrt.(gravity*hbM) ) .* (1.0-δnl)\n        λP=( abs.(nxM .* uP + nyM .* vP) + sqrt.(gravity*hP) ) .* δnl + ( sqrt.(gravity*hbP) ) .* (1.0-δnl)\n        λ = max.( λM, λP )\n\n        #Compute Numerical Flux and Update\n        fluxh_star = (nxM .* (fluxhM[1,:] + fluxhP[1,:]) + nyM .* (fluxhM[2,:] + fluxhP[2,:]) - λ .* (hsP - hsM)) / 2\n        fluxU_star = (nxM .* (fluxUM[1,:] + fluxUP[1,:]) + nyM .* (fluxUM[2,:] + fluxUP[2,:]) - λ .* (UP - UM)) / 2\n        fluxV_star = (nxM .* (fluxVM[1,:] + fluxVP[1,:]) + nyM .* (fluxVM[2,:] + fluxVP[2,:]) - λ .* (VP - VM)) / 2\n        rhsh[vmapM[:, f, e]] -= ω .* sJ[:, f, e] .* fluxh_star\n        rhsU[vmapM[:, f, e]] -= ω .* sJ[:, f, e] .* fluxU_star\n        rhsV[vmapM[:, f, e]] -= ω .* sJ[:, f, e] .* fluxV_star\n    end #f ∈ 1:nface\nend #e ∈ elemsend #function fluxrhs-2dfunction updatesolution!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, elems, rka, rkb, dt, advection) where {S, T}     #Save original velocity     if advection         h = Q.h + bathymetry         u = Q.U ./ h     endJ = metric.J\nM =  ω\nfor (rhsq, q) ∈ zip(rhs, Q)\n    for e ∈ elems\n        q[:, e] += rkb * dt * rhsq[:, e] ./ ( M .* J[:, e])\n        rhsq[:, e] *= rka\n    end\nend\n#Reset velocity\nif advection\n    Q.U .= (Q.h+bathymetry) .* u\nendend #function update-1dfunction updatesolution!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, ω, elems, rka, rkb, dt, advection) where {S, T}     #Save original velocity     if (advection)         h = Q.h + bathymetry         u = Q.U ./ h         v = Q.V ./ h     endJ = metric.J\nM = reshape(kron(ω, ω), length(ω), length(ω))\nfor (rhsq, q) ∈ zip(rhs, Q)\n    for e ∈ elems\n        q[:, :, e] += rkb * dt * rhsq[:, :, e] ./ (M .* J[:, :, e])\n        rhsq[:, :, e] *= rka\n    end\nend\n#Reset velocity\nif (advection)\n    Q.U .= (Q.h+bathymetry) .* u\n    Q.V .= (Q.h+bathymetry) .* v\nendend #function update-2dfunction L2energy(Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems) where {S, T}   J = metric.J   Nq = length(ω)   M = ω   index = CartesianIndices(ntuple(j->1:Nq, Val(1)))energy = [zero(J[1])]   for q ∈ Q     for e ∈ elems       for ind ∈ index         energy[1] += M[ind] * J[ind, e] * q[ind, e]^2       end     end   end   energy[1] end #end function L2energy-1dfunction L2energy(Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems) where {S, T}   J = metric.J   Nq = length(ω)   M = reshape(kron(ω, ω), Nq, Nq)   index = CartesianIndices(ntuple(j->1:Nq, Val(2)))energy = [zero(J[1])]   for q ∈ Q     for e ∈ elems       for ind ∈ index         energy[1] += M[ind] * J[ind, e] * q[ind, e]^2       end     end   end   energy[1] end #end function L2energy-2dnumnabr = length(mesh.nabrtorank)sendreq = fill(MPI.REQUESTNULL, numnabr) recvreq = fill(MPI.REQUESTNULL, numnabr)sendQ = Array{DFloat, 3}(undef, (N+1)^dim, length(Q), length(mesh.sendelems)) recvQ = Array{DFloat, 3}(undef, (N+1)^dim, length(Q), length(mesh.ghostelems))index = CartesianIndices(ntuple(j->1:N+1, dim)) nrealelem = length(mesh.realelems)include(joinpath(@DIR, \"vtk.jl\")) temp=Q.h + bathymetry writemesh(@sprintf(\"SWE%dDrank%04dstep%05d\", dim, mpirank, 0),           coord...; fields=((\"hs+hb\", temp),), realelems=mesh.realelems)for step = 1:nsteps     mpirank == 0 && @show step     for s = 1:length(RKA)    for (nnabr, nabrrank, nabrelem) ∈ zip(1:numnabr, mesh.nabrtorank,\n                                          mesh.nabrtorecv)\n        recvreq[nnabr] = MPI.Irecv!((@view recvQ[:, :, nabrelem]), nabrrank, 777,\n                                    mpicomm)\n    end\n\n    MPI.Waitall!(sendreq)\n\n    for (ne, e) ∈ enumerate(mesh.sendelems)\n        for (nf, f) ∈ enumerate(Q)\n            sendQ[:, nf, ne] = f[index[:], e]\n        end\n    end\n\n    for (nnabr, nabrrank, nabrelem) ∈ zip(1:numnabr, mesh.nabrtorank,\n                                          mesh.nabrtosend)\n        sendreq[nnabr] = MPI.Isend((@view sendQ[:, :, nabrelem]), nabrrank, 777,\n                                   mpicomm)\n    end\n\n    volumerhs!(rhs, Q, bathymetry, metric, D, ω, mesh.realelems, gravity, δnl)\n\n    MPI.Waitall!(recvreq)\n\n    for elems ∈ mesh.nabrtorecv\n        for (nf, f) ∈ enumerate(Q)\n            f[index[:], nrealelem .+ elems] = recvQ[:, nf, elems]\n        end\n    end\n\n    fluxrhs!(rhs, Q, bathymetry, metric, ω, mesh.realelems, vmapM, vmapP, gravity, N, δnl)\n\n    #call updatesolution\n    updatesolution!(rhs, Q, bathymetry, metric, ω, mesh.realelems, RKA[s%length(RKA)+1], RKB[s], dt, advection)\nend #s-stages\n\ntemp=Q.h + bathymetry\nwritemesh(@sprintf(\"SWE%dD_rank_%04d_step_%05d\", dim, mpirank, step),\n          coord...; fields=((\"hs+hb\", temp),), realelems=mesh.realelems)end #step#extract velocity fields if dim == 1     Q.U .= Q.U ./ (Q.h+bathymetry)     Δ.U .= Δ.U ./ (Δ.h+bathymetry)     Q.h .= Q.h     Δ.h .= Δ.h elseif dim == 2     Q.U .= Q.U ./ (Q.h+bathymetry)     Δ.U .= Δ.U ./ (Δ.h+bathymetry)     Q.V .= Q.V ./ (Q.h+bathymetry)     Δ.V .= Δ.V ./ (Δ.h+bathymetry)     Q.h .= Q.h     Δ.h .= Δ.h elseif dim == 3     Q.U .= Q.U ./ Q.h     Δ.U .= Δ.U ./ Δ.h     Q.V .= Q.V ./ Q.h     Δ.V .= Δ.V ./ Δ.h     Q.W .= Q.W ./ Q.h     Δ.W .= Δ.W ./ Δ.h     Q.h .= Q.h     Δ.h .= Δ.h end#Compute Norms for (δ, q) ∈ zip(Δ, Q)     δ .-= q end eng = L2energy(Q, metric, ω, mesh.realelems) eng = MPI.Allreduce(eng, MPI.SUM, mpicomm) mpirank == 0 && @show sqrt(eng)err = L2energy(Δ, metric, ω, mesh.realelems) err = MPI.Allreduce(err, MPI.SUM, mpicomm) mpirank == 0 && @show sqrt(err)nothing"
+},
+
+{
+    "location": "examples/generated/shallow_water/#This-file-was-generated-using-Literate.jl,-https://github.com/fredrikekre/Literate.jl-1",
+    "page": "Shallow Water Equations Example",
+    "title": "This file was generated using Literate.jl, https://github.com/fredrikekre/Literate.jl",
+    "category": "section",
+    "text": "```This page was generated using Literate.jl."
+},
+
+{
     "location": "reference/mesh/#",
     "page": "Mesh",
     "title": "Mesh",
