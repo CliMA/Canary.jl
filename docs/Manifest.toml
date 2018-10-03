@@ -76,9 +76,9 @@ uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [[MPI]]
 deps = ["BinDeps", "Compat", "Distributed", "Libdl", "LinearAlgebra", "Pkg", "Printf", "Random", "Statistics", "Test"]
-git-tree-sha1 = "1cbb652a54499f7828f167b0fc633cad633758f3"
+git-tree-sha1 = "b932f8e7115a60208692d474c45d5d6fcea10659"
 uuid = "da04e1cc-30fd-572f-bb4f-1f8673147195"
-version = "0.7.1"
+version = "0.7.2"
 
 [[Markdown]]
 deps = ["Base64"]
