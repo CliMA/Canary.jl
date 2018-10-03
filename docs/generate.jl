@@ -18,3 +18,8 @@ for input in EXAMPLES
   mdpost(str) = replace(str, "@__CODE__" => code)
   Literate.markdown(input, GENERATEDDIR, postprocess = mdpost)
 end
+
+# remove any .vtu files in the generated dir (should not be deployed)
+cd(GENERATEDDIR) do
+    foreach(file -> endswith(file, ".vtu") && rm(file), readdir())
+end
