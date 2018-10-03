@@ -10,6 +10,7 @@ GENERATEDEXAMPLES = [joinpath("examples", "generated", f) for f in ("advection.m
 # Build documentation.
 makedocs(
          sitename = "Canary.jl",
+         authors = "Climate Modeling Alliance",
          doctest = false,
          strict = false,
          pages = Any[
