@@ -10,6 +10,7 @@ GENERATEDEXAMPLES = [joinpath("examples", "generated", f) for f in ("advection.m
 # Build documentation.
 makedocs(
          sitename = "Canary.jl",
+         authors = "Climate Modeling Alliance",
          doctest = false,
          strict = false,
          pages = Any[
@@ -33,6 +34,4 @@ makedocs(
 # Deploy built documentation from Travis.
 deploydocs(
            repo = "github.com/climate-machine/Canary.jl.git",
-           deps = Deps.pip("mkdocs", "pygments", "python-markdown-math"),
-           julia = "1.0",
           )
