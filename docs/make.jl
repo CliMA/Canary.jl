@@ -33,6 +33,4 @@ makedocs(
 # Deploy built documentation from Travis.
 deploydocs(
            repo = "github.com/climate-machine/Canary.jl.git",
-           deps = Deps.pip("mkdocs", "pygments", "python-markdown-math"),
-           julia = "1.0",
           )
