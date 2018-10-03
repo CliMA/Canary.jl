@@ -2,7 +2,7 @@
 # # Shallow Water Equations Example
 #
 #
-# ![](advection2d.png)
+# ![](shallow_water2d.png)
 #-
 #
 #-
@@ -14,7 +14,7 @@
 # We solve the following equation:
 #
 # ```math
-# \frac{\partial h}{\partial t} + \nabla \cdot \mathbf{U} = 0 \; \; (1.1)
+# \frac{\partial h_s}{\partial t} + \nabla \cdot \mathbf{U} = 0 \; \; (1.1)
 # ```
 # ```math
 # \frac{\partial \mathbf{U}}{\partial t} + \nabla \cdot \left( \frac{\mathbf{U} \otimes \mathbf{U}}{h} + g (h^2 - h^2_b) \mathbf{I}_2 \right) + h_s \nabla h_b = 0 \; \; (1.2)
@@ -49,15 +49,14 @@
 # ### Define Input Parameters:
 # N is polynomial order and
 # brickN(Ne) generates a brick-grid with Ne elements in each direction
-N = 4 #polynomial order
+N = 1 #polynomial order
 #brickN = (10) #1D brickmesh
-brickN = (10, 10) #2D brickmesh
-#brickN = (10, 10, 10) #3D brickmesh
+brickN = (100, 100) #2D brickmesh
 DFloat = Float64 #Number Type
-tend = DFloat(1.0) #Final Time
-δnl = 0.0
-gravity = 10.0
-advection=false
+tend = DFloat(0.1) #Final Time
+δnl = 1.0 #switch to turn on/off nonlinear equations
+gravity = 10.0 #gravity
+advection=false #Boolean to turn on/off advection or swe
 
 # ### Load the MPI and Canary packages where Canary builds the mesh, generates basis functions, and metric terms.
 using MPI
@@ -255,7 +254,7 @@ elseif dim == 3
 end
 dt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
 dt = DFloat(dt / N^sqrt(2))
-dt = 0.005
+dt = 0.0025
 nsteps = ceil(Int64, tend / dt)
 dt = tend / nsteps
 @show (dt, nsteps)
@@ -380,52 +379,6 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, D, 
     end #e ∈ elems
 end #function volumerhs-2d
 
-#=
-# Volume RHS for 3D
-function volumerhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, D, ω,
-                    elems) where {S, T}
-    rhsh = rhs.h
-    (h, U, V, W) = (Q.h, Q.U, Q.V, Q.W)
-    Nq = size(h, 1)
-    J = metric.J
-    (ξx, ξy, ξz) = (metric.rx, metric.ry, metric.rz)
-    (ηx, ηy, ηz) = (metric.sx, metric.sy, metric.sz)
-    (ζx, ζy, ζz) = (metric.tx, metric.ty, metric.tz)
-    for e ∈ elems
-        # loop of ξ-grid lines
-        for k = 1:Nq
-            for j = 1:Nq
-                rhsh[:, j, k, e] +=
-                    D' * (ω[j] * ω[k] * ω .* J[:, j, k, e] .*
-                          (ξx[:, j, k, e] .* U[:, j, k, e] +
-                           ξy[:, j, k, e] .* V[:, j, k, e] +
-                           ξz[:, j, k, e] .* W[:, j, k, e]))
-            end #j
-        end #k
-        # loop of η-grid lines
-        for k = 1:Nq
-            for i = 1:Nq
-                rhsh[i, :, k, e] +=
-                    D' * (ω[i] * ω[k] * ω .* J[i, :, k, e] .*
-                          (ηx[i, :, k, e] .* U[i, :, k, e] +
-                           ηy[i, :, k, e] .* V[i, :, k, e] +
-                           ηz[i, :, k, e] .* W[i, :, k, e]))
-            end #i
-        end #k
-        # loop of ζ-grid lines
-        for j = 1:Nq
-            for i = 1:Nq
-                rhsh[i, j, :, e] +=
-                    D' * (ω[i] * ω[j] * ω .* J[i, j, :, e] .*
-                          (ζx[i, j, :, e] .* U[i, j, :, e] +
-                           ζy[i, j, :, e] .* V[i, j, :, e] +
-                           ζz[i, j, :, e] .* W[i, j, :, e]))
-            end #i
-        end #j
-    end #e ∈ elems
-end #function volumerhs-3d
-=#
-
 # ### Flux RHS Routines
 # These functions solve the flux integral term $\int_{\Gamma_e} \psi \mathbf{n} \cdot \left( \rho \mathbf{u} \right)^{(*,e)}_N$ for:
 # Flux RHS for 1D
@@ -537,50 +490,6 @@ function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, ω, e
     end #e ∈ elems
 end #function fluxrhs-2d
 
-#=
-# FLux RHS for 3D
-function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems, vmapM,
-                  vmapP) where {S, T}
-    rhsh = rhs.h
-    (h, U, V, W) = (Q.h, Q.U, Q.V, Q.W)
-    nface = 6
-    (nx, ny, nz, sJ) = (metric.nx, metric.ny, metric.nz, metric.sJ)
-    nx = reshape(nx, size(vmapM))
-    ny = reshape(ny, size(vmapM))
-    nz = reshape(nz, size(vmapM))
-    sJ = reshape(sJ, size(vmapM))
-    for e ∈ elems
-        for f ∈ 1:nface
-            hM = h[vmapM[:, f, e]]
-            uM = U[vmapM[:, f, e]] ./ hM
-            vM = V[vmapM[:, f, e]] ./ hM
-            wM = W[vmapM[:, f, e]] ./ hM
-            fM = hM .* uM
-            gM = hM .* vM
-            hM = hM .* wM
-
-            hP = h[vmapP[:, f, e]]
-            uP = U[vmapP[:, f, e]] ./ hP
-            vP = V[vmapP[:, f, e]] ./ hP
-            wP = W[vmapP[:, f, e]] ./ hP
-            fP = hP .* uP
-            gP = hP .* vP
-            hP = hP .* wP
-
-            nxM = nx[:, f, e]
-            nyM = ny[:, f, e]
-            nzM = nz[:, f, e]
-            λ = max.(abs.(nxM .* uM + nyM .* vM + nzM .* wM),
-                     abs.(nxM .* uP + nyM .* vP + nzM .* wP))
-
-            F = (nxM .* (fM + fP) + nyM .* (gM + gP) + nzM .* (hM + hP) -
-                 λ .* (hP - hM)) / 2
-            rhsh[vmapM[:, f, e]] -= kron(ω, ω) .* sJ[:, f, e] .* F
-        end #f ∈ 1:nface
-    end #e ∈ elems
-end #function fluxrhs-3d
-=#
-
 # ### Update the solution via RK Method for:
 # Update 1D
 function updatesolution!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, elems, rka, rkb, dt, advection) where {S, T}
@@ -628,31 +537,6 @@ function updatesolution!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric
     end
 end #function update-2d
 
-#=
-# Update 3D
-function updatesolution!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems,
-                         rka, rkb, dt) where {S, T}
-   #Save original velocity
-    u = Q.U ./ Q.h
-    v = Q.V ./ Q.h
-    w = Q.W ./ Q.h
-
-    J = metric.J
-    M = reshape(kron(ω, ω, ω), length(ω), length(ω), length(ω))
-    for (rhsq, q) ∈ zip(rhs, Q)
-        for e ∈ elems
-            q[:, :, :, e] += rkb * dt * rhsq[:, :, :, e] ./ (M .* J[:, :, :, e])
-            rhsq[:, :, :, e] *= rka
-        end
-    end
-
-    #Reset velocity
-    Q.U .= Q.h .* u
-    Q.V .= Q.h .* v
-    Q.W .= Q.h .* w
-end #function update-3d
-=#
-
 # ### Compute L2 Error Norm for:
 # 1D Error
 function L2energy(Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems) where {S, T}
@@ -689,26 +573,6 @@ function L2energy(Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems) where {S, T
   end
   energy[1]
 end #end function L2energy-2d
-
-#=
-# 3D Error
-function L2energy(Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems) where {S, T}
-  J = metric.J
-  Nq = length(ω)
-  M = reshape(kron(ω, ω, ω), Nq, Nq, Nq)
-  index = CartesianIndices(ntuple(j->1:Nq, Val(3)))
-
-  energy = [zero(J[1])]
-  for q ∈ Q
-    for e ∈ elems
-      for ind ∈ index
-        energy[1] += M[ind] * J[ind, e] * q[ind, e]^2
-      end
-    end
-  end
-  energy[1]
-end #end function L2energy-3d
-=#
 
 #-------------------------------------------------------------------------------#
 #--------End Volume, Flux, Update, Error Functions for Multiple Dispatch--------#
