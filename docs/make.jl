@@ -5,7 +5,8 @@ using Documenter, Canary
 # Generate examples
 include("generate.jl")
 
-GENERATEDEXAMPLES = [joinpath("examples", "generated", f) for f in ("advection.md",)]
+GENERATEDEXAMPLES = [joinpath("examples", "generated", "$f.md") for f in
+                     EXAMPLES]
 
 # Build documentation.
 makedocs(
