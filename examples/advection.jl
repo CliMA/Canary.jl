@@ -47,7 +47,7 @@ N = 4 #polynomial order
 #brickN = (10, 10) #2D brickmesh
 brickN = (10, 10, 10) #3D brickmesh
 DFloat = Float64 #Number Type
-tend = DFloat(1.0) #Final Time
+tend = DFloat(0.01) #Final Time
 
 # ### Load the MPI and Canary packages where Canary builds the mesh, generates basis functions, and metric terms.
 using MPI
