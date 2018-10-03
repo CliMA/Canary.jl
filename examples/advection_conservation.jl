@@ -44,7 +44,7 @@
 #
 #--------------------------------Markdown Language Header-----------------------
 
-# ### Define key parameters:
+# ### Define Input parameters:
 # N is polynomial order and
 # brickN(Ne) generates a brick-grid with Ne elements in each direction
 N = 4 #polynomial order
@@ -498,7 +498,7 @@ function updatesolution!(rhs, Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems,
     #Reset velocity
     Q.U .= Q.ρ .* u
     Q.V .= Q.ρ .* v
-end
+end #function update-2d
 
 # Update 3D
 function updatesolution!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems,
@@ -521,7 +521,7 @@ function updatesolution!(rhs, Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems,
     Q.U .= Q.ρ .* u
     Q.V .= Q.ρ .* v
     Q.W .= Q.ρ .* w
-end
+end #function update-3d
 
 # ### Compute L2 Error Norm for:
 # 1D Error
@@ -540,7 +540,7 @@ function L2energy(Q::NamedTuple{S, NTuple{2, T}}, metric, ω, elems) where {S, T
     end
   end
   energy[1]
-end
+end #function L2energy-1d
 
 # 2D Error
 function L2energy(Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems) where {S, T}
@@ -558,7 +558,7 @@ function L2energy(Q::NamedTuple{S, NTuple{3, T}}, metric, ω, elems) where {S, T
     end
   end
   energy[1]
-end
+end #function L2energy-2d
 
 # 3D Error
 function L2energy(Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems) where {S, T}
@@ -576,7 +576,7 @@ function L2energy(Q::NamedTuple{S, NTuple{4, T}}, metric, ω, elems) where {S, T
     end
   end
   energy[1]
-end
+end #function L2energy-3d
 
 #-------------------------------------------------------------------------------#
 #--------End Volume, Flux, Update, Error Functions for Multiple Dispatch--------#
