@@ -2,64 +2,12 @@ include(joinpath(@__DIR__,"vtk.jl"))
 using MPI
 using Canary
 using Printf: @sprintf
-const DFloat = Float64
 
-# Fourth-order, low-storage, Runge–Kutta scheme of Carpenter and Kennedy (1994)
-# ((5,4) 2N-Storage RK scheme.
-#
-# Ref:
-# @TECHREPORT{CarpenterKennedy1994,
-#   author = {M.~H. Carpenter and C.~A. Kennedy},
-#   title = {Fourth-order {2N-storage} {Runge-Kutta} schemes},
-#   institution = {National Aeronautics and Space Administration},
-#   year = {1994},
-#   number = {NASA TM-109112},
-#   address = {Langley Research Center, Hampton, VA},
-# }
-const RKA = (DFloat(0),
-             DFloat(-567301805773)  / DFloat(1357537059087),
-             DFloat(-2404267990393) / DFloat(2016746695238),
-             DFloat(-3550918686646) / DFloat(2091501179385),
-             DFloat(-1275806237668) / DFloat(842570457699 ))
-
-const RKB = (DFloat(1432997174477) / DFloat(9575080441755 ),
-             DFloat(5161836677717) / DFloat(13612068292357),
-             DFloat(1720146321549) / DFloat(2090206949498 ),
-             DFloat(3134564353537) / DFloat(4481467310338 ),
-             DFloat(2277821191437) / DFloat(14882151754819))
-
-const RKC = (DFloat(0),
-             DFloat(1432997174477) / DFloat(9575080441755),
-             DFloat(2526269341429) / DFloat(6820363962896),
-             DFloat(2006345519317) / DFloat(3224310063776),
-             DFloat(2802321613138) / DFloat(2924317926251))
-
-
-# We now initialize MPI as well as get the communicator, rank, and size
-MPI.Initialized() || MPI.Init() # only initialize MPI if not initialized
-MPI.finalize_atexit()
-const mpicomm = MPI.COMM_WORLD
-const mpirank = MPI.Comm_rank(mpicomm)
-const mpisize = MPI.Comm_size(mpicomm)
-
-function createmesh(brickN::NTuple{dim, Int}) where dim
-
-  # Generate an local view of a fully periodic Cartesian mesh.
-  mesh = brickmesh(ntuple(i->range(DFloat(0); length=brickN[i]+1, stop=1), dim),
-                   (fill(true, dim)...,);
-                   part=mpirank+1, numparts=mpisize)
-
-  # Partion the mesh using a Hilbert curve based partitioning
-  mesh = partition(mpicomm, mesh...)
-
-  # Connect the mesh in parallel
-  mesh = connectmesh(mpicomm, mesh...)
-
-  mesh
-end
 
 # TODO: Can we clean this up?
-function cfl(dim, metric, Q)
+function cfl(dim, metric, Q, mpicomm)
+  DFloat = eltype(Q.ρ)
+
   dt = [floatmax(DFloat)]
   if dim == 1
     ξx = metric.ξx
@@ -391,6 +339,7 @@ end
 function L2energysquared(::Val{dim}, Q, metric, ω, elems) where dim
   MJ = metric.MJ
   Nq = size(MJ, 1)
+  DFloat = eltype(Q.ρ)
   energy = [DFloat(0)]
   ind = CartesianIndices(ntuple(j->1:Nq, Val(dim)))
   for q ∈ Q
@@ -404,12 +353,45 @@ function L2energysquared(::Val{dim}, Q, metric, ω, elems) where dim
 end
 
 function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
-                      vmapP)
+                      vmapP, mpicomm)
   # TODO: Think about output?
+  DFloat = eltype(Q.ρ)
 
   # Exact polynomial order
   Nq = size(D, 2)
   N = Nq - 1
+
+  mpirank = MPI.Comm_rank(mpicomm)
+
+  # Fourth-order, low-storage, Runge–Kutta scheme of Carpenter and Kennedy
+  # (1994) ((5,4) 2N-Storage RK scheme.
+  #
+  # Ref:
+  # @TECHREPORT{CarpenterKennedy1994,
+  #   author = {M.~H. Carpenter and C.~A. Kennedy},
+  #   title = {Fourth-order {2N-storage} {Runge-Kutta} schemes},
+  #   institution = {National Aeronautics and Space Administration},
+  #   year = {1994},
+  #   number = {NASA TM-109112},
+  #   address = {Langley Research Center, Hampton, VA},
+  # }
+  RKA = (DFloat(0),
+         DFloat(-567301805773)  / DFloat(1357537059087),
+         DFloat(-2404267990393) / DFloat(2016746695238),
+         DFloat(-3550918686646) / DFloat(2091501179385),
+         DFloat(-1275806237668) / DFloat(842570457699 ))
+
+  RKB = (DFloat(1432997174477) / DFloat(9575080441755 ),
+         DFloat(5161836677717) / DFloat(13612068292357),
+         DFloat(1720146321549) / DFloat(2090206949498 ),
+         DFloat(3134564353537) / DFloat(4481467310338 ),
+         DFloat(2277821191437) / DFloat(14882151754819))
+
+  RKC = (DFloat(0),
+         DFloat(1432997174477) / DFloat(9575080441755),
+         DFloat(2526269341429) / DFloat(6820363962896),
+         DFloat(2006345519317) / DFloat(3224310063776),
+         DFloat(2802321613138) / DFloat(2924317926251))
 
   # Create send and recv request array
   nmpinabr = length(mesh.nabrtorank)
@@ -474,11 +456,24 @@ function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
   end
 end
 
-function main(ic, N, brickN::NTuple{dim, Int}, tend;
-              meshwarp=(x...)->identity(x),
-              tout = 1) where dim
+function advection(mpicomm, ic, N, brickN::NTuple{dim, Int}, tend;
+                   meshwarp=(x...)->identity(x),
+                   tout = 1) where dim
+  DFloat = Float64
 
-  mesh = createmesh(brickN)
+  mpirank = MPI.Comm_rank(mpicomm)
+  mpisize = MPI.Comm_size(mpicomm)
+
+  # Generate an local view of a fully periodic Cartesian mesh.
+  mesh = brickmesh(ntuple(i->range(DFloat(0); length=brickN[i]+1, stop=1), dim),
+                   (fill(true, dim)...,);
+                   part=mpirank+1, numparts=mpisize)
+
+  # Partion the mesh using a Hilbert curve based partitioning
+  mesh = partition(mpicomm, mesh...)
+
+  # Connect the mesh in parallel
+  mesh = connectmesh(mpicomm, mesh...)
 
   # Get the vmaps
   (vmapM, vmapP) = mappings(N, mesh.elemtoelem, mesh.elemtoface,
@@ -508,7 +503,7 @@ function main(ic, N, brickN::NTuple{dim, Int}, tend;
                        realelems=mesh.realelems)
 
   # Compute time step
-  dt = DFloat(cfl(dim, metric, Q) / N^√2)
+  dt = DFloat(cfl(dim, metric, Q, mpicomm) / N^√2)
 
   tend = DFloat(tend)
   nsteps = ceil(Int64, tend / dt)
@@ -519,7 +514,8 @@ function main(ic, N, brickN::NTuple{dim, Int}, tend;
   eng = [DFloat(0),  DFloat(0)]
   eng[1] = √MPI.Allreduce(L2energysquared(Val(dim), Q, metric, ω,
                                           mesh.realelems), MPI.SUM, mpicomm)
-  lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM, vmapP)
+  lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
+               vmapP, mpicomm)
   eng[2] = √MPI.Allreduce(L2energysquared(Val(dim), Q, metric, ω,
                                           mesh.realelems), MPI.SUM, mpicomm)
   mpirank == 0 && @show eng
@@ -535,30 +531,40 @@ function main(ic, N, brickN::NTuple{dim, Int}, tend;
   mpirank == 0 && @show err
 end
 
-warping1D(x) = (x + sin(π * x)/10,)
-warping2D(x, y) = (x + sin(π * x) * sin(2 * π * y) / 10,
-                   y + sin(2 * π * x) * sin(π * y) / 10)
-warping3D(x, y, z) = (x + (sin(π * x) * sin(2 * π * y) * cos(2 * π * z)) / 10,
-                      y + (sin(π * y) * sin(2 * π * x) * cos(2 * π * z)) / 10,
-                      z + (sin(π * z) * sin(2 * π * x) * cos(2 * π * y)) / 10)
+function main()
+  MPI.Init()
 
-ρ1D(x) = sin(2 * π * x)
-ρ2D(x, y) = sin(2 * π * x) * sin(2 * π * y)
-ρ3D(x, y, z) = sin(2 * π * x) * sin(2 * π * y) * sin(2 * π * z)
+  mpicomm = MPI.COMM_WORLD
+  mpirank = MPI.Comm_rank(mpicomm)
 
-Ux(x...) = -1.5
-Uy(x...) = -π
-Uz(x...) =  exp(1)
+  warping1D(x) = (x + sin(π * x)/10,)
+  warping2D(x, y) = (x + sin(π * x) * sin(2 * π * y) / 10,
+                     y + sin(2 * π * x) * sin(π * y) / 10)
+  warping3D(x, y, z) = (x + (sin(π * x) * sin(2 * π * y) * cos(2 * π * z)) / 10,
+                        y + (sin(π * y) * sin(2 * π * x) * cos(2 * π * z)) / 10,
+                        z + (sin(π * z) * sin(2 * π * x) * cos(2 * π * y)) / 10)
 
-mpirank == 0 && println("Running 1d...")
-main((ρ=ρ1D, Ux=Ux), 5, (3, ), π; meshwarp=warping1D)
-mpirank == 0 && println()
+  ρ1D(x) = sin(2 * π * x)
+  ρ2D(x, y) = sin(2 * π * x) * sin(2 * π * y)
+  ρ3D(x, y, z) = sin(2 * π * x) * sin(2 * π * y) * sin(2 * π * z)
 
-mpirank == 0 && println("Running 2d...")
-main((ρ=ρ2D, Ux=Ux, Uy=Uy), 5, (3, 3), π; meshwarp=warping2D)
-mpirank == 0 && println()
+  Ux(x...) = -1.5
+  Uy(x...) = -π
+  Uz(x...) =  exp(1)
 
-mpirank == 0 && println("Running 3d...")
-main((ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), 5, (3, 3, 3), π; meshwarp=warping3D)
+  mpirank == 0 && println("Running 1d...")
+  advection(mpicomm, (ρ=ρ1D, Ux=Ux), 5, (3, ), π; meshwarp=warping1D)
+  mpirank == 0 && println()
 
-nothing
+  mpirank == 0 && println("Running 2d...")
+  advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy), 5, (3, 3), π; meshwarp=warping2D)
+  mpirank == 0 && println()
+
+  mpirank == 0 && println("Running 3d...")
+  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), 5, (3, 3, 3), π;
+            meshwarp=warping3D)
+
+  MPI.Finalize()
+end
+
+main()
