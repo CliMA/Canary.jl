@@ -551,11 +551,11 @@ Uy(x...) = -π
 Uz(x...) =  exp(1)
 
 mpirank == 0 && println("Running 1d...")
-main((ρ=ρ1D, Ux=Ux), 5, (2, ), π; meshwarp=warping1D)
+main((ρ=ρ1D, Ux=Ux), 5, (3, ), π; meshwarp=warping1D)
 mpirank == 0 && println()
 
 mpirank == 0 && println("Running 2d...")
-main((ρ=ρ2D, Ux=Ux, Uy=Uy), 5, (2, 2), π; meshwarp=warping2D)
+main((ρ=ρ2D, Ux=Ux, Uy=Uy), 5, (3, 3), π; meshwarp=warping2D)
 mpirank == 0 && println()
 
 mpirank == 0 && println("Running 3d...")
