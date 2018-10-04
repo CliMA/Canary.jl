@@ -5,7 +5,6 @@ using Random
 
 function main()
   MPI.Init()
-  MPI.finalize_atexit()
   comm = MPI.COMM_WORLD
   crank = MPI.Comm_rank(comm)
   csize = MPI.Comm_size(comm)
@@ -38,6 +37,8 @@ function main()
   codea = (1:Nelemtotal)[as[crank+1]]
 
   @test sort(codec) == codea
+
+  MPI.Finalize()
 end
 
 main()

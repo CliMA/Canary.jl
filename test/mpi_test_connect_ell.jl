@@ -4,7 +4,6 @@ using Canary
 
 function main()
   MPI.Init()
-  MPI.finalize_atexit()
   comm = MPI.COMM_WORLD
   crank = MPI.Comm_rank(comm)
   csize = MPI.Comm_size(comm)
@@ -74,6 +73,8 @@ function main()
   @test nabrtorank == nabrtorank_expect
   @test nabrtorecv == nabrtorecv_expect
   @test nabrtosend == nabrtosend_expect
+
+  MPI.Finalize()
 end
 
 main()

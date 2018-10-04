@@ -4,7 +4,6 @@ using Canary
 
 function main()
   MPI.Init()
-  MPI.finalize_atexit()
   comm = MPI.COMM_WORLD
   rank = MPI.Comm_rank(comm)
 
@@ -27,6 +26,8 @@ function main()
 
     @test A_all == B_all
   end
+
+  MPI.Finalize()
 end
 
 main()

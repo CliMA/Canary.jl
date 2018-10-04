@@ -4,7 +4,6 @@ using Canary
 
 function main()
   MPI.Init()
-  MPI.finalize_atexit()
   comm = MPI.COMM_WORLD
   crank = MPI.Comm_rank(comm)
   csize = MPI.Comm_size(comm)
@@ -73,6 +72,8 @@ function main()
     fc_expect = Array{Int64,1}[[1, 4, 4, 5]]
     @test fc == fc_expect
   end
+
+  MPI.Finalize()
 end
 
 main()
