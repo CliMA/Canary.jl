@@ -124,13 +124,43 @@ function computegeometry(dim, mesh, D, ξ, ω, meshwarp)
 end
 
 # Volume RHS for 1-D
+# TODO: Clean up!
+# TODO: Optimize
 function volumerhs!(rhs, (ρ, Ux)::NamedTuple{(:ρ, :Ux)}, metric, D, ω, elems)
-  # FIXME
+  rhsρ = rhs.ρ
+  Nq = size(ρ, 1)
+  (J, ξx) = (metric.J, metric.ξx)
+  # for each element
+  for e ∈ elems
+    rhsρ[:, e] += D' * (ω .* J[:, e] .* ξx[:, e] .* Ux[:, e] .* ρ[:, e])
+  end
 end
 
+# Face RHS for 1-D
+# TODO: Clean up!
+# TODO: Optimize
 function facerhs!(rhs, (ρ, Ux)::NamedTuple{(:ρ, :Ux)}, metric, ω, elems, vmapM,
                   vmapP)
-  # FIXME
+  rhsρ = rhs.ρ
+  nface = 2
+  (nx, sJ) = (metric.nx, metric.sJ)
+  for e ∈ elems
+    for f ∈ 1:nface
+      ρM = ρ[vmapM[:, f, e]]
+      UxM = Ux[vmapM[:, f, e]]
+      FxM = ρM .* UxM
+
+      ρP = ρ[vmapP[:, f, e]]
+      UxP = Ux[vmapP[:, f, e]]
+      FxP = ρP .* UxP
+
+      nxM = nx[:, f, e]
+      λ = max.(abs.(nxM .* UxM), abs.(nxM .* UxP))
+
+      F = (nxM .* (FxM + FxP) + λ .* (ρM - ρP)) / 2
+      rhsρ[vmapM[:, f, e]] -= sJ[:, f, e] .* F
+    end
+  end
 end
 
 # Volume RHS for 2-D
