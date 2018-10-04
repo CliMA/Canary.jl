@@ -126,13 +126,19 @@ end
 # Volume RHS for 1-D
 # TODO: Clean up!
 # TODO: Optimize
-function volumerhs!(rhs, (ρ, Ux)::NamedTuple{(:ρ, :Ux)}, metric, D, ω, elems)
+function volumerhs!(::Val{N}, rhs, (ρ, Ux)::NamedTuple{(:ρ, :Ux)}, metric, D, ω,
+                    elems) where N
   rhsρ = rhs.ρ
-  Nq = size(ρ, 1)
   (J, ξx) = (metric.J, metric.ξx)
+  Nq = N + 1
   # for each element
-  for e ∈ elems
-    rhsρ[:, e] += D' * (ω .* J[:, e] .* ξx[:, e] .* Ux[:, e] .* ρ[:, e])
+  @inbounds for e ∈ elems
+    # rhsρ[:, e] += D' * (ω .* J[:, e] .* ξx[:, e] .* Ux[:, e] .* ρ[:, e])
+    for i ∈ 1:Nq
+      for n ∈ 1:Nq
+        rhsρ[i, e] += D[n, i] * (ω[n] * J[n, e] * ξx[n, e] * Ux[n, e] * ρ[n, e])
+      end
+    end
   end
 end
 
@@ -166,25 +172,43 @@ end
 # Volume RHS for 2-D
 # TODO: Clean up!
 # TODO: Optimize
-function volumerhs!(rhs, (ρ, Ux, Uy)::NamedTuple{(:ρ, :Ux, :Uy)}, metric, D, ω,
-                    elems)
+function volumerhs!(::Val{N}, rhs, (ρ, Ux, Uy)::NamedTuple{(:ρ, :Ux, :Uy)},
+                    metric, D, ω, elems) where N
   rhsρ = rhs.ρ
-  Nq = size(ρ, 1)
   J = metric.J
   (ξx, ηx, ξy, ηy) = (metric.ξx, metric.ηx, metric.ξy, metric.ηy)
+  Nq = N + 1
   # for each element
-  for e ∈ elems
+  @inbounds for e ∈ elems
     # loop of ξ-grid lines
     for j = 1:Nq
+      #=
       rhsρ[:, j, e] +=
         D' * (ω[j] * ω .* J[:, j, e].* ρ[:, j, e] .*
               (ξx[:, j, e] .* Ux[:, j, e] + ξy[:, j, e] .* Uy[:, j, e]))
+      =#
+      for i = 1:Nq
+        for n = 1:Nq
+          rhsρ[i, j, e] +=
+            D[n, i] * (ω[j] * ω[n] .* J[n, j, e].* ρ[n, j, e] .*
+                    (ξx[n, j, e] .* Ux[n, j, e] + ξy[n, j, e] .* Uy[n, j, e]))
+        end
+      end
     end
     # loop of η-grid lines
     for i = 1:Nq
+      #=
       rhsρ[i, :, e] +=
         D' * (ω[i] * ω .* J[i, :, e].* ρ[i, :, e] .*
               (ηx[i, :, e] .* Ux[i, :, e] + ηy[i, :, e] .* Uy[i, :, e]))
+      =#
+      for j = 1:Nq
+        for n = 1:Nq
+          rhsρ[i, j, e] +=
+            D[n, j] * (ω[i] * ω[n] .* J[i, n, e].* ρ[i, n, e] .*
+                    (ηx[i, n, e] .* Ux[i, n, e] + ηy[i, n, e] .* Uy[i, n, e]))
+        end
+      end
     end
   end
 end
@@ -227,43 +251,77 @@ end
 # Volume RHS for 3-D
 # TODO: Clean up!
 # TODO: Optimize
-function volumerhs!(rhs, (ρ, Ux, Uy, Uz)::NamedTuple{(:ρ, :Ux, :Uy, :Uz)},
-                    metric, D, ω, elems)
+function volumerhs!(::Val{N}, rhs,
+                    (ρ, Ux, Uy, Uz)::NamedTuple{(:ρ, :Ux, :Uy, :Uz)}, metric, D,
+                    ω, elems) where N
   rhsρ = rhs.ρ
-  Nq = size(ρ, 1)
   J = metric.J
   (ξx, ηx, ζx) = (metric.ξx, metric.ηx, metric.ζx)
   (ξy, ηy, ζy) = (metric.ξy, metric.ηy, metric.ζy)
   (ξz, ηz, ζz) = (metric.ξz, metric.ηz, metric.ζz)
-  for e ∈ elems
+  Nq = N + 1
+  @inbounds for e ∈ elems
     # loop of ξ-grid lines
     for k = 1:Nq
       for j = 1:Nq
+        #=
         rhsρ[:, j, k, e] +=
           D' * (ω[j] * ω[k] * ω .* J[:, j, k, e] .* ρ[:, j, k, e] .*
                 (ξx[:, j, k, e] .* Ux[:, j, k, e] +
                  ξy[:, j, k, e] .* Uy[:, j, k, e] +
                  ξz[:, j, k, e] .* Uz[:, j, k, e]))
+        =#
+        for i = 1:Nq
+          for n = 1:Nq
+            rhsρ[i, j, k, e] +=
+              D[n, i] * (ω[n] * ω[j] * ω[k] * J[n, j, k, e] * ρ[n, j, k, e] *
+                        (ξx[n, j, k, e] * Ux[n, j, k, e] +
+                         ξy[n, j, k, e] * Uy[n, j, k, e] +
+                         ξz[n, j, k, e] * Uz[n, j, k, e]))
+          end
+        end
       end
     end
     # loop of η-grid lines
     for k = 1:Nq
       for i = 1:Nq
+        #=
         rhsρ[i, :, k, e] +=
           D' * (ω[i] * ω[k] * ω .* J[i, :, k, e] .* ρ[i, :, k, e] .*
                 (ηx[i, :, k, e] .* Ux[i, :, k, e] +
                  ηy[i, :, k, e] .* Uy[i, :, k, e] +
                  ηz[i, :, k, e] .* Uz[i, :, k, e]))
+        =#
+        for j = 1:Nq
+          for n = 1:Nq
+            rhsρ[i, j, k, e] +=
+              D[n, j] * (ω[i] * ω[n] * ω[k] * J[i, n, k, e] * ρ[i, n, k, e] *
+                        (ηx[i, n, k, e] * Ux[i, n, k, e] +
+                         ηy[i, n, k, e] * Uy[i, n, k, e] +
+                         ηz[i, n, k, e] * Uz[i, n, k, e]))
+          end
+        end
       end
     end
     # loop of ζ-grid lines
     for j = 1:Nq
       for i = 1:Nq
+        #=
         rhsρ[i, j, :, e] +=
           D' * (ω[i] * ω[j] * ω .* J[i, j, :, e] .* ρ[i, j, :, e] .*
                 (ζx[i, j, :, e] .* Ux[i, j, :, e] +
                  ζy[i, j, :, e] .* Uy[i, j, :, e] +
                  ζz[i, j, :, e] .* Uz[i, j, :, e]))
+        =#
+        for k = 1:Nq
+          for n = 1:Nq
+            rhsρ[i, j, k, e] +=
+              D[n, k] * (ω[i] * ω[j] * ω[n] * J[i, j, n, e] * ρ[i, j, n, e] *
+                         (ζx[i, j, n, e] * Ux[i, j, n, e] +
+                          ζy[i, j, n, e] * Uy[i, j, n, e] +
+                          ζz[i, j, n, e] * Uz[i, j, n, e]))
+          end
+        end
       end
     end
   end
@@ -394,7 +452,7 @@ function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
       end
 
       # volume RHS computation
-      volumerhs!(rhs, Q, metric, D, ω, mesh.realelems)
+      volumerhs!(Val(N), rhs, Q, metric, D, ω, mesh.realelems)
 
       # wait on MPI receives
       MPI.Waitall!(recvreq)
