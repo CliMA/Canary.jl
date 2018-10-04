@@ -139,26 +139,26 @@ end
 # Face RHS for 1-D
 # TODO: Clean up!
 # TODO: Optimize
-function facerhs!(rhs, (ρ, Ux)::NamedTuple{(:ρ, :Ux)}, metric, ω, elems, vmapM,
-                  vmapP)
+function facerhs!(::Val{N}, rhs, (ρ, Ux)::NamedTuple{(:ρ, :Ux)}, metric, ω,
+                  elems, vmapM, vmapP) where N
   rhsρ = rhs.ρ
   nface = 2
   (nx, sJ) = (metric.nx, metric.sJ)
-  for e ∈ elems
+  @inbounds @simd for e ∈ elems
     for f ∈ 1:nface
-      ρM = ρ[vmapM[:, f, e]]
-      UxM = Ux[vmapM[:, f, e]]
-      FxM = ρM .* UxM
+      ρM = ρ[vmapM[1, f, e]]
+      UxM = Ux[vmapM[1, f, e]]
+      FxM = ρM * UxM
 
-      ρP = ρ[vmapP[:, f, e]]
-      UxP = Ux[vmapP[:, f, e]]
-      FxP = ρP .* UxP
+      ρP = ρ[vmapP[1, f, e]]
+      UxP = Ux[vmapP[1, f, e]]
+      FxP = ρP * UxP
 
-      nxM = nx[:, f, e]
-      λ = max.(abs.(nxM .* UxM), abs.(nxM .* UxP))
+      nxM = nx[1, f, e]
+      λ = max(abs(nxM * UxM), abs(nxM * UxP))
 
-      F = (nxM .* (FxM + FxP) + λ .* (ρM - ρP)) / 2
-      rhsρ[vmapM[:, f, e]] -= sJ[:, f, e] .* F
+      F = (nxM * (FxM + FxP) + λ * (ρM - ρP)) / 2
+      rhsρ[vmapM[1, f, e]] -= sJ[1, f, e] * F
     end
   end
 end
@@ -192,31 +192,34 @@ end
 # Face RHS for 2-D
 # TODO: Clean up!
 # TODO: Optimize
-function facerhs!(rhs, (ρ, Ux, Uy)::NamedTuple{(:ρ, :Ux, :Uy)}, metric, ω,
-                  elems, vmapM, vmapP)
+function facerhs!(::Val{N}, rhs, (ρ, Ux, Uy)::NamedTuple{(:ρ, :Ux, :Uy)},
+                  metric, ω, elems, vmapM, vmapP) where N
   rhsρ = rhs.ρ
   nface = 4
   (nx, ny, sJ) = (metric.nx, metric.ny, metric.sJ)
-  for e ∈ elems
+  Nfp = N+1
+  @inbounds @simd for e ∈ elems
     for f ∈ 1:nface
-      ρM = ρ[vmapM[:, f, e]]
-      UxM = Ux[vmapM[:, f, e]]
-      UyM = Uy[vmapM[:, f, e]]
-      FxM = ρM .* UxM
-      FyM = ρM .* UyM
+      for n ∈ 1:Nfp
+        ρM = ρ[vmapM[n, f, e]]
+        UxM = Ux[vmapM[n, f, e]]
+        UyM = Uy[vmapM[n, f, e]]
+        FxM = ρM * UxM
+        FyM = ρM * UyM
 
-      ρP = ρ[vmapP[:, f, e]]
-      UxP = Ux[vmapP[:, f, e]]
-      UyP = Uy[vmapP[:, f, e]]
-      FxP = ρP .* UxP
-      FyP = ρP .* UyP
+        ρP = ρ[vmapP[n, f, e]]
+        UxP = Ux[vmapP[n, f, e]]
+        UyP = Uy[vmapP[n, f, e]]
+        FxP = ρP * UxP
+        FyP = ρP * UyP
 
-      nxM = nx[:, f, e]
-      nyM = ny[:, f, e]
-      λ = max.(abs.(nxM .* UxM + nyM .* UyM), abs.(nxM .* UxP + nyM .* UyP))
+        nxM = nx[n, f, e]
+        nyM = ny[n, f, e]
+        λ = max(abs(nxM * UxM + nyM * UyM), abs(nxM * UxP + nyM * UyP))
 
-      F = (nxM .* (FxM + FxP) + nyM .* (FyM + FyP) + λ .* (ρM - ρP)) / 2
-      rhsρ[vmapM[:, f, e]] -= ω .* sJ[:, f, e] .* F
+        F = (nxM * (FxM + FxP) + nyM * (FyM + FyP) + λ * (ρM - ρP)) / 2
+        rhsρ[vmapM[n, f, e]] -= ω[n] * sJ[n, f, e] * F
+      end
     end
   end
 end
@@ -269,38 +272,43 @@ end
 # Face RHS for 3-D
 # TODO: Clean up!
 # TODO: Optimize
-function facerhs!(rhs, (ρ, Ux, Uy, Uz)::NamedTuple{(:ρ, :Ux, :Uy, :Uz)}, metric,
-                  ω, elems, vmapM, vmapP)
+function facerhs!(::Val{N}, rhs,
+                  (ρ, Ux, Uy, Uz)::NamedTuple{(:ρ, :Ux, :Uy, :Uz)}, metric, ω,
+                  elems, vmapM, vmapP) where N
   rhsρ = rhs.ρ
   nface = 6
   (nx, ny, nz, sJ) = (metric.nx, metric.ny, metric.nz, metric.sJ)
-  for e ∈ elems
+  ω2 = kron(ω, ω)
+  Nfp = (N+1) * (N+1)
+  @inbounds @simd for e ∈ elems
     for f ∈ 1:nface
-      ρM = ρ[vmapM[:, f, e]]
-      UxM = Ux[vmapM[:, f, e]]
-      UyM = Uy[vmapM[:, f, e]]
-      UzM = Uz[vmapM[:, f, e]]
-      FxM = ρM .* UxM
-      FyM = ρM .* UyM
-      FzM = ρM .* UzM
+      for n ∈ 1:Nfp
+        ρM = ρ[vmapM[n, f, e]]
+        UxM = Ux[vmapM[n, f, e]]
+        UyM = Uy[vmapM[n, f, e]]
+        UzM = Uz[vmapM[n, f, e]]
+        FxM = ρM * UxM
+        FyM = ρM * UyM
+        FzM = ρM * UzM
 
-      ρP = ρ[vmapP[:, f, e]]
-      UxP = Ux[vmapP[:, f, e]]
-      UyP = Uy[vmapP[:, f, e]]
-      UzP = Uz[vmapP[:, f, e]]
-      FxP = ρP .* UxP
-      FyP = ρP .* UyP
-      FzP = ρP .* UzP
+        ρP = ρ[vmapP[n, f, e]]
+        UxP = Ux[vmapP[n, f, e]]
+        UyP = Uy[vmapP[n, f, e]]
+        UzP = Uz[vmapP[n, f, e]]
+        FxP = ρP * UxP
+        FyP = ρP * UyP
+        FzP = ρP * UzP
 
-      nxM = nx[:, f, e]
-      nyM = ny[:, f, e]
-      nzM = nz[:, f, e]
-      λ = max.(abs.(nxM .* UxM + nyM .* UyM + nzM .* UzM),
-               abs.(nxM .* UxP + nyM .* UyP + nzM .* UzP))
+        nxM = nx[n, f, e]
+        nyM = ny[n, f, e]
+        nzM = nz[n, f, e]
+        λ = max(abs(nxM * UxM + nyM * UyM + nzM * UzM),
+                abs(nxM * UxP + nyM * UyP + nzM * UzP))
 
-      F = (nxM .* (FxM + FxP) + nyM .* (FyM + FyP) + nzM .* (FzM + FzP) +
-           λ .* (ρM - ρP)) / 2
-      rhsρ[vmapM[:, f, e]] -= kron(ω, ω) .* sJ[:, f, e] .* F
+        F = (nxM * (FxM + FxP) + nyM * (FyM + FyP) + nzM * (FzM + FzP) +
+             λ * (ρM - ρP)) / 2
+        rhsρ[vmapM[n, f, e]] -= ω2[n] * sJ[n, f, e] * F
+      end
     end
   end
 end
@@ -399,7 +407,7 @@ function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
       end
 
       # face RHS computation
-      facerhs!(rhs, Q, metric, ω, mesh.realelems, vmapM, vmapP)
+      facerhs!(Val(N), rhs, Q, metric, ω, mesh.realelems, vmapM, vmapP)
 
       # update solution and scale RHS
       updatesolution!(Val(dim), Val(N), rhs, Q, metric, ω, mesh.realelems,
