@@ -506,7 +506,7 @@ function advection(mpicomm, ic, N, brickN::NTuple{dim, Int}, tend;
   dt = cfl(dim, metric, Q, mpicomm) / N^√2
   nsteps = ceil(Int64, tend / dt)
   dt = tend / nsteps
-  @show (dt, nsteps)
+  mpirank == 0 && @show (dt, nsteps)
 
   # Do time stepping
   eng = [DFloat(0),  DFloat(0)]
