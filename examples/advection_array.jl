@@ -503,9 +503,7 @@ function advection(mpicomm, ic, N, brickN::NTuple{dim, Int}, tend;
                        realelems=mesh.realelems)
 
   # Compute time step
-  dt = DFloat(cfl(dim, metric, Q, mpicomm) / N^√2)
-
-  tend = DFloat(tend)
+  dt = cfl(dim, metric, Q, mpicomm) / N^√2
   nsteps = ceil(Int64, tend / dt)
   dt = tend / nsteps
   @show (dt, nsteps)
