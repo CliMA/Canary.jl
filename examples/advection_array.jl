@@ -562,9 +562,9 @@ function main()
   ρ2D(x, y) = sin(2π * x) * sin(2π * y)
   ρ3D(x, y, z) = sin(2π * x) * sin(2π * y) * sin(2π * z)
 
-  Ux(x...) = -1.5
-  Uy(x...) = -π
-  Uz(x...) =  exp(1)
+  Ux(x...) = -3*one(x[1])/2
+  Uy(x...) = -π*one(x[1])
+  Uz(x...) =  exp(one(x[1]))
 
   mpirank == 0 && println("Running 1d...")
   advection(mpicomm, (ρ=ρ1D, Ux=Ux), 5, (3, ), π; meshwarp=warping1D)
