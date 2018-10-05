@@ -551,16 +551,17 @@ function main()
   mpicomm = MPI.COMM_WORLD
   mpirank = MPI.Comm_rank(mpicomm)
 
-  warping1D(x) = (x + sin(π * x) / 10,)
-  warping2D(x, y) = (x + sin(π * x) * sin(2π * y) / 10,
-                     y + sin(2π * x) * sin(π * y) / 10)
-  warping3D(x, y, z) = (x + (sin(π * x) * sin(2π * y) * cos(2π * z)) / 10,
-                        y + (sin(π * y) * sin(2π * x) * cos(2π * z)) / 10,
-                        z + (sin(π * z) * sin(2π * x) * cos(2π * y)) / 10)
+  warping1D(x...) = (x[1] +  sin( π*x[1])/10, zero(x[1]), zero(x[1]))
+  warping2D(x...) = (x[1] +  sin( π*x[1])*sin(2π*x[2])/10,
+                     x[2] +  sin(2π*x[1])*sin( π*x[2])/10,
+                     zero(x[1]))
+  warping3D(x...) = (x[1] + (sin( π*x[1])*sin(2π*x[2])*cos(2π*x[3]))/10,
+                     x[2] + (sin( π*x[2])*sin(2π*x[1])*cos(2π*x[3]))/10,
+                     x[3] + (sin( π*x[3])*sin(2π*x[1])*cos(2π*x[2]))/10)
 
-  ρ1D(x) = sin(2π * x)
-  ρ2D(x, y) = sin(2π * x) * sin(2π * y)
-  ρ3D(x, y, z) = sin(2π * x) * sin(2π * y) * sin(2π * z)
+  ρ1D(x...) = sin(2π*x[1])
+  ρ2D(x...) = sin(2π*x[1])*sin(2π*x[2])
+  ρ3D(x...) = sin(2π*x[1])*sin(2π*x[2])*sin(2π*x[3])
 
   Ux(x...) = -3*one(x[1])/2
   Uy(x...) = -π*one(x[1])
