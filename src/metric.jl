@@ -1,19 +1,18 @@
 """
-    creategrid!(x::AbstractArray{T, 2}, elemtocoord::AbstractArray{S, 3},
-                r::AbstractVector{T}) where {S, T}
+    creategrid!(x, elemtocoord, r)
 
 Create a 1-D grid using `elemtocoord` (see [`brickmesh`](@ref)) using the 1-D
 `(-1, 1)` reference coordinates `r`. The element grids are filled using linear
 interpolation of the element coordinates.
 
 If `Nq = length(r)` and `nelem = size(elemtocoord, 3)` then the preallocated
-array `x` should be `(Nq, nelem) == size(x)`.
+array `x` should be `Nq * nelem == length(x)`.
 """
-function creategrid!(x::AbstractArray{T, 2}, e2c::AbstractArray{S, 3},
-                     r::AbstractVector{T}) where {S, T}
+function creategrid!(x, e2c, r)
   (d, nvert, nelem) = size(e2c)
   @assert d == 1
   Nq = length(r)
+  x = reshape(x, (Nq, nelem))
 
   # linear blend
   for e = 1:nelem
@@ -21,27 +20,25 @@ function creategrid!(x::AbstractArray{T, 2}, e2c::AbstractArray{S, 3},
       x[i, e] = ((1 - r[i]) * e2c[1, 1, e] + (1 + r[i])e2c[1, 2, e]) / 2
     end
   end
-  (x,)
+  nothing
 end
 
 """
-    creategrid!(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
-                elemtocoord::AbstractArray{S, 3},
-                r::AbstractVector{T}) where {S, T}
+    creategrid!(x, y, elemtocoord, r)
 
 Create a 2-D tensor product grid using `elemtocoord` (see [`brickmesh`](@ref))
 using the 1-D `(-1, 1)` reference coordinates `r`. The element grids are filled
 using bilinear interpolation of the element coordinates.
 
 If `Nq = length(r)` and `nelem = size(elemtocoord, 3)` then the preallocated
-arrays `x` and `y` should be `(Nq, Nq, nelem) == size(x) == size(y)`.
+arrays `x` and `y` should be `Nq^2 * nelem == size(x) == size(y)`.
 """
-function creategrid!(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
-                     e2c::AbstractArray{S, 3},
-                     r::AbstractVector{T}) where {S, T}
+function creategrid!(x, y, e2c, r)
   (d, nvert, nelem) = size(e2c)
   @assert d == 2
   Nq = length(r)
+  x = reshape(x, (Nq, Nq, nelem))
+  y = reshape(y, (Nq, Nq, nelem))
 
   # bilinear blend of corners
   for (f, n) = zip((x, y), 1:d)
@@ -56,29 +53,28 @@ function creategrid!(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
       end
     end
   end
-  (x, y)
+  nothing
 end
 
 """
-    creategrid!(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
-                z::AbstractArray{T, 3}, elemtocoord::AbstractArray{S, 3},
-                r::AbstractVector{T}) where {S, T}
+    creategrid!(x, y, z, elemtocoord, r)
 
 Create a 3-D tensor product grid using `elemtocoord` (see [`brickmesh`](@ref))
 using the 1-D `(-1, 1)` reference coordinates `r`. The element grids are filled
 using trilinear interpolation of the element coordinates.
 
 If `Nq = length(r)` and `nelem = size(elemtocoord, 3)` then the preallocated
-arrays `x`, `y`, and `z` should be `(Nq, Nq, Nq, nelem) == size(x) == size(y) ==
+arrays `x`, `y`, and `z` should be `Nq^3 * nelem == size(x) == size(y) ==
 size(z)`.
 """
-function creategrid!(x::AbstractArray{T, 4}, y::AbstractArray{T, 4},
-                     z::AbstractArray{T, 4}, e2c::AbstractArray{S, 3},
-                     r::AbstractVector{T}) where {S, T}
+function creategrid!(x, y, z, e2c, r)
   (d, nvert, nelem) = size(e2c)
   @assert d == 3
   # TODO: Add asserts?
   Nq = length(r)
+  x = reshape(x, (Nq, Nq, Nq, nelem))
+  y = reshape(y, (Nq, Nq, Nq, nelem))
+  z = reshape(z, (Nq, Nq, Nq, nelem))
 
   # trilinear blend of corners
   for (f, n) = zip((x,y,z), 1:d)
@@ -86,54 +82,51 @@ function creategrid!(x::AbstractArray{T, 4}, y::AbstractArray{T, 4},
       for k = 1:Nq
         for j = 1:Nq
           for i = 1:Nq
-            f[i, j, k, e] = ((T(1) - r[i]) * (T(1) - r[j]) *
-                               (T(1) - r[k]) * e2c[n, 1, e] +
-                             (T(1) + r[i]) * (T(1) - r[j]) *
-                               (T(1) - r[k]) * e2c[n, 2, e] +
-                             (T(1) - r[i]) * (T(1) + r[j]) *
-                               (T(1) - r[k]) * e2c[n, 3, e] +
-                             (T(1) + r[i]) * (T(1) + r[j]) *
-                               (T(1) - r[k]) * e2c[n, 4, e] +
-                             (T(1) - r[i]) * (T(1) - r[j]) *
-                               (T(1) + r[k]) * e2c[n, 5, e] +
-                             (T(1) + r[i]) * (T(1) - r[j]) *
-                               (T(1) + r[k]) * e2c[n, 6, e] +
-                             (T(1) - r[i]) * (T(1) + r[j]) *
-                               (T(1) + r[k]) * e2c[n, 7, e] +
-                             (T(1) + r[i]) * (T(1) + r[j]) *
-                               (T(1) + r[k]) * e2c[n, 8, e]) / T(8)
+            f[i, j, k, e] = ((1 - r[i]) * (1 - r[j]) *
+                               (1 - r[k]) * e2c[n, 1, e] +
+                             (1 + r[i]) * (1 - r[j]) *
+                               (1 - r[k]) * e2c[n, 2, e] +
+                             (1 - r[i]) * (1 + r[j]) *
+                               (1 - r[k]) * e2c[n, 3, e] +
+                             (1 + r[i]) * (1 + r[j]) *
+                               (1 - r[k]) * e2c[n, 4, e] +
+                             (1 - r[i]) * (1 - r[j]) *
+                               (1 + r[k]) * e2c[n, 5, e] +
+                             (1 + r[i]) * (1 - r[j]) *
+                               (1 + r[k]) * e2c[n, 6, e] +
+                             (1 - r[i]) * (1 + r[j]) *
+                               (1 + r[k]) * e2c[n, 7, e] +
+                             (1 + r[i]) * (1 + r[j]) *
+                               (1 + r[k]) * e2c[n, 8, e]) / 8
           end
         end
       end
     end
   end
-  (x, y, z)
+  nothing
 end
 
 """
-    computemetric!(x::AbstractArray{T, 2},
-                   J::AbstractArray{T, 2},
-                   ξx::AbstractArray{T, 2},
-                   sJ::AbstractArray{T, 3},
-                   nx::AbstractArray{T, 3},
-                   D::AbstractMatrix{T}) where T
+    computemetric!(x, J, ξx, sJ, nx, D)
 
 Compute the 1-D metric terms from the element grid arrays `x`. All the arrays
 are preallocated by the user and the (square) derivative matrix `D` should be
 consistent with the reference grid `r` used in [`creategrid!`](@ref).
 
-If `Nq = size(D, 1)` and `nelem = size(x, 2)` then the volume arrays `x`, `J`,
-and `ξx` should all be of size `(Nq, nelem)`.  Similarly, the face arrays `sJ`
-and `nx` should be of size `(1, nfaces, nelem)` with `nfaces = 2`.
+If `Nq = size(D, 1)` and `nelem = div(length(x), Nq)` then the volume arrays
+`x`, `J`, and `ξx` should all have length `Nq * nelem`.  Similarly, the face
+arrays `sJ` and `nx` should be of length `nface * nelem` with `nface = 2`.
 """
-function computemetric!(x::AbstractArray{T, 2},
-                        J::AbstractArray{T, 2},
-                        ξx::AbstractArray{T, 2},
-                        sJ::AbstractArray{T, 3},
-                        nx::AbstractArray{T, 3},
-                        D::AbstractMatrix{T}) where T
-  nelem = size(J, 2)
+function computemetric!(x, J, ξx, sJ, nx, D)
   Nq = size(D, 1)
+  nelem = div(length(J), Nq)
+  x = reshape(x, (Nq, nelem))
+  J = reshape(J, (Nq, nelem))
+  ξx = reshape(ξx, (Nq, nelem))
+  nface = 2
+  nx = reshape(nx, (1, nface, nelem))
+  sJ = reshape(sJ, (1, nface, nelem))
+
   d = 1
 
   for e = 1:nelem
@@ -144,37 +137,36 @@ function computemetric!(x::AbstractArray{T, 2},
   nx[1, 1, :] .= -sign.(J[ 1, :])
   nx[1, 2, :] .=  sign.(J[Nq, :])
   sJ .= 1
-  (J, ξx, sJ, nx)
+  nothing
 end
 
 """
-    computemetric!(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
-                   J::AbstractArray{T, 3},
-                   ξx::AbstractArray{T, 3}, ηx::AbstractArray{T, 3},
-                   ξy::AbstractArray{T, 3}, ηy::AbstractArray{T, 3},
-                   sJ::AbstractArray{T, 3},
-                   nx::AbstractArray{T, 3}, ny::AbstractArray{T, 3},
-                   D::AbstractMatrix{T}) where T
+    computemetric!(x, y, J, ξx, ηx, ξy, ηy, sJ, nx, ny, D)
 
 Compute the 2-D metric terms from the element grid arrays `x` and `y`. All the
 arrays are preallocated by the user and the (square) derivative matrix `D`
 should be consistent with the reference grid `r` used in [`creategrid!`](@ref).
 
-If `Nq = size(D, 1)` and `nelem = size(x, 3)` then the volume arrays `x`, `y`,
-`J`, `ξx`, `ηx`, `ξy`, and `ηy` should all be of size `(Nq, Nq, nelem)`.
-Similarly, the face arrays `sJ`, `nx`, and `ny` should be of size `(Nq, nfaces,
-nelem)` with `nfaces = 4`.
+If `Nq = size(D, 1)` and `nelem = div(length(x), Nq^2)` then the volume arrays
+`x`, `y`, `J`, `ξx`, `ηx`, `ξy`, and `ηy` should all be of size `(Nq, Nq,
+nelem)`.  Similarly, the face arrays `sJ`, `nx`, and `ny` should be of size
+`(Nq, nface, nelem)` with `nface = 4`.
 """
-function computemetric!(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
-                        J::AbstractArray{T, 3},
-                        ξx::AbstractArray{T, 3}, ηx::AbstractArray{T, 3},
-                        ξy::AbstractArray{T, 3}, ηy::AbstractArray{T, 3},
-                        sJ::AbstractArray{T, 3},
-                        nx::AbstractArray{T, 3}, ny::AbstractArray{T, 3},
-                        D::AbstractMatrix{T}) where T
-  nelem = size(J, 3)
+function computemetric!(x, y, J, ξx, ηx, ξy, ηy, sJ, nx, ny, D)
   Nq = size(D, 1)
+  nelem = div(length(J), Nq^2)
   d = 2
+  x = reshape(x, (Nq, Nq, nelem))
+  y = reshape(y, (Nq, Nq, nelem))
+  J = reshape(J, (Nq, Nq, nelem))
+  ξx = reshape(ξx, (Nq, Nq, nelem))
+  ηx = reshape(ηx, (Nq, Nq, nelem))
+  ξy = reshape(ξy, (Nq, Nq, nelem))
+  ηy = reshape(ηy, (Nq, Nq, nelem))
+  nface = 4
+  nx = reshape(nx, (Nq, nface, nelem))
+  ny = reshape(ny, (Nq, nface, nelem))
+  sJ = reshape(sJ, (Nq, nface, nelem))
 
   # we can resuse this storage
   (ys, yr, xs, xr) = (ξx, ηx, ξy, ηy)
@@ -233,28 +225,21 @@ function computemetric!(x::AbstractArray{T, 3}, y::AbstractArray{T, 3},
   @. nx = nx / sJ
   @. ny = ny / sJ
 
-  (J, ξx, ηx, ξy, ηy, sJ, nx, ny)
+  nothing
 end
 
 """
-    computemetric!(x::AbstractArray{T, 4}, y::AbstractArray{T, 4},
-                   z::AbstractArray{T, 4}, J::AbstractArray{T, 4},
-                   ξx::AbstractArray{T, 4}, ηx::AbstractArray{T, 4},
-                   ζx::AbstractArray{T, 4} ξy::AbstractArray{T, 4},
-                   ηy::AbstractArray{T, 4}, ζy::AbstractArray{T, 4}
-                   ξz::AbstractArray{T, 4}, ηz::AbstractArray{T, 4},
-                   ζz::AbstractArray{T, 4} sJ::AbstractArray{T, 3},
-                   nx::AbstractArray{T, 3}, ny::AbstractArray{T, 3},
-                   nz::AbstractArray{T, 3}, D::AbstractMatrix{T}) where T
+    computemetric!(x, y, z, J, ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz, sJ, nx,
+                   ny, nz, D)
 
 Compute the 3-D metric terms from the element grid arrays `x`, `y`, and `z`. All
 the arrays are preallocated by the user and the (square) derivative matrix `D`
 should be consistent with the reference grid `r` used in [`creategrid!`](@ref).
 
-If `Nq = size(D, 1)` and `nelem = size(x, 4)` then the volume arrays `x`, `y`,
-`z`, `J`, `ξx`, `ηx`, `ζx`, `ξy`, `ηy`, `ζy`, `ξz`, `ηz`, and `ζz` should all be
-of size `(Nq, Nq, Nq, nelem)`.  Similarly, the face arrays `sJ`, `nx`, `ny`, and
-`nz` should be of size `(Nq^2, nfaces, nelem)` with `nfaces = 6`.
+If `Nq = size(D, 1)` and `nelem = div(length(x), Nq^3)` then the volume arrays
+`x`, `y`, `z`, `J`, `ξx`, `ηx`, `ζx`, `ξy`, `ηy`, `ζy`, `ξz`, `ηz`, and `ζz`
+should all be of length `Nq^3 * nelem`.  Similarly, the face arrays `sJ`, `nx`,
+`ny`, and `nz` should be of size `Nq^2 * nface * nelem` with `nface = 6`.
 
 The curl invariant formulation of Kopriva (2006), equation 37, is used.
 
@@ -263,27 +248,32 @@ Reference:
   method on curvilinear meshes." Journal of Scientific Computing 26.3 (2006):
   301-327. <https://doi.org/10.1007/s10915-005-9070-8>
 """
-function computemetric!(x::AbstractArray{T, 4},
-                        y::AbstractArray{T, 4},
-                        z::AbstractArray{T, 4},
-                        J::AbstractArray{T, 4},
-                        ξx::AbstractArray{T, 4},
-                        ηx::AbstractArray{T, 4},
-                        ζx::AbstractArray{T, 4},
-                        ξy::AbstractArray{T, 4},
-                        ηy::AbstractArray{T, 4},
-                        ζy::AbstractArray{T, 4},
-                        ξz::AbstractArray{T, 4},
-                        ηz::AbstractArray{T, 4},
-                        ζz::AbstractArray{T, 4},
-                        sJ::AbstractArray{T, 3},
-                        nx::AbstractArray{T, 3},
-                        ny::AbstractArray{T, 3},
-                        nz::AbstractArray{T, 3},
-                        D::AbstractMatrix{T}) where T
+function computemetric!(x, y, z, J, ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz, sJ, nx,
+                        ny, nz, D)
 
-  nelem = size(J, 4)
   Nq = size(D, 1)
+  nelem = div(length(J), Nq^3)
+
+  x = reshape(x, (Nq, Nq, Nq, nelem))
+  y = reshape(y, (Nq, Nq, Nq, nelem))
+  z = reshape(z, (Nq, Nq, Nq, nelem))
+  J = reshape(J, (Nq, Nq, Nq, nelem))
+  ξx = reshape(ξx, (Nq, Nq, Nq, nelem))
+  ηx = reshape(ηx, (Nq, Nq, Nq, nelem))
+  ζx = reshape(ζx, (Nq, Nq, Nq, nelem))
+  ξy = reshape(ξy, (Nq, Nq, Nq, nelem))
+  ηy = reshape(ηy, (Nq, Nq, Nq, nelem))
+  ζy = reshape(ζy, (Nq, Nq, Nq, nelem))
+  ξz = reshape(ξz, (Nq, Nq, Nq, nelem))
+  ηz = reshape(ηz, (Nq, Nq, Nq, nelem))
+  ζz = reshape(ζz, (Nq, Nq, Nq, nelem))
+
+  nface = 6
+  nx = reshape(nx, Nq, Nq, nface, nelem)
+  ny = reshape(ny, Nq, Nq, nface, nelem)
+  nz = reshape(nz, Nq, Nq, nface, nelem)
+  sJ = reshape(sJ, Nq, Nq, nface, nelem)
+
   (xr, xs, xt) = (ξx, ηx, ζx)
   (yr, ys, yt) = (ξy, ηy, ζy)
   (zr, zs, zt) = (ξz, ηz, ζz)
@@ -313,18 +303,6 @@ function computemetric!(x::AbstractArray{T, 4},
   (yzr, yzs, yzt) = (similar(JI2), similar(JI2), similar(JI2))
   (zxr, zxs, zxt) = (similar(JI2), similar(JI2), similar(JI2))
   (xyr, xys, xyt) = (similar(JI2), similar(JI2), similar(JI2))
-
-  # ξx .= (Ds * yzt_zyt - Dt * yzs_zys) ./ (T(2) * J)
-  # ηx .= (Dt * yzr_zyr - Dr * yzt_zyt) ./ (T(2) * J)
-  # ζx .= (Dr * yzs_zys - Ds * yzr_zyr) ./ (T(2) * J)
-
-  # ξy .= (Ds * zxt_xzt - Dt * zxs_xzs) ./ (T(2) * J)
-  # ηy .= (Dt * zxr_xzr - Dr * zxt_xzt) ./ (T(2) * J)
-  # ζy .= (Dr * zxs_xzs - Ds * zxr_xzr) ./ (T(2) * J)
-
-  # ξz .= (Ds * xyt_yxt - Dt * xys_yxs) ./ (T(2) * J)
-  # ηz .= (Dt * xyr_yxr - Dr * xyt_yxt) ./ (T(2) * J)
-  # ζz .= (Dr * xys_yxs - Ds * xyr_yxr) ./ (T(2) * J)
 
   for e = 1:nelem
     for k = 1:Nq
@@ -396,9 +374,6 @@ function computemetric!(x::AbstractArray{T, 4},
     @views ζz[:, :, :, e] = ζz[:, :, :, e] .* JI2
   end
 
-  nx = reshape(nx, Nq, Nq, 6, nelem)
-  ny = reshape(ny, Nq, Nq, 6, nelem)
-  nz = reshape(nz, Nq, Nq, 6, nelem)
   @views nx[:, :, 1, :] .= -J[ 1, :, :, :] .* ξx[ 1, :, :, :]
   @views nx[:, :, 2, :] .=  J[Nq, :, :, :] .* ξx[Nq, :, :, :]
   @views nx[:, :, 3, :] .= -J[ :, 1, :, :] .* ηx[ :, 1, :, :]
@@ -419,16 +394,13 @@ function computemetric!(x::AbstractArray{T, 4},
   @views nz[:, :, 4, :] .=  J[ :,Nq, :, :] .* ηz[ :,Nq, :, :]
   @views nz[:, :, 5, :] .= -J[ :, :, 1, :] .* ζz[ :, :, 1, :]
   @views nz[:, :, 6, :] .=  J[ :, :,Nq, :] .* ζz[ :, :,Nq, :]
-  nx = reshape(nx, Nq * Nq, 6, nelem)
-  ny = reshape(ny, Nq * Nq, 6, nelem)
-  nz = reshape(nz, Nq * Nq, 6, nelem)
 
   @. sJ = hypot(nx, ny, nz)
   @. nx = nx / sJ
   @. ny = ny / sJ
   @. nz = nz / sJ
 
-  (J, ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz, sJ, nx, ny, nz)
+  nothing
 end
 
 creategrid1d(elemtocoord, r) = creategrid(Val(1), elemtocoord, r)
@@ -597,6 +569,12 @@ The metric terms are returned as a 'NamedTuple` of the following arrays:
  - 'nx` outward pointing unit normal in \$x\$-direction
  - 'ny` outward pointing unit normal in \$y\$-direction
  - 'nz` outward pointing unit normal in \$z\$-direction
+
+!!! note
+
+   The storage of the volume terms and surface terms from this function are
+   slightly different. The volume terms used Cartesian indexing whereas the
+   surface terms use linear indexing.
 """
 function computemetric(x::AbstractArray{T, 4},
                        y::AbstractArray{T, 4},
