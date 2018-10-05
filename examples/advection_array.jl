@@ -3,7 +3,7 @@ using MPI
 using Canary
 using Printf: @sprintf
 
-
+# {{{ cfl
 # TODO: Can we clean this up?
 function cfl(dim, metric, Q, mpicomm)
   DFloat = eltype(Q.ρ)
@@ -40,7 +40,9 @@ function cfl(dim, metric, Q, mpicomm)
 
   dt
 end
+# }}}
 
+# {{{ compute geometry
 function computegeometry(dim, mesh, D, ξ, ω, meshwarp)
   # Compute metric terms
   (nface, nelem) = size(mesh.elemtoelem)
@@ -70,7 +72,9 @@ function computegeometry(dim, mesh, D, ξ, ω, meshwarp)
 
   (crd, metric)
 end
+# }}}
 
+# {{{ 1-D
 # Volume RHS for 1-D
 # TODO: Clean up!
 # TODO: Optimize
@@ -116,7 +120,9 @@ function facerhs!(::Val{N}, rhs, (ρ, Ux)::NamedTuple{(:ρ, :Ux)}, metric, ω,
     end
   end
 end
+# }}}
 
+# {{{ 2-D
 # Volume RHS for 2-D
 # TODO: Clean up!
 # TODO: Optimize
@@ -195,7 +201,9 @@ function facerhs!(::Val{N}, rhs, (ρ, Ux, Uy)::NamedTuple{(:ρ, :Ux, :Uy)},
     end
   end
 end
+# }}}
 
+# {{{ 3-D
 # Volume RHS for 3-D
 # TODO: Clean up!
 # TODO: Optimize
@@ -318,8 +326,9 @@ function facerhs!(::Val{N}, rhs,
     end
   end
 end
+# }}}
 
-# Update solution (for all dimensions)
+# {{{ Update solution (for all dimensions)
 function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, metric, ω, elems, rka,
                          rkb, dt) where {dim, N}
   MJI = metric.MJI
@@ -333,8 +342,9 @@ function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, metric, ω, elems, rka,
     end
   end
 end
+# }}}
 
-# L2 Error (for all dimensions)
+# {{{ L2 Error (for all dimensions)
 # TODO: Optimize
 function L2energysquared(::Val{dim}, Q, metric, ω, elems) where dim
   MJ = metric.MJ
@@ -351,7 +361,9 @@ function L2energysquared(::Val{dim}, Q, metric, ω, elems) where dim
   end
   energy[1]
 end
+# }}}
 
+# {{{ RK loop
 function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
                       vmapP, mpicomm)
   # TODO: Think about output?
@@ -455,7 +467,9 @@ function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
     end
   end
 end
+# }}}
 
+# {{{ advection driver
 function advection(mpicomm, ic, N, brickN::NTuple{dim, Int}, tend;
                    meshwarp=(x...)->identity(x),
                    tout = 1) where dim
@@ -528,7 +542,9 @@ function advection(mpicomm, ic, N, brickN::NTuple{dim, Int}, tend;
                        MPI.SUM, mpicomm)
   mpirank == 0 && @show err
 end
+# }}}
 
+# {{{ main
 function main()
   MPI.Init()
 
@@ -564,5 +580,6 @@ function main()
 
   MPI.Finalize()
 end
+# }}}
 
 main()
