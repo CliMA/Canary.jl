@@ -3,39 +3,68 @@ using MPI
 using Canary
 using Printf: @sprintf
 
+# {{{ constants
+# note the order of the fields below is also assumed in the code.
+const _nstate = 4
+const _Ux, _Uy, _Uz, _ρ = 1:_nstate
+const stateid = (Ux = _Ux, Uy = _Uy, Uz = _Uz, ρ = _ρ)
+
+const _nvgeo = 14
+const _ξx, _ηx, _ζx, _ξy, _ηy, _ζy, _ξz, _ηz, _ζz, _MJ, _MJI,
+       _x, _y, _z = 1:_nvgeo
+const vgeoid = (ξx = _ξx, ηx = _ηx, ζx = _ζx,
+                ξy = _ξy, ηy = _ηy, ζy = _ζy,
+                ξz = _ξz, ηz = _ηz, ζz = _ζz,
+                MJ = _MJ, MJI = _MJI,
+                 x = _x,   y = _y,   z = _z)
+
+const _nsgeo = 5
+const _nx, _ny, _nz, _sMJ, _vMJI = 1:_nsgeo
+const sgeoid = (nx = _nx, ny = _ny, nz = _nz, sMJ = _sMJ, vMJI = _vMJI)
+# }}}
+
 # {{{ cfl
-# TODO: Can we clean this up?
-function cfl(dim, metric, Q, mpicomm)
-  DFloat = eltype(Q.ρ)
+function cfl(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
+  DFloat = eltype(Q)
+  Np = (N+1)^dim
+  (~, ~, nelem) = size(Q)
 
   dt = [floatmax(DFloat)]
+
   if dim == 1
-    ξx = metric.ξx
-    Ux = Q.Ux
-    for n = 1:length(Ux)
-      loc_dt = 2 ./ abs.(Ux[n] * ξx[n])
-      dt[1] = min(dt[1], loc_dt)
-    end
-  elseif dim == 2
-    (ξx, ξy, ηx, ηy) = (metric.ξx, metric.ξy, metric.ηx, metric.ηy)
-    (Ux, Uy) = (Q.Ux, Q.Uy)
-    for n = 1:length(Ux)
-      loc_dt = 2 ./ max(abs.(Ux[n] * ξx[n] + Uy[n] * ξy[n]),
-                        abs.(Ux[n] * ηx[n] + Uy[n] * ηy[n]))
-      dt[1] = min(dt[1], loc_dt)
-    end
-  elseif dim == 3
-    (ξx, ξy, ξz) = (metric.ξx, metric.ξy, metric.ξz)
-    (ηx, ηy, ηz) = (metric.ηx, metric.ηy, metric.ηz)
-    (ζx, ζy, ζz) = (metric.ζx, metric.ζy, metric.ζz)
-    (Ux, Uy, Uz) = (Q.Ux, Q.Uy, Q.Uz)
-    for n = 1:length(Ux)
-      loc_dt = 2 ./ max(abs.(Ux[n] * ξx[n] + Uy[n] * ξy[n] + Uz[n] * ξz[n]),
-                        abs.(Ux[n] * ηx[n] + Uy[n] * ηy[n] + Uz[n] * ηz[n]),
-                        abs.(Ux[n] * ζx[n] + Uy[n] * ζy[n] + Uz[n] * ζz[n]))
+    @inbounds for e = 1:nelem, n = 1:Np
+      Ux, ξx = Q[n, _Ux, e], vgeo[n, _ξx, e]
+
+      loc_dt = 2 / abs(Ux*ξx)
       dt[1] = min(dt[1], loc_dt)
     end
   end
+
+  if dim == 2
+    @inbounds for e = 1:nelem, n = 1:Np
+      Ux, Uy = Q[n, _Ux, e], Q[n, _Uy, e]
+      ξx, ξy, ηx, ηy = vgeo[n, _ξx, e], vgeo[n, _ξy, e],
+                       vgeo[n, _ηx, e], vgeo[n, _ηy, e]
+
+      loc_dt = 2 / max(abs(Ux*ξx + Uy*ξy), abs(Ux*ηx + Uy*ηy))
+      dt[1] = min(dt[1], loc_dt)
+    end
+  end
+
+  if dim == 3
+    @inbounds for e = 1:nelem, n = 1:Np
+      Ux, Uy, Uz = Q[n, _Ux, e], Q[n, _Uy, e], Q[n, _Uz, e]
+      ξx, ξy, ξz = vgeo[n, _ξx, e], vgeo[n, _ξy, e], vgeo[n, _ξz, e]
+      ηx, ηy, ηz = vgeo[n, _ηx, e], vgeo[n, _ηy, e], vgeo[n, _ηz, e]
+      ζx, ζy, ζz = vgeo[n, _ζx, e], vgeo[n, _ζy, e], vgeo[n, _ζz, e]
+
+      loc_dt = 2 ./ max(abs(Ux*ξx + Uy*ξy + Uz*ξz),
+                        abs(Ux*ηx + Uy*ηy + Uz*ηz),
+                        abs(Ux*ζx + Uy*ζy + Uz*ζz))
+      dt[1] = min(dt[1], loc_dt)
+    end
+  end
+
   dt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
 
   dt
@@ -43,80 +72,94 @@ end
 # }}}
 
 # {{{ compute geometry
-function computegeometry(dim, mesh, D, ξ, ω, meshwarp)
+function computegeometry(::Val{dim}, mesh, D, ξ, ω, meshwarp, vmapM) where dim
   # Compute metric terms
+  Nq = size(D, 1)
+  DFloat = eltype(D)
+
   (nface, nelem) = size(mesh.elemtoelem)
+
   crd = creategrid(Val(dim), mesh.elemtocoord, ξ)
 
-  # skew the mesh
-  dim == 1 && for j = 1:length(crd.x)
-    crd.x[j] = meshwarp(crd.x[j])[1]
-  end
-  dim == 2 && for j = 1:length(crd.x)
-    (crd.x[j], crd.y[j]) = meshwarp(crd.x[j], crd.y[j])
-  end
-  dim == 3 && for j = 1:length(crd.x)
-    (crd.x[j], crd.y[j], crd.z[j]) = meshwarp(crd.x[j], crd.y[j], crd.z[j])
+  vgeo = zeros(DFloat, Nq^dim, _nvgeo, nelem)
+  sgeo = zeros(DFloat, _nsgeo, Nq^(dim-1), nface, nelem)
+
+  (ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz, MJ, MJI, x, y, z) =
+      ntuple(j->(@view vgeo[:, j, :]), _nvgeo)
+  J = similar(x)
+  (nx, ny, nz, sMJ, vMJI) = ntuple(j->(@view sgeo[ j, :, :, :]), _nsgeo)
+  sJ = similar(sMJ)
+
+  X = ntuple(j->(@view vgeo[:, _x+j-1, :]), dim)
+  creategrid!(X..., mesh.elemtocoord, ξ)
+
+  @inbounds for j = 1:length(x)
+    (x[j], y[j], z[j]) = meshwarp(x[j], y[j], z[j])
   end
 
   # Compute the metric terms
-  metric = computemetric(crd..., D)
+  if dim == 1
+    computemetric!(x, J, ξx, sJ, nx, D)
+  elseif dim == 2
+    computemetric!(x, y, J, ξx, ηx, ξy, ηy, sJ, nx, ny, D)
+  elseif dim == 3
+    computemetric!(x, y, z, J, ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz, sJ,
+                   nx, ny, nz, D)
+  end
 
-  # TODO: scale metric terms with ω (J, sJ, etc.) and compute (scaled) JI
+  M = kron(1, ntuple(j->ω, dim)...)
+  MJ .= M .* J
+  MJI .= 1 ./ MJ
+  vMJI .= MJI[vmapM]
 
-  M = reshape(kron(1, fill(ω, dim)...), fill(length(ω), dim)...)
-  MJ = M .* metric.J
-  MJI = 1 ./ MJ
+  sM = dim > 1 ? kron(1, ntuple(j->ω, dim-1)...) : one(DFloat)
+  sMJ .= sM .* sJ
 
-  metric = NamedTuple{(keys(metric)..., :MJ, :MJI)}((metric..., MJ, MJI))
-
-  (crd, metric)
+  (vgeo, sgeo)
 end
 # }}}
 
 # {{{ 1-D
 # Volume RHS for 1-D
-# TODO: Clean up!
-# TODO: Optimize
-function volumerhs!(::Val{N}, rhs, (ρ, Ux)::NamedTuple{(:ρ, :Ux)}, metric, D, ω,
-                    elems) where N
-  rhsρ = rhs.ρ
-  (J, ξx) = (metric.J, metric.ξx)
+function volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
   Nq = N + 1
-  # for each element
-  @inbounds for e ∈ elems
-    # rhsρ[:, e] += D' * (ω .* J[:, e] .* ξx[:, e] .* Ux[:, e] .* ρ[:, e])
-    for i ∈ 1:Nq
-      for n ∈ 1:Nq
-        rhsρ[i, e] += D[n, i] * (ω[n] * J[n, e] * ξx[n, e] * Ux[n, e] * ρ[n, e])
+
+  @inbounds for e in elems
+    for i in 1:Nq
+      for n in 1:Nq
+        rhs[i, _ρ, e] += D[n, i] * (vgeo[n, _MJ, e] * vgeo[n, _ξx, e] *
+                                    Q[n, _Ux, e] * Q[n, _ρ, e])
       end
     end
   end
 end
 
 # Face RHS for 1-D
-# TODO: Clean up!
-# TODO: Optimize
-function facerhs!(::Val{N}, rhs, (ρ, Ux)::NamedTuple{(:ρ, :Ux)}, metric, ω,
-                  elems, vmapM, vmapP) where N
-  rhsρ = rhs.ρ
+function facerhs!(::Val{1}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
+                  vmapP) where N
+  Np = N+1
   nface = 2
-  (nx, sJ) = (metric.nx, metric.sJ)
-  @inbounds @simd for e ∈ elems
-    for f ∈ 1:nface
-      ρM = ρ[vmapM[1, f, e]]
-      UxM = Ux[vmapM[1, f, e]]
+
+  @inbounds for e in elems
+    for f = 1:nface
+      (nxM, ~, ~, sMJ, ~) = sgeo[:, 1, f, e]
+      idM, idP = vmapM[1, f, e], vmapP[1, f, e]
+
+      eM, eP = e, ((idP - 1) ÷ Np) + 1
+      vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
+
+      ρM = Q[vidM, _ρ, eM]
+      UxM = Q[vidM, _Ux, eM]
       FxM = ρM * UxM
 
-      ρP = ρ[vmapP[1, f, e]]
-      UxP = Ux[vmapP[1, f, e]]
+      ρP = Q[vidP, _ρ, eP]
+      UxP = Q[vidP, _Ux, eP]
       FxP = ρP * UxP
 
-      nxM = nx[1, f, e]
       λ = max(abs(nxM * UxM), abs(nxM * UxP))
 
       F = (nxM * (FxM + FxP) + λ * (ρM - ρP)) / 2
-      rhsρ[vmapM[1, f, e]] -= sJ[1, f, e] * F
+      rhs[vidM, _ρ, eM] -= sMJ * F
     end
   end
 end
@@ -124,79 +167,63 @@ end
 
 # {{{ 2-D
 # Volume RHS for 2-D
-# TODO: Clean up!
-# TODO: Optimize
-function volumerhs!(::Val{N}, rhs, (ρ, Ux, Uy)::NamedTuple{(:ρ, :Ux, :Uy)},
-                    metric, D, ω, elems) where N
-  rhsρ = rhs.ρ
-  J = metric.J
-  (ξx, ηx, ξy, ηy) = (metric.ξx, metric.ηx, metric.ξy, metric.ηy)
+function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
   Nq = N + 1
-  # for each element
-  @inbounds for e ∈ elems
+
+  ~, ~, nelem = size(Q)
+  Q = reshape(Q, Nq, Nq, _nstate, nelem)
+  rhs = reshape(rhs, Nq, Nq, _nstate, nelem)
+  vgeo = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
+
+  @inbounds for e in elems
     # loop of ξ-grid lines
-    for j = 1:Nq
-      #=
-      rhsρ[:, j, e] +=
-        D' * (ω[j] * ω .* J[:, j, e].* ρ[:, j, e] .*
-              (ξx[:, j, e] .* Ux[:, j, e] + ξy[:, j, e] .* Uy[:, j, e]))
-      =#
-      for i = 1:Nq
-        for n = 1:Nq
-          rhsρ[i, j, e] +=
-            D[n, i] * (ω[j] * ω[n] .* J[n, j, e].* ρ[n, j, e] .*
-                    (ξx[n, j, e] .* Ux[n, j, e] + ξy[n, j, e] .* Uy[n, j, e]))
-        end
-      end
+    for j = 1:Nq, i = 1:Nq, n = 1:Nq
+      rhs[i, j, _ρ, e] += D[n, i] * (vgeo[n, j, _MJ, e] * Q[n, j, _ρ, e] *
+                                     (vgeo[n, j, _ξx, e] .* Q[n, j, _Ux, e] +
+                                      vgeo[n, j, _ξy, e] .* Q[n, j, _Uy, e]))
     end
     # loop of η-grid lines
-    for i = 1:Nq
-      #=
-      rhsρ[i, :, e] +=
-        D' * (ω[i] * ω .* J[i, :, e].* ρ[i, :, e] .*
-              (ηx[i, :, e] .* Ux[i, :, e] + ηy[i, :, e] .* Uy[i, :, e]))
-      =#
-      for j = 1:Nq
-        for n = 1:Nq
-          rhsρ[i, j, e] +=
-            D[n, j] * (ω[i] * ω[n] .* J[i, n, e].* ρ[i, n, e] .*
-                    (ηx[i, n, e] .* Ux[i, n, e] + ηy[i, n, e] .* Uy[i, n, e]))
-        end
-      end
+    for i = 1:Nq, j = 1:Nq, n = 1:Nq
+      rhs[i, j, _ρ, e] += D[n, j] * (vgeo[i, n, _MJ, e] * Q[i, n, _ρ, e] *
+                                     (vgeo[i, n, _ηx, e] .* Q[i, n, _Ux, e] +
+                                      vgeo[i, n, _ηy, e] .* Q[i, n, _Uy, e]))
     end
   end
 end
 
 # Face RHS for 2-D
-# TODO: Clean up!
-# TODO: Optimize
-function facerhs!(::Val{N}, rhs, (ρ, Ux, Uy)::NamedTuple{(:ρ, :Ux, :Uy)},
-                  metric, ω, elems, vmapM, vmapP) where N
-  rhsρ = rhs.ρ
-  nface = 4
-  (nx, ny, sJ) = (metric.nx, metric.ny, metric.sJ)
+function facerhs!(::Val{2}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
+                  vmapP) where N
+  Np = (N+1)^2
   Nfp = N+1
-  @inbounds @simd for e ∈ elems
-    for f ∈ 1:nface
-      for n ∈ 1:Nfp
-        ρM = ρ[vmapM[n, f, e]]
-        UxM = Ux[vmapM[n, f, e]]
-        UyM = Uy[vmapM[n, f, e]]
+  nface = 4
+
+  @inbounds for e in elems
+    for f = 1:nface
+      for n = 1:Nfp
+        (nxM, nyM, ~, sMJ, ~) = sgeo[:, n, f, e]
+        idM, idP = vmapM[n, f, e], vmapP[n, f, e]
+
+        eM, eP = e, ((idP - 1) ÷ Np) + 1
+        vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
+
+        ρM = Q[vidM, _ρ, eM]
+        UxM = Q[vidM, _Ux, eM]
+        UyM = Q[vidM, _Uy, eM]
         FxM = ρM * UxM
         FyM = ρM * UyM
 
-        ρP = ρ[vmapP[n, f, e]]
-        UxP = Ux[vmapP[n, f, e]]
-        UyP = Uy[vmapP[n, f, e]]
+        ρP = Q[vidP, _ρ, eP]
+        UxP = Q[vidP, _Ux, eP]
+        UyP = Q[vidP, _Uy, eP]
         FxP = ρP * UxP
         FyP = ρP * UyP
 
-        nxM = nx[n, f, e]
-        nyM = ny[n, f, e]
         λ = max(abs(nxM * UxM + nyM * UyM), abs(nxM * UxP + nyM * UyP))
 
         F = (nxM * (FxM + FxP) + nyM * (FyM + FyP) + λ * (ρM - ρP)) / 2
-        rhsρ[vmapM[n, f, e]] -= ω[n] * sJ[n, f, e] * F
+
+        rhs[vidM, _ρ, eM] -= sMJ * F
       end
     end
   end
@@ -205,123 +232,82 @@ end
 
 # {{{ 3-D
 # Volume RHS for 3-D
-# TODO: Clean up!
-# TODO: Optimize
-function volumerhs!(::Val{N}, rhs,
-                    (ρ, Ux, Uy, Uz)::NamedTuple{(:ρ, :Ux, :Uy, :Uz)}, metric, D,
-                    ω, elems) where N
-  rhsρ = rhs.ρ
-  J = metric.J
-  (ξx, ηx, ζx) = (metric.ξx, metric.ηx, metric.ζx)
-  (ξy, ηy, ζy) = (metric.ξy, metric.ηy, metric.ζy)
-  (ξz, ηz, ζz) = (metric.ξz, metric.ηz, metric.ζz)
+function volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
   Nq = N + 1
-  @inbounds for e ∈ elems
+  ~, ~, nelem = size(Q)
+
+  Q = reshape(Q, Nq, Nq, Nq, _nstate, nelem)
+  rhs = reshape(rhs, Nq, Nq, Nq, _nstate, nelem)
+  vgeo = reshape(vgeo, Nq, Nq, Nq, _nvgeo, nelem)
+
+  @inbounds for e in elems
     # loop of ξ-grid lines
-    for k = 1:Nq
-      for j = 1:Nq
-        #=
-        rhsρ[:, j, k, e] +=
-          D' * (ω[j] * ω[k] * ω .* J[:, j, k, e] .* ρ[:, j, k, e] .*
-                (ξx[:, j, k, e] .* Ux[:, j, k, e] +
-                 ξy[:, j, k, e] .* Uy[:, j, k, e] +
-                 ξz[:, j, k, e] .* Uz[:, j, k, e]))
-        =#
-        for i = 1:Nq
-          for n = 1:Nq
-            rhsρ[i, j, k, e] +=
-              D[n, i] * (ω[n] * ω[j] * ω[k] * J[n, j, k, e] * ρ[n, j, k, e] *
-                        (ξx[n, j, k, e] * Ux[n, j, k, e] +
-                         ξy[n, j, k, e] * Uy[n, j, k, e] +
-                         ξz[n, j, k, e] * Uz[n, j, k, e]))
-          end
-        end
-      end
+    for k = 1:Nq, j = 1:Nq, i = 1:Nq,  n = 1:Nq
+      rhs[i, j, k, _ρ, e] +=
+        D[n, i] * (vgeo[n, j, k, _MJ, e] * Q[n, j, k, _ρ, e] *
+                   (vgeo[n, j, k, _ξx, e] * Q[n, j, k, _Ux, e] +
+                    vgeo[n, j, k, _ξy, e] * Q[n, j, k, _Uy, e] +
+                    vgeo[n, j, k, _ξz, e] * Q[n, j, k, _Uz, e]))
     end
+
     # loop of η-grid lines
-    for k = 1:Nq
-      for i = 1:Nq
-        #=
-        rhsρ[i, :, k, e] +=
-          D' * (ω[i] * ω[k] * ω .* J[i, :, k, e] .* ρ[i, :, k, e] .*
-                (ηx[i, :, k, e] .* Ux[i, :, k, e] +
-                 ηy[i, :, k, e] .* Uy[i, :, k, e] +
-                 ηz[i, :, k, e] .* Uz[i, :, k, e]))
-        =#
-        for j = 1:Nq
-          for n = 1:Nq
-            rhsρ[i, j, k, e] +=
-              D[n, j] * (ω[i] * ω[n] * ω[k] * J[i, n, k, e] * ρ[i, n, k, e] *
-                        (ηx[i, n, k, e] * Ux[i, n, k, e] +
-                         ηy[i, n, k, e] * Uy[i, n, k, e] +
-                         ηz[i, n, k, e] * Uz[i, n, k, e]))
-          end
-        end
-      end
+    for k = 1:Nq, i = 1:Nq, j = 1:Nq, n = 1:Nq
+      rhs[i, j, k, _ρ, e] +=
+        D[n, j] * (vgeo[i, n, k, _MJ, e] * Q[i, n, k, _ρ, e] *
+                   (vgeo[i, n, k, _ηx, e] * Q[i, n, k, _Ux, e] +
+                    vgeo[i, n, k, _ηy, e] * Q[i, n, k, _Uy, e] +
+                    vgeo[i, n, k, _ηz, e] * Q[i, n, k, _Uz, e]))
     end
+
     # loop of ζ-grid lines
-    for j = 1:Nq
-      for i = 1:Nq
-        #=
-        rhsρ[i, j, :, e] +=
-          D' * (ω[i] * ω[j] * ω .* J[i, j, :, e] .* ρ[i, j, :, e] .*
-                (ζx[i, j, :, e] .* Ux[i, j, :, e] +
-                 ζy[i, j, :, e] .* Uy[i, j, :, e] +
-                 ζz[i, j, :, e] .* Uz[i, j, :, e]))
-        =#
-        for k = 1:Nq
-          for n = 1:Nq
-            rhsρ[i, j, k, e] +=
-              D[n, k] * (ω[i] * ω[j] * ω[n] * J[i, j, n, e] * ρ[i, j, n, e] *
-                         (ζx[i, j, n, e] * Ux[i, j, n, e] +
-                          ζy[i, j, n, e] * Uy[i, j, n, e] +
-                          ζz[i, j, n, e] * Uz[i, j, n, e]))
-          end
-        end
-      end
+    for j = 1:Nq, i = 1:Nq, k = 1:Nq, n = 1:Nq
+      rhs[i, j, k, _ρ, e] +=
+        D[n, k] * (vgeo[i, j, n, _MJ, e] * Q[i, j, n, _ρ, e] *
+                   (vgeo[i, j, n, _ζx, e] * Q[i, j, n, _Ux, e] +
+                    vgeo[i, j, n, _ζy, e] * Q[i, j, n, _Uy, e] +
+                    vgeo[i, j, n, _ζz, e] * Q[i, j, n, _Uz, e]))
     end
   end
 end
 
 # Face RHS for 3-D
-# TODO: Clean up!
-# TODO: Optimize
-function facerhs!(::Val{N}, rhs,
-                  (ρ, Ux, Uy, Uz)::NamedTuple{(:ρ, :Ux, :Uy, :Uz)}, metric, ω,
-                  elems, vmapM, vmapP) where N
-  rhsρ = rhs.ρ
+function facerhs!(::Val{3}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
+                  vmapP) where N
+  Np = (N+1)^3
+  Nfp = (N+1)^2
   nface = 6
-  (nx, ny, nz, sJ) = (metric.nx, metric.ny, metric.nz, metric.sJ)
-  ω2 = kron(ω, ω)
-  Nfp = (N+1) * (N+1)
-  @inbounds @simd for e ∈ elems
-    for f ∈ 1:nface
-      for n ∈ 1:Nfp
-        ρM = ρ[vmapM[n, f, e]]
-        UxM = Ux[vmapM[n, f, e]]
-        UyM = Uy[vmapM[n, f, e]]
-        UzM = Uz[vmapM[n, f, e]]
+
+  @inbounds for e in elems
+    for f = 1:nface
+      for n = 1:Nfp
+        (nxM, nyM, nzM, sMJ, ~) = sgeo[:, n, f, e]
+        idM, idP = vmapM[n, f, e], vmapP[n, f, e]
+
+        eM, eP = e, ((idP - 1) ÷ Np) + 1
+        vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
+
+        ρM = Q[vidM, _ρ, eM]
+        UxM = Q[vidM, _Ux, eM]
+        UyM = Q[vidM, _Uy, eM]
+        UzM = Q[vidM, _Uz, eM]
         FxM = ρM * UxM
         FyM = ρM * UyM
         FzM = ρM * UzM
 
-        ρP = ρ[vmapP[n, f, e]]
-        UxP = Ux[vmapP[n, f, e]]
-        UyP = Uy[vmapP[n, f, e]]
-        UzP = Uz[vmapP[n, f, e]]
+        ρP = Q[vidP, _ρ, eP]
+        UxP = Q[vidP, _Ux, eP]
+        UyP = Q[vidP, _Uy, eP]
+        UzP = Q[vidP, _Uz, eP]
         FxP = ρP * UxP
         FyP = ρP * UyP
         FzP = ρP * UzP
 
-        nxM = nx[n, f, e]
-        nyM = ny[n, f, e]
-        nzM = nz[n, f, e]
         λ = max(abs(nxM * UxM + nyM * UyM + nzM * UzM),
                 abs(nxM * UxP + nyM * UyP + nzM * UzP))
 
         F = (nxM * (FxM + FxP) + nyM * (FyM + FyP) + nzM * (FzM + FzP) +
              λ * (ρM - ρP)) / 2
-        rhsρ[vmapM[n, f, e]] -= ω2[n] * sJ[n, f, e] * F
+        rhs[vidM, _ρ, eM] -= sMJ * F
       end
     end
   end
@@ -329,50 +315,54 @@ end
 # }}}
 
 # {{{ Update solution (for all dimensions)
-function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, metric, ω, elems, rka,
+function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, elems, rka,
                          rkb, dt) where {dim, N}
-  MJI = metric.MJI
-  ind = CartesianIndices(ntuple(j->1:N+1, Val(dim)))
-  @inbounds for (rhsq, q) ∈ zip(rhs, Q)
-    for e ∈ elems
-      @simd for i ∈ ind
-        q[i, e] += rkb * dt * rhsq[i, e] * MJI[i, e]
-        rhsq[i, e] *= rka
-      end
-    end
+  @inbounds for e = elems, s = 1:_nstate, i = 1:(N+1)^dim
+    Q[i, s, e] += rkb * dt * rhs[i, s, e] * vgeo[i, _MJI, e]
+    rhs[i, s, e] *= rka
   end
 end
+
 # }}}
 
 # {{{ L2 Error (for all dimensions)
-# TODO: Optimize
-function L2energysquared(::Val{dim}, Q, metric, ω, elems) where dim
-  MJ = metric.MJ
-  Nq = size(MJ, 1)
-  DFloat = eltype(Q.ρ)
-  energy = [DFloat(0)]
-  ind = CartesianIndices(ntuple(j->1:Nq, Val(dim)))
-  for q ∈ Q
-    for e ∈ elems
-      for i ∈ ind
-        energy[1] += MJ[i, e] * q[i, e]^2
-      end
-    end
+function L2errorsquared(::Val{dim}, ::Val{N}, Q, vgeo, elems, Qex,
+                        t) where {dim, N}
+  DFloat = eltype(Q)
+  Np = (N+1)^dim
+  (~, nstate, nelem) = size(Q)
+
+  err = zero(DFloat)
+
+  @inbounds for e = elems, i = 1:Np
+    X = ntuple(j -> vgeo[i, _x-1+j, e] - Q[i, _Ux-1+j, e]*t, Val(dim))
+    diff = Q[i, _ρ, e] - Qex.ρ(X...)
+
+    err += vgeo[i, _MJ, e] * diff^2
   end
-  energy[1]
+
+  err
+end
+
+function L2energysquared(::Val{dim}, ::Val{N}, Q, vgeo, elems) where {dim, N}
+  DFloat = eltype(Q)
+  Np = (N+1)^dim
+  (~, nstate, nelem) = size(Q)
+
+  energy = zero(DFloat)
+
+  @inbounds for e = elems, q = 1:nstate, i = 1:Np
+    energy += vgeo[i, _MJ, e] * Q[i, q, e]^2
+  end
+
+  energy
 end
 # }}}
 
 # {{{ RK loop
-function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
-                      vmapP, mpicomm)
-  # TODO: Think about output?
-  DFloat = eltype(Q.ρ)
-
-  # Exact polynomial order
-  Nq = size(D, 2)
-  N = Nq - 1
-
+function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
+                      dt, nsteps, tout, vmapM, vmapP, mpicomm) where {dim, N}
+  DFloat = eltype(Q)
   mpirank = MPI.Comm_rank(mpicomm)
 
   # Fourth-order, low-storage, Runge–Kutta scheme of Carpenter and Kennedy
@@ -406,16 +396,14 @@ function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
          DFloat(2802321613138) / DFloat(2924317926251))
 
   # Create send and recv request array
-  nmpinabr = length(mesh.nabrtorank)
-  sendreq = fill(MPI.REQUEST_NULL, nmpinabr)
-  recvreq = fill(MPI.REQUEST_NULL, nmpinabr)
+  nnabr = length(mesh.nabrtorank)
+  sendreq = fill(MPI.REQUEST_NULL, nnabr)
+  recvreq = fill(MPI.REQUEST_NULL, nnabr)
 
   # Create send and recv buffer
-  sendQ = Array{DFloat, 3}(undef, (N+1)^dim, length(Q), length(mesh.sendelems))
-  recvQ = Array{DFloat, 3}(undef, (N+1)^dim, length(Q), length(mesh.ghostelems))
+  sendQ = zeros(DFloat, (N+1)^dim, size(Q,2), length(mesh.sendelems))
+  recvQ = zeros(DFloat, (N+1)^dim, size(Q,2), length(mesh.ghostelems))
 
-  # Index map for MPI communication
-  index = CartesianIndices(ntuple(j->1:N+1, dim))
   nrealelem = length(mesh.realelems)
 
   t1 = time_ns()
@@ -426,43 +414,37 @@ function lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
     end
     for s = 1:length(RKA)
       # post MPI receives
-      map!(recvreq, mesh.nabrtorank, mesh.nabrtorecv) do nabrrank, nabrelem
-        MPI.Irecv!((@view recvQ[:, :, nabrelem]), nabrrank, 777, mpicomm)
+      for n = 1:nnabr
+        recvreq[n] = MPI.Irecv!((@view recvQ[:, :, mesh.nabrtorecv[n]]),
+                                mesh.nabrtorank[n], 777, mpicomm)
       end
 
       # wait on (prior) MPI sends
       MPI.Waitall!(sendreq)
 
       # pack data in send buffer
-      for (ne, e) ∈ enumerate(mesh.sendelems)
-        for (nf, f) ∈ enumerate(Q)
-          sendQ[:, nf, ne] = f[index[:], e]
-        end
-      end
+      sendQ[:, :, :] .= Q[:, :, mesh.sendelems]
 
       # post MPI sends
-      map!(sendreq, mesh.nabrtorank, mesh.nabrtosend) do nabrrank, nabrelem
-        MPI.Isend((@view sendQ[:, :, nabrelem]), nabrrank, 777, mpicomm)
+      for n = 1:nnabr
+        sendreq[n] = MPI.Isend((@view sendQ[:, :, mesh.nabrtosend[n]]),
+                               mesh.nabrtorank[n], 777, mpicomm)
       end
 
       # volume RHS computation
-      volumerhs!(Val(N), rhs, Q, metric, D, ω, mesh.realelems)
+      volumerhs!(Val(dim), Val(N), rhs, Q, vgeo, D, mesh.realelems)
 
       # wait on MPI receives
       MPI.Waitall!(recvreq)
 
       # copy data to state vectors
-      for elems ∈ mesh.nabrtorecv
-        for (nf, f) ∈ enumerate(Q)
-          f[index[:], nrealelem .+ elems] = recvQ[:, nf, elems]
-        end
-      end
+      Q[:, :, nrealelem+1:end] .= recvQ[:, :, :]
 
       # face RHS computation
-      facerhs!(Val(N), rhs, Q, metric, ω, mesh.realelems, vmapM, vmapP)
+      facerhs!(Val(dim), Val(N), rhs, Q, sgeo, mesh.realelems, vmapM, vmapP)
 
       # update solution and scale RHS
-      updatesolution!(Val(dim), Val(N), rhs, Q, metric, ω, mesh.realelems,
+      updatesolution!(Val(dim), Val(N), rhs, Q, vgeo, mesh.realelems,
                       RKA[s%length(RKA)+1], RKB[s], dt)
     end
   end
@@ -470,9 +452,9 @@ end
 # }}}
 
 # {{{ advection driver
-function advection(mpicomm, ic, N, brickN::NTuple{dim, Int}, tend;
+function advection(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend;
                    meshwarp=(x...)->identity(x),
-                   tout = 1) where dim
+                   tout = 1) where {N, dim}
   DFloat = Float64
 
   mpirank = MPI.Comm_rank(mpicomm)
@@ -498,48 +480,61 @@ function advection(mpicomm, ic, N, brickN::NTuple{dim, Int}, tend;
   D = spectralderivative(ξ)
 
   # Compute the geometry
-  (coord, metric) = computegeometry(dim, mesh, D, ξ, ω, meshwarp)
+  (vgeo, sgeo) = computegeometry(Val(dim), mesh, D, ξ, ω, meshwarp, vmapM)
+  (nface, nelem) = size(mesh.elemtoelem)
 
   # Storage for the solution, rhs, and error
-  statesyms = (:ρ, (:Ux, :Uy, :Uz)[1:dim]...)
-  Q   = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))
-  rhs = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))
-  Δ   = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))
+  Q = zeros(DFloat, (N+1)^dim, _nstate, nelem)
+  rhs = zeros(DFloat, (N+1)^dim, _nstate, nelem)
 
   # setup the initial condition
-  foreach(f->map!(ic[f], Q[f], coord...), keys(Q))
+  @inbounds for e = 1:nelem, i = 1:(N+1)^dim
+    x, y, z = vgeo[i, _x, e], vgeo[i, _y, e], vgeo[i, _z, e]
+    Q[i, _ρ, e]  = ic.ρ(x, y, z)
+    Q[i, _Ux, e] = ic.Ux(x, y, z)
+    dim > 1 && (Q[i, _Uy, e] = ic.Uy(x, y, z))
+    dim > 2 && (Q[i, _Uz, e] = ic.Uz(x, y, z))
+  end
 
   # plot the initial condition
   mkpath("viz")
   # TODO: Fix VTK for 1-D
-  dim > 1 && writemesh(@sprintf("viz/advection%dD_rank_%04d_step_%05d", dim,
-                                mpirank, 0), coord...; fields=(("ρ", Q.ρ),),
-                       realelems=mesh.realelems)
+  if dim > 1
+    X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
+                          nelem), dim)
+    ρ = reshape((@view Q[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
+    writemesh(@sprintf("viz/advection%dD_rank_%04d_step_%05d", dim,
+                       mpirank, 0), X...; fields=(("ρ", ρ),),
+              realelems=mesh.realelems)
+  end
 
   # Compute time step
-  dt = cfl(dim, metric, Q, mpicomm) / N^√2
+  dt = cfl(Val(dim), Val(N), vgeo, Q, mpicomm) / N^√2
+
   nsteps = ceil(Int64, tend / dt)
   dt = tend / nsteps
   mpirank == 0 && @show (dt, nsteps)
 
   # Do time stepping
   eng = [DFloat(0),  DFloat(0)]
-  eng[1] = √MPI.Allreduce(L2energysquared(Val(dim), Q, metric, ω,
-                                          mesh.realelems), MPI.SUM, mpicomm)
-  lowstorageRK(dim, mesh, metric, Q, rhs, D, ω, dt, nsteps, tout, vmapM,
-               vmapP, mpicomm)
-  eng[2] = √MPI.Allreduce(L2energysquared(Val(dim), Q, metric, ω,
-                                          mesh.realelems), MPI.SUM, mpicomm)
+  eng[1] = √MPI.Allreduce(L2energysquared(Val(dim), Val(N), Q, vgeo,
+                                          mesh.realelems),
+                          MPI.SUM, mpicomm)
+
+  lowstorageRK(Val(dim), Val(N), mesh, vgeo, sgeo, Q, rhs, D, dt, nsteps,
+               tout, vmapM, vmapP, mpicomm)
+
+  eng[2] = √MPI.Allreduce(L2energysquared(Val(dim), Val(N), Q, vgeo,
+                                          mesh.realelems),
+                          MPI.SUM, mpicomm)
+
   mpirank == 0 && @show eng
   mpirank == 0 && @show diff(eng)
 
-  # Compute the error in ρ
-  map!(Δ.ρ, 1:length(coord.x), coord... ) do i, x...
-    Q.ρ[i] - ic.ρ(ntuple(j -> x[j] - Q[(:Ux, :Uy, :Uz)[j]][i] * tend,
-                         Val(dim))...)
-  end
-  err = √MPI.Allreduce(L2energysquared(Val(dim), Δ, metric, ω, mesh.realelems),
+  err = √MPI.Allreduce(L2errorsquared(Val(dim), Val(N), Q, vgeo,
+                                      mesh.realelems, ic, tend),
                        MPI.SUM, mpicomm)
+
   mpirank == 0 && @show err
 end
 # }}}
@@ -568,15 +563,17 @@ function main()
   Uz(x...) =  exp(one(x[1]))
 
   mpirank == 0 && println("Running 1d...")
-  advection(mpicomm, (ρ=ρ1D, Ux=Ux), 5, (3, ), π; meshwarp=warping1D)
+  advection(mpicomm, (ρ=ρ1D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, ), π;
+            meshwarp=warping1D)
   mpirank == 0 && println()
 
   mpirank == 0 && println("Running 2d...")
-  advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy), 5, (3, 3), π; meshwarp=warping2D)
+  advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3), π;
+            meshwarp=warping2D)
   mpirank == 0 && println()
 
   mpirank == 0 && println("Running 3d...")
-  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), 5, (3, 3, 3), π;
+  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3), π;
             meshwarp=warping3D)
 
   MPI.Finalize()
