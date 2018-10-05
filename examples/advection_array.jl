@@ -551,7 +551,7 @@ function main()
   mpicomm = MPI.COMM_WORLD
   mpirank = MPI.Comm_rank(mpicomm)
 
-  warping1D(x) = (x + sin(π * x)/10,)
+  warping1D(x) = (x + sin(π * x) / 10,)
   warping2D(x, y) = (x + sin(π * x) * sin(2π * y) / 10,
                      y + sin(2π * x) * sin(π * y) / 10)
   warping3D(x, y, z) = (x + (sin(π * x) * sin(2π * y) * cos(2π * z)) / 10,
