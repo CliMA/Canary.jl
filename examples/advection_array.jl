@@ -516,26 +516,23 @@ function advection(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend;
   mpirank == 0 && @show (dt, nsteps)
 
   # Do time stepping
-  eng = [DFloat(0),  DFloat(0)]
-  eng[1] = √MPI.Allreduce(L2energysquared(Val(dim), Val(N), Q, vgeo,
-                                          mesh.realelems),
-                          MPI.SUM, mpicomm)
+  stats = zeros(DFloat, 3)
+  stats[1] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
 
   lowstorageRK(Val(dim), Val(N), mesh, vgeo, sgeo, Q, rhs, D, dt, nsteps,
                tout, vmapM, vmapP, mpicomm)
 
-  eng[2] = √MPI.Allreduce(L2energysquared(Val(dim), Val(N), Q, vgeo,
-                                          mesh.realelems),
-                          MPI.SUM, mpicomm)
+  stats[2] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
+  stats[3] = L2errorsquared(Val(dim), Val(N), Q, vgeo, mesh.realelems, ic,
+                            tend)
 
-  mpirank == 0 && @show eng
-  mpirank == 0 && @show diff(eng)
+  stats = sqrt.(MPI.allreduce(stats, MPI.SUM, mpicomm))
 
-  err = √MPI.Allreduce(L2errorsquared(Val(dim), Val(N), Q, vgeo,
-                                      mesh.realelems, ic, tend),
-                       MPI.SUM, mpicomm)
-
-  mpirank == 0 && @show err
+  if  mpirank == 0
+    @show eng = stats[1]
+    @show engdiff = stats[2] - stats[1]
+    @show err = stats[3]
+  end
 end
 # }}}
 
