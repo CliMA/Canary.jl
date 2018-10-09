@@ -65,9 +65,7 @@ function cfl(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
     end
   end
 
-  dt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
-
-  dt
+  MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
 end
 # }}}
 
