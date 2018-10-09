@@ -536,7 +536,9 @@ end
 
 # {{{ main
 function main()
-  MPI.Init()
+  # MPI.Init()
+  MPI.Initialized() ||MPI.Init()
+  MPI.finalize_atexit()
 
   mpicomm = MPI.COMM_WORLD
   mpirank = MPI.Comm_rank(mpicomm)
@@ -571,7 +573,7 @@ function main()
   advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3), π;
             meshwarp=warping3D)
 
-  MPI.Finalize()
+  # MPI.Finalize()
 end
 # }}}
 
