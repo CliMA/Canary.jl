@@ -453,7 +453,7 @@ end
 function advection(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend;
                    meshwarp=(x...)->identity(x),
                    tout = 1) where {N, dim}
-  DFloat = Float64
+  DFloat = typeof(tend)
 
   mpirank = MPI.Comm_rank(mpicomm)
   mpisize = MPI.Comm_size(mpicomm)
@@ -560,17 +560,17 @@ function main()
   Uz(x...) =  exp(one(x[1]))
 
   mpirank == 0 && println("Running 1d...")
-  advection(mpicomm, (ρ=ρ1D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, ), π;
+  advection(mpicomm, (ρ=ρ1D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, ), Float32(π);
             meshwarp=warping1D)
   mpirank == 0 && println()
 
   mpirank == 0 && println("Running 2d...")
-  advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3), π;
+  advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3), Float32(π);
             meshwarp=warping2D)
   mpirank == 0 && println()
 
   mpirank == 0 && println("Running 3d...")
-  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3), π;
+  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3), Float32(π);
             meshwarp=warping3D)
 
   # MPI.Finalize()
