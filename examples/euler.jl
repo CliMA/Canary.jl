@@ -58,7 +58,7 @@ N=4 #polynomial order
 brickN=(10, 10) #2D brickmesh
 #brickN=(10, 1, 10) #3D brickmesh
 DFloat=Float64 #Number Type
-tend=DFloat(500) #Final Time
+tend=DFloat(0.1) #Final Time
 gravity=10.0 #gravity
 R_gas=287.17
 c_p=1004.67
@@ -66,9 +66,9 @@ c_v=717.5
 p0=100000.0
 γ=1.4 #specific heat ratio cp/cp for air
 icase=6 #1=advection; 2=Translating Gaussian; 3=Still Gaussian (Periodic); 4=Still Gaussian (NFBC); 5=Shock tube (NFBC); 6=RTB
-iplot=100 #every how many time-steps to plot
+iplot=50 #every how many time-steps to plot
 warp_grid=false #warp initial grid
-u0=0.0 #Initial velocity
+u0=100.0 #Initial velocity
 
 # ### Load the MPI and Canary packages where Canary builds the mesh, generates basis functions, and metric terms.
 using MPI
@@ -430,7 +430,7 @@ elseif dim == 3
 end
 dt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
 dt = DFloat(dt / N^sqrt(2))
-dt=0.03125
+dt=0.01
 nsteps = ceil(Int64, tend / dt)
 dt = tend / nsteps
 @show (dt, nsteps)
@@ -485,6 +485,54 @@ RKC = (DFloat(0),
        DFloat(2526269341429) / DFloat(6820363962896),
        DFloat(2006345519317) / DFloat(3224310063776),
        DFloat(2802321613138) / DFloat(2924317926251))
+
+#-------------------------------------------------------------------------------#
+#-----Begin Courant, Volume, Flux, Update, and Error Functions for Multiple Dispatch-----#
+#-------------------------------------------------------------------------------#
+# ### Courant Number and Time-step Volume RHS Routines
+# These functions solve the volume term $\int_{\Omega_e} \nabla \psi \cdot \left( \rho \mathbf{u} \right)^{(e)}_N$ for:
+# Volume RHS for 1D
+function courant!(dt, Q::NamedTuple{S, NTuple{dim+2, T}}, Pressure, metric, γ, eqn_set, dim, DFloat) where {S, T}
+
+# ### Compute the time-step size and number of time-steps
+# Compute a $\Delta t$ such that the Courant number is $1$.
+# This is done for each mpirank and then we do an MPI_Allreduce to find the global minimum.
+dt = [floatmax(DFloat)]
+if dim == 1
+    (ξx) = (metric.ξx)
+    (ρ,U) = (Q.ρ,Q.U)
+    for n = 1:length(U)
+        loc_dt = (2ρ[n])  ./ (abs.(U[n] * ξx[n]))
+        dt[1] = min(dt[1], loc_dt)
+    end
+elseif dim == 2
+    (ξx, ξy) = (metric.ξx, metric.ξy)
+    (ηx, ηy) = (metric.ηx, metric.ηy)
+    (ρ,U,V) = (Q.ρ,Q.U,Q.V)
+    for n = 1:length(U)
+        loc_dt = (2ρ[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n]),
+                          abs.(U[n] * ηx[n] + V[n] * ηy[n]))
+        dt[1] = min(dt[1], loc_dt)
+    end
+elseif dim == 3
+    (ξx, ξy, ξz) = (metric.ξx, metric.ξy, metric.ξz)
+    (ηx, ηy, ηz) = (metric.ηx, metric.ηy, metric.ηz)
+    (ζx, ζy, ζz) = (metric.ζx, metric.ζy, metric.ζz)
+    (ρ,U,V,W,E) = (Q.ρ,Q.U,Q.V,Q.W,Q.E)
+    for n = 1:length(U)
+        loc_dt = (2ρ[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n] + W[n] * ξz[n]),
+                          abs.(U[n] * ηx[n] + V[n] * ηy[n] + W[n] * ηz[n]),
+                          abs.(U[n] * ζx[n] + V[n] * ζy[n] + W[n] * ζz[n]))
+        dt[1] = min(dt[1], loc_dt)
+    end
+end
+dt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
+dt = DFloat(dt / N^sqrt(2))
+dt=0.03125
+nsteps = ceil(Int64, tend / dt)
+dt = tend / nsteps
+@show (dt, nsteps)
+end #function courant
 
 #-------------------------------------------------------------------------------#
 #-----Begin Volume, Flux, Update, and Error Functions for Multiple Dispatch-----#
