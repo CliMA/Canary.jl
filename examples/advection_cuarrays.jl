@@ -434,6 +434,40 @@ end
 
 # }}}
 
+# {{{ Fill sendQ on device with Q (for all dimensions)
+function kernel_sendQ!(::Val{dim}, ::Val{N}, sendQ, Q, sendelems) where {N, dim}
+  Nq = N + 1
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  @inbounds if i <= Nq && j <= Nq && k <= Nq && e <= length(sendelems)
+    n = i + (j-1) * Nq + (k-1) * Nq * Nq
+    re = sendelems[e]
+    for s = 1:_nstate
+      sendQ[n, s, e] = Q[n, s, re]
+    end
+  end
+  nothing
+end
+# }}}
+
+# {{{ Fill Q on device with recvQ (for all dimensions)
+function kernel_recvQ!(::Val{dim}, ::Val{N}, Q, recvQ, nelem,
+                       nrealelem) where {N, dim}
+  Nq = N + 1
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  @inbounds if i <= Nq && j <= Nq && k <= Nq && e <= nelem
+    n = i + (j-1) * Nq + (k-1) * Nq * Nq
+    for s = 1:_nstate
+      Q[n, s, nrealelem + e] = recvQ[n, s, e]
+    end
+  end
+  nothing
+end
+# }}}
+
 # {{{ L2 Error (for all dimensions)
 function L2errorsquared(::Val{dim}, ::Val{N}, Q, vgeo, elems, Qex,
                         t) where {dim, N}
@@ -514,11 +548,15 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
   recvQ = zeros(DFloat, (N+1)^dim, size(Q,2), length(mesh.ghostelems))
 
   nrealelem = length(mesh.realelems)
+  nsendelem = length(mesh.sendelems)
+  nrecvelem = length(mesh.ghostelems)
   nelem = length(mesh.elems)
 
   (d_Q, d_rhs) = (CuArray(Q), CuArray(rhs))
   (d_vgeo, d_sgeo) = (CuArray(vgeo), CuArray(sgeo))
   (d_vmapM, d_vmapP) = (CuArray(vmapM), CuArray(vmapP))
+  (d_sendelems, d_sendQ) = (CuArray(mesh.sendelems), CuArray(sendQ))
+  d_recvQ = CuArray(recvQ)
   (d_D, ) = (CuArray(D), )
 
   cartshape = (fill(N+1, dim)..., fill(1, 3-dim)..., size(Q, 2), size(Q, 3))
@@ -528,6 +566,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
   d_vgeoC = CuArray{DFloat, dim+2}(cartshape, d_vgeo.buf)
 
   t1 = time_ns()
+  # FIXME: variables for threads and blocks
   for step = 1:nsteps
     if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
       t1 = time_ns()
@@ -544,7 +583,11 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       MPI.Waitall!(sendreq)
 
       # pack data in send buffer
-      sendQ[:, :, :] .= Q[:, :, mesh.sendelems]
+      if nsendelem > 0
+        @cuda(threads=(fill(N+1, dim)...,), blocks=nsendelem,
+              kernel_sendQ!(Val(dim), Val(N), d_sendQ, d_Q, d_sendelems))
+        Mem.download!(sendQ, d_sendQ.buf)
+      end
 
       # post MPI sends
       for n = 1:nnabr
@@ -554,44 +597,39 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
 
       # volume RHS computation
       # volumerhs!(Val(dim), Val(N), rhs, Q, vgeo, D, mesh.realelems)
-      Mem.upload!(d_Q.buf, Q)
-      Mem.upload!(d_rhs.buf, rhs)
       @cuda(threads=(fill(N+1, dim)...,), blocks=nrealelem,
             kernel_volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC,
                               d_D, nrealelem))
-      Mem.download!(Q, d_Q.buf)
-      Mem.download!(rhs, d_rhs.buf)
 
       # wait on MPI receives
       MPI.Waitall!(recvreq)
 
       # copy data to state vectors
-      Q[:, :, nrealelem+1:end] .= recvQ[:, :, :]
+      if nrecvelem > 0
+        Mem.upload!(d_recvQ.buf, recvQ)
+        @cuda(threads=(fill(N+1, dim)...,), blocks=nrecvelem,
+              kernel_recvQ!(Val(dim), Val(N), d_Q, d_recvQ, nrecvelem,
+                            nrealelem))
+      end
 
       # face RHS computation
       # facerhs!(Val(dim), Val(N), rhs, Q, sgeo, mesh.realelems, vmapM, vmapP)
       # putting 1 at end of threads tuple enables 1-D
-      Mem.upload!(d_Q.buf, Q)
-      Mem.upload!(d_rhs.buf, rhs)
       @cuda(threads=(fill(N+1, dim-1)..., 1), blocks=nrealelem,
             kernel_facerhs!(Val(dim), Val(N), d_rhs, d_Q, d_sgeo,
                             nrealelem, d_vmapM, d_vmapP))
-      Mem.download!(Q, d_Q.buf)
-      Mem.download!(rhs, d_rhs.buf)
 
       # update solution and scale RHS
       # updatesolution!(Val(dim), Val(N), rhs, Q, vgeo, mesh.realelems,
       #                 RKA[s%length(RKA)+1], RKB[s], dt)
-      Mem.upload!(d_Q.buf, Q)
-      Mem.upload!(d_rhs.buf, rhs)
       @cuda(threads=(fill(N+1, dim)...,), blocks=nrealelem,
             kernel_updatesolution!(Val(dim), Val(N), d_rhs, d_Q, d_vgeo,
                                    nrealelem, RKA[s%length(RKA)+1], RKB[s],
                                   DFloat(dt)))
-      Mem.download!(Q, d_Q.buf)
-      Mem.download!(rhs, d_rhs.buf)
     end
   end
+  Mem.download!(Q, d_Q.buf)
+  Mem.download!(rhs, d_rhs.buf)
 end
 # }}}
 
@@ -721,7 +759,7 @@ function main()
   =#
 
   mpirank == 0 && println("Running 3d...")
-  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3), Float64(π);
+  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (30, 30, 30), Float64(π);
             meshwarp=warping3D)
 
   # MPI.Finalize()
