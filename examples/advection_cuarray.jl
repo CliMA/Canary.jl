@@ -687,9 +687,11 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                                    nrealelem, RKA[s%length(RKA)+1], RKB[s],
                                   DFloat(dt)))
     end
+    step == 1 && (start_time = time_ns())
+    synchronize()
     if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
       t1 = time_ns()
-      avg_stage_time = (time_ns() - start_time) * 1e-9 / (step * length(RKA))
+      avg_stage_time = (time_ns() - start_time) * 1e-9 / ((step-1) * length(RKA))
       @show (step, nsteps, avg_stage_time)
     end
   end
