@@ -270,7 +270,7 @@ function volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
   end
 end
 
-function kernel_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+function kernel_volumerhs_1!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -303,6 +303,70 @@ function kernel_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
                     vgeo[i, j, n, _ζy, e] * Q[i, j, n, _Uy, e] +
                     vgeo[i, j, n, _ζz, e] * Q[i, j, n, _Uz, e]))
     end
+  end
+  nothing
+end
+
+function kernel_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+  Nq = N + 1
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  s_D = @cuStaticSharedMem(eltype(D), (Nq, Nq))
+  s_F = @cuStaticSharedMem(eltype(Q), (Nq, Nq, Nq, _nstate))
+  s_G = @cuStaticSharedMem(eltype(Q), (Nq, Nq, Nq, _nstate))
+  s_H = @cuStaticSharedMem(eltype(Q), (Nq, Nq, Nq, _nstate))
+
+  rhsρ = zero(eltype(rhs))
+  if i <= Nq && j <= Nq && k <= Nq && e <= nelem
+    # Load derivative into shared memory
+    if k == 1
+      s_D[i, j] = D[i, j]
+    end
+
+    # Load values will need into registers
+    MJ = vgeo[i, j, k, _MJ, e]
+    ξx = vgeo[i, j, k, _ξx, e]
+    ξy = vgeo[i, j, k, _ξy, e]
+    ξz = vgeo[i, j, k, _ξz, e]
+    ηx = vgeo[i, j, k, _ηx, e]
+    ηy = vgeo[i, j, k, _ηy, e]
+    ηz = vgeo[i, j, k, _ηz, e]
+    ζx = vgeo[i, j, k, _ζx, e]
+    ζy = vgeo[i, j, k, _ζy, e]
+    ζz = vgeo[i, j, k, _ζz, e]
+    ρ =  Q[i, j, k, _ρ, e]
+    Ux = Q[i, j, k, _Ux, e]
+    Uy = Q[i, j, k, _Uy, e]
+    Uz = Q[i, j, k, _Uz, e]
+    rhsρ = rhs[i, j, k, _ρ, e]
+
+    # store flux in shared memory
+    s_F[i, j, k, _ρ] = MJ * ρ * (ξx * Ux + ξy * Uy + ξz * Uz)
+    s_G[i, j, k, _ρ] = MJ * ρ * (ηx * Ux + ηy * Uy + ηz * Uz)
+    s_H[i, j, k, _ρ] = MJ * ρ * (ζx * Ux + ζy * Uy + ζz * Uz)
+  end
+
+  sync_threads()
+
+  @inbounds if i <= Nq && j <= Nq && k <= Nq && e <= nelem
+    # loop of ξ-grid lines
+    for n = 1:Nq
+      rhsρ += s_D[n, i] * s_F[n, j, k, _ρ]
+    end
+
+    # loop of η-grid lines
+    for n = 1:Nq
+      rhsρ += s_D[n, j] * s_G[i, n, k, _ρ]
+    end
+
+    # loop of ζ-grid lines
+    for n = 1:Nq
+      rhsρ += s_D[n, k] * s_H[i, j, n, _ρ]
+    end
+
+    rhs[i, j, k, _ρ, e] = rhsρ
   end
   nothing
 end
