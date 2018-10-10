@@ -414,7 +414,7 @@ function facerhs!(::Val{3}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
   end
 end
 
-function kernel_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
+function kernel_facerhs_1!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
                          vmapP) where {dim, N}
   if dim == 1
     Np = (N+1)
@@ -469,6 +469,66 @@ function kernel_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
   end
   nothing
 end
+
+function kernel_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
+                         vmapP) where {dim, N}
+  if dim == 1
+    Np = (N+1)
+    nface = 2
+  elseif dim == 2
+    Np = (N+1) * (N+1)
+    nface = 4
+  elseif dim == 3
+    Np = (N+1) * (N+1) * (N+1)
+    nface = 6
+  end
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  Nq = N+1
+  half = convert(eltype(Q), 0.5)
+
+  @inbounds if i <= Nq && j <= Nq && k == 1 && e <= nelem
+    n = i + (j-1) * Nq
+    for lf = 1:2:nface
+      for f = lf:lf+1
+        (nxM, nyM) = (sgeo[_nx, n, f, e], sgeo[_ny, n, f, e])
+        (nzM, sMJ) = (sgeo[_nz, n, f, e], sgeo[_sMJ, n, f, e])
+
+        (idM, idP) = (vmapM[n, f, e], vmapP[n, f, e])
+
+        (eM, eP) = (e, ((idP - 1) ÷ Np) + 1)
+        (vidM, vidP) = (((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1)
+
+        ρM = Q[vidM, _ρ, eM]
+        UxM = Q[vidM, _Ux, eM]
+        UyM = Q[vidM, _Uy, eM]
+        UzM = Q[vidM, _Uz, eM]
+        FxM = ρM * UxM
+        FyM = ρM * UyM
+        FzM = ρM * UzM
+
+        ρP = Q[vidP, _ρ, eP]
+        UxP = Q[vidP, _Ux, eP]
+        UyP = Q[vidP, _Uy, eP]
+        UzP = Q[vidP, _Uz, eP]
+        FxP = ρP * UxP
+        FyP = ρP * UyP
+        FzP = ρP * UzP
+
+        λ = max(abs(nxM * UxM + nyM * UyM + nzM * UzM),
+                abs(nxM * UxP + nyM * UyP + nzM * UzP))
+
+        F = half * (nxM * (FxM + FxP) + nyM * (FyM + FyP) + nzM * (FzM + FzP) +
+                    λ * (ρM - ρP))
+        rhs[vidM, _ρ, eM] -= sMJ * F
+      end
+      sync_threads()
+    end
+  end
+  nothing
+end
 # }}}
 
 # {{{ Update solution (for all dimensions)
@@ -481,6 +541,23 @@ function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, elems, rka,
 end
 
 function kernel_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
+                                rkb, dt) where {dim, N}
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  Nq = N+1
+  @inbounds if i <= Nq && j <= Nq && k <= Nq && e <= nelem
+    n = i + (j-1) * Nq + (k-1) * Nq * Nq
+    MJI = vgeo[n, _MJI, e]
+    for s = 1:_nstate
+      Q[n, s, e] += rkb * dt * rhs[n, s, e] * MJI
+      rhs[n, s, e] *= rka
+    end
+  end
+  nothing
+end
+
+function kernel_updatesolution_1!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
                                 rkb, dt) where {dim, N}
   (i, j, k) = threadIdx()
   e = blockIdx().x
