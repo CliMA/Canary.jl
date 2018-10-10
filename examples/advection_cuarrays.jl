@@ -2,6 +2,9 @@ include(joinpath(@__DIR__,"vtk.jl"))
 using MPI
 using Canary
 using Printf: @sprintf
+using CuArrays
+using CUDAnative
+using CUDAdrv
 
 # {{{ constants
 # note the order of the fields below is also assumed in the code.
@@ -321,6 +324,22 @@ function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, elems, rka,
   end
 end
 
+function kernel_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelems, rka,
+                                rkb, dt) where {dim, N}
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  Nq = N+1
+  if i <= Nq && j <= Nq && k <= Nq && e <= nelems
+    n = i + (j-1) * Nq + (k-1) * Nq * Nq
+    @inbounds for s = 1:_nstate
+      Q[n, s, e] += rkb * dt * rhs[n, s, e] * vgeo[n, _MJI, e]
+      rhs[n, s, e] *= rka
+    end
+  end
+  nothing
+end
+
 # }}}
 
 # {{{ L2 Error (for all dimensions)
@@ -404,6 +423,8 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
 
   nrealelem = length(mesh.realelems)
 
+  (d_Q, d_rhs, d_vgeo, d_sgeo) = (CuArray(Q), CuArray(rhs), CuArray(vgeo), CuArray(sgeo))
+
   t1 = time_ns()
   for step = 1:nsteps
     if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
@@ -442,8 +463,18 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       facerhs!(Val(dim), Val(N), rhs, Q, sgeo, mesh.realelems, vmapM, vmapP)
 
       # update solution and scale RHS
+      #=
       updatesolution!(Val(dim), Val(N), rhs, Q, vgeo, mesh.realelems,
                       RKA[s%length(RKA)+1], RKB[s], dt)
+      =#
+      Mem.upload!(d_Q.buf, Q)
+      Mem.upload!(d_rhs.buf, rhs)
+      @cuda(threads=(fill(N+1, dim)...,), blocks=nrealelem,
+            kernel_updatesolution!(Val(dim), Val(N), d_rhs, d_Q, d_vgeo,
+                                   nrealelem, RKA[s%length(RKA)+1], RKB[s],
+                                   DFloat(dt)))
+      Mem.download!(Q, d_Q.buf)
+      Mem.download!(rhs, d_rhs.buf)
     end
   end
 end
