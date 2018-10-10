@@ -565,13 +565,9 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
   cartshape = (fill(N+1, dim)..., fill(1, 3-dim)..., _nvgeo, size(Q, 3))
   d_vgeoC = CuArray{DFloat, dim+2}(cartshape, d_vgeo.buf)
 
-  t1 = time_ns()
+  start_time = t1 = time_ns()
   # FIXME: variables for threads and blocks
   for step = 1:nsteps
-    if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
-      t1 = time_ns()
-      @show (step, nsteps)
-    end
     for s = 1:length(RKA)
       # post MPI receives
       for n = 1:nnabr
@@ -626,6 +622,11 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
             kernel_updatesolution!(Val(dim), Val(N), d_rhs, d_Q, d_vgeo,
                                    nrealelem, RKA[s%length(RKA)+1], RKB[s],
                                   DFloat(dt)))
+    end
+    if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
+      t1 = time_ns()
+      avg_stage_time = (time_ns() - start_time) * 1e-9 / (step * length(RKA))
+      @show (step, nsteps, avg_stage_time)
     end
   end
   Mem.download!(Q, d_Q.buf)
