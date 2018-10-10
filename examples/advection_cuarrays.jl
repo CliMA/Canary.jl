@@ -270,6 +270,43 @@ function volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
   end
 end
 
+function kernel_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+  Nq = N + 1
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  @inbounds if i <= Nq && j <= Nq && k <= Nq && e <= nelem
+    # loop of ξ-grid lines
+    for n = 1:Nq
+      rhs[i, j, k, _ρ, e] +=
+        D[n, i] * ( vgeo[n, j, k, _MJ, e] * Q[n, j, k, _ρ, e] *
+                   (vgeo[n, j, k, _ξx, e] * Q[n, j, k, _Ux, e] +
+                    vgeo[n, j, k, _ξy, e] * Q[n, j, k, _Uy, e] +
+                    vgeo[n, j, k, _ξz, e] * Q[n, j, k, _Uz, e]))
+    end
+
+    # loop of η-grid lines
+    for n = 1:Nq
+      rhs[i, j, k, _ρ, e] +=
+        D[n, j] * ( vgeo[i, n, k, _MJ, e] * Q[i, n, k, _ρ, e] *
+                   (vgeo[i, n, k, _ηx, e] * Q[i, n, k, _Ux, e] +
+                    vgeo[i, n, k, _ηy, e] * Q[i, n, k, _Uy, e] +
+                    vgeo[i, n, k, _ηz, e] * Q[i, n, k, _Uz, e]))
+    end
+
+    # loop of ζ-grid lines
+    for n = 1:Nq
+      rhs[i, j, k, _ρ, e] +=
+        D[n, k] * ( vgeo[i, j, n, _MJ, e] * Q[i, j, n, _ρ, e] *
+                   (vgeo[i, j, n, _ζx, e] * Q[i, j, n, _Ux, e] +
+                    vgeo[i, j, n, _ζy, e] * Q[i, j, n, _Uy, e] +
+                    vgeo[i, j, n, _ζz, e] * Q[i, j, n, _Uz, e]))
+    end
+  end
+  nothing
+end
+
 # Face RHS for 3-D
 function facerhs!(::Val{3}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
                   vmapP) where N
@@ -313,7 +350,7 @@ function facerhs!(::Val{3}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
   end
 end
 
-function kernel_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelems, vmapM,
+function kernel_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
                          vmapP) where {dim, N}
   if dim == 1
     Np = (N+1)
@@ -330,9 +367,9 @@ function kernel_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelems, vmapM,
   e = blockIdx().x
 
   Nq = N+1
-  if i <= Nq && j <= Nq && k == 1 && e <= nelems
+  @inbounds if i <= Nq && j <= Nq && k == 1 && e <= nelem
     n = i + (j-1) * Nq
-    @inbounds for f = 1:nface
+    for f = 1:nface
       (nxM, nyM) = (sgeo[_nx, n, f, e], sgeo[_ny, n, f, e])
       (nzM, sMJ) = (sgeo[_nz, n, f, e], sgeo[_sMJ, n, f, e])
 
@@ -363,6 +400,7 @@ function kernel_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelems, vmapM,
       F = (nxM * (FxM + FxP) + nyM * (FyM + FyP) + nzM * (FzM + FzP) +
            λ * (ρM - ρP)) / 2
       rhs[vidM, _ρ, eM] -= sMJ * F
+      sync_threads() # FIXME: Really only needed every other faces
     end
   end
   nothing
@@ -378,13 +416,13 @@ function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, elems, rka,
   end
 end
 
-function kernel_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelems, rka,
+function kernel_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
                                 rkb, dt) where {dim, N}
   (i, j, k) = threadIdx()
   e = blockIdx().x
 
   Nq = N+1
-  if i <= Nq && j <= Nq && k <= Nq && e <= nelems
+  if i <= Nq && j <= Nq && k <= Nq && e <= nelem
     n = i + (j-1) * Nq + (k-1) * Nq * Nq
     @inbounds for s = 1:_nstate
       Q[n, s, e] += rkb * dt * rhs[n, s, e] * vgeo[n, _MJI, e]
@@ -476,9 +514,18 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
   recvQ = zeros(DFloat, (N+1)^dim, size(Q,2), length(mesh.ghostelems))
 
   nrealelem = length(mesh.realelems)
+  nelem = length(mesh.elems)
 
-  (d_Q, d_rhs, d_vgeo, d_sgeo) = (CuArray(Q), CuArray(rhs), CuArray(vgeo), CuArray(sgeo))
+  (d_Q, d_rhs) = (CuArray(Q), CuArray(rhs))
+  (d_vgeo, d_sgeo) = (CuArray(vgeo), CuArray(sgeo))
   (d_vmapM, d_vmapP) = (CuArray(vmapM), CuArray(vmapP))
+  (d_D, ) = (CuArray(D), )
+
+  cartshape = (fill(N+1, dim)..., fill(1, 3-dim)..., size(Q, 2), size(Q, 3))
+  d_QC = CuArray{DFloat, dim+2}(cartshape, d_Q.buf)
+  d_rhsC = CuArray{DFloat, dim+2}(cartshape, d_rhs.buf)
+  cartshape = (fill(N+1, dim)..., fill(1, 3-dim)..., _nvgeo, size(Q, 3))
+  d_vgeoC = CuArray{DFloat, dim+2}(cartshape, d_vgeo.buf)
 
   t1 = time_ns()
   for step = 1:nsteps
@@ -506,7 +553,14 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       end
 
       # volume RHS computation
-      volumerhs!(Val(dim), Val(N), rhs, Q, vgeo, D, mesh.realelems)
+      # volumerhs!(Val(dim), Val(N), rhs, Q, vgeo, D, mesh.realelems)
+      Mem.upload!(d_Q.buf, Q)
+      Mem.upload!(d_rhs.buf, rhs)
+      @cuda(threads=(fill(N+1, dim)...,), blocks=nrealelem,
+            kernel_volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC,
+                              d_D, nrealelem))
+      Mem.download!(Q, d_Q.buf)
+      Mem.download!(rhs, d_rhs.buf)
 
       # wait on MPI receives
       MPI.Waitall!(recvreq)
@@ -516,22 +570,24 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
 
       # face RHS computation
       # facerhs!(Val(dim), Val(N), rhs, Q, sgeo, mesh.realelems, vmapM, vmapP)
+      # putting 1 at end of threads tuple enables 1-D
       Mem.upload!(d_Q.buf, Q)
       Mem.upload!(d_rhs.buf, rhs)
-      # putting 1 at end of threads tuple enables 1-D
       @cuda(threads=(fill(N+1, dim-1)..., 1), blocks=nrealelem,
             kernel_facerhs!(Val(dim), Val(N), d_rhs, d_Q, d_sgeo,
                             nrealelem, d_vmapM, d_vmapP))
+      Mem.download!(Q, d_Q.buf)
+      Mem.download!(rhs, d_rhs.buf)
 
       # update solution and scale RHS
-      #=
-      updatesolution!(Val(dim), Val(N), rhs, Q, vgeo, mesh.realelems,
-                      RKA[s%length(RKA)+1], RKB[s], dt)
-      =#
+      # updatesolution!(Val(dim), Val(N), rhs, Q, vgeo, mesh.realelems,
+      #                 RKA[s%length(RKA)+1], RKB[s], dt)
+      Mem.upload!(d_Q.buf, Q)
+      Mem.upload!(d_rhs.buf, rhs)
       @cuda(threads=(fill(N+1, dim)...,), blocks=nrealelem,
             kernel_updatesolution!(Val(dim), Val(N), d_rhs, d_Q, d_vgeo,
                                    nrealelem, RKA[s%length(RKA)+1], RKB[s],
-                                   DFloat(dt)))
+                                  DFloat(dt)))
       Mem.download!(Q, d_Q.buf)
       Mem.download!(rhs, d_rhs.buf)
     end
@@ -649,6 +705,7 @@ function main()
   Uy(x...) = -π*one(x[1])
   Uz(x...) =  exp(one(x[1]))
 
+  #=
   mpirank == 0 && println("Running 1d...")
   advection(mpicomm, (ρ=ρ1D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, ), Float32(π);
             meshwarp=warping1D)
@@ -658,9 +715,10 @@ function main()
   advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3), Float32(π);
             meshwarp=warping2D)
   mpirank == 0 && println()
+  =#
 
   mpirank == 0 && println("Running 3d...")
-  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3), Float32(π);
+  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3), Float64(π);
             meshwarp=warping3D)
 
   # MPI.Finalize()
