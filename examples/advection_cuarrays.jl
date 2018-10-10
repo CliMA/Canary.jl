@@ -313,6 +313,61 @@ function facerhs!(::Val{3}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
     end
   end
 end
+
+function kernel_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelems, vmapM,
+                         vmapP) where {dim, N}
+  if dim == 1
+    Np = (N+1)
+    nface = 2
+  elseif dim == 2
+    Np = (N+1) * (N+1)
+    nface = 4
+  elseif dim == 3
+    Np = (N+1) * (N+1) * (N+1)
+    nface = 6
+  end
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  Nq = N+1
+  if i <= Nq && j <= Nq && k == 1 && e <= nelems
+    n = i + (j-1) * Nq
+    @inbounds for f = 1:nface
+      (nxM, nyM) = (sgeo[_nx, n, f, e], sgeo[_ny, n, f, e])
+      (nzM, sMJ) = (sgeo[_nz, n, f, e], sgeo[_sMJ, n, f, e])
+
+      (idM, idP) = (vmapM[n, f, e], vmapP[n, f, e])
+
+      (eM, eP) = (e, ((idP - 1) ÷ Np) + 1)
+      (vidM, vidP) = (((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1)
+
+      ρM = Q[vidM, _ρ, eM]
+      UxM = Q[vidM, _Ux, eM]
+      UyM = Q[vidM, _Uy, eM]
+      UzM = Q[vidM, _Uz, eM]
+      FxM = ρM * UxM
+      FyM = ρM * UyM
+      FzM = ρM * UzM
+
+      ρP = Q[vidP, _ρ, eP]
+      UxP = Q[vidP, _Ux, eP]
+      UyP = Q[vidP, _Uy, eP]
+      UzP = Q[vidP, _Uz, eP]
+      FxP = ρP * UxP
+      FyP = ρP * UyP
+      FzP = ρP * UzP
+
+      λ = max(abs(nxM * UxM + nyM * UyM + nzM * UzM),
+              abs(nxM * UxP + nyM * UyP + nzM * UzP))
+
+      F = (nxM * (FxM + FxP) + nyM * (FyM + FyP) + nzM * (FzM + FzP) +
+           λ * (ρM - ρP)) / 2
+      rhs[vidM, _ρ, eM] -= sMJ * F
+    end
+  end
+  nothing
+end
 # }}}
 
 # {{{ Update solution (for all dimensions)
@@ -424,6 +479,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
   nrealelem = length(mesh.realelems)
 
   (d_Q, d_rhs, d_vgeo, d_sgeo) = (CuArray(Q), CuArray(rhs), CuArray(vgeo), CuArray(sgeo))
+  (d_vmapM, d_vmapP) = (CuArray(vmapM), CuArray(vmapP))
 
   t1 = time_ns()
   for step = 1:nsteps
@@ -460,15 +516,19 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       Q[:, :, nrealelem+1:end] .= recvQ[:, :, :]
 
       # face RHS computation
-      facerhs!(Val(dim), Val(N), rhs, Q, sgeo, mesh.realelems, vmapM, vmapP)
+      # facerhs!(Val(dim), Val(N), rhs, Q, sgeo, mesh.realelems, vmapM, vmapP)
+      Mem.upload!(d_Q.buf, Q)
+      Mem.upload!(d_rhs.buf, rhs)
+      # putting 1 at end of threads tuple enables 1-D
+      @cuda(threads=(fill(N+1, dim-1)..., 1), blocks=nrealelem,
+            kernel_facerhs!(Val(dim), Val(N), d_rhs, d_Q, d_sgeo,
+                            nrealelem, d_vmapM, d_vmapP))
 
       # update solution and scale RHS
       #=
       updatesolution!(Val(dim), Val(N), rhs, Q, vgeo, mesh.realelems,
                       RKA[s%length(RKA)+1], RKB[s], dt)
       =#
-      Mem.upload!(d_Q.buf, Q)
-      Mem.upload!(d_rhs.buf, rhs)
       @cuda(threads=(fill(N+1, dim)...,), blocks=nrealelem,
             kernel_updatesolution!(Val(dim), Val(N), d_rhs, d_Q, d_vgeo,
                                    nrealelem, RKA[s%length(RKA)+1], RKB[s],
