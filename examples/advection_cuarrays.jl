@@ -689,6 +689,9 @@ function main()
   mpicomm = MPI.COMM_WORLD
   mpirank = MPI.Comm_rank(mpicomm)
 
+  # FIXME: query via hostname
+  device!(mpirank % length(devices()))
+
   warping1D(x...) = (x[1] +  sin( π*x[1])/10, zero(x[1]), zero(x[1]))
   warping2D(x...) = (x[1] +  sin( π*x[1])*sin(2π*x[2])/10,
                      x[2] +  sin(2π*x[1])*sin( π*x[2])/10,
