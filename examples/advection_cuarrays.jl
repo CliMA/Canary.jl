@@ -2,7 +2,6 @@ include(joinpath(@__DIR__,"vtk.jl"))
 using MPI
 using Canary
 using Printf: @sprintf
-using CuArrays
 using CUDAnative
 using CUDAdrv
 
