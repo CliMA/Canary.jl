@@ -579,6 +579,7 @@ function main()
             Float64(π); meshwarp=warping3D)
 
   # MPI.Finalize()
+  nothing
 end
 # }}}
 
