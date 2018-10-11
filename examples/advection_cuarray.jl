@@ -126,129 +126,77 @@ function computegeometry(::Val{dim}, mesh, D, ξ, ω, meshwarp, vmapM) where dim
 end
 # }}}
 
-# {{{ Volume RHS for 1-D
-function kernel_volumerhs_orig!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D,
-                                nelem) where N
+# {{{ CPU Kernels
+# {{{ 1-D
+# Volume RHS for 1-D
+function volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
   Nq = N + 1
 
-  (i, j, k) = threadIdx()
-  e = blockIdx().x
-
-  @inbounds if i <= Nq && j <= 1 && k == 1 && e <= nelem
-    for n in 1:Nq
-      rhs[i, _ρ, e] += D[n, i] * (vgeo[n, _MJ, e] * vgeo[n, _ξx, e] *
-                                  Q[n, _Ux, e] * Q[n, _ρ, e])
+  @inbounds for e in elems
+    for i in 1:Nq
+      for n in 1:Nq
+        rhs[i, _ρ, e] += D[n, i] * (vgeo[n, _MJ, e] * vgeo[n, _ξx, e] *
+                                    Q[n, _Ux, e] * Q[n, _ρ, e])
+      end
     end
   end
 end
 
-function kernel_volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
-  Nq = N + 1
+# Face RHS for 1-D
+function facerhs!(::Val{1}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
+                  vmapP) where N
+  Np = N+1
+  nface = 2
 
-  (i, j, k) = threadIdx()
-  e = blockIdx().x
+  @inbounds for e in elems
+    for f = 1:nface
+      (nxM, ~, ~, sMJ, ~) = sgeo[:, 1, f, e]
+      idM, idP = vmapM[1, f, e], vmapP[1, f, e]
 
-  s_D = @cuStaticSharedMem(eltype(D), (Nq, Nq))
-  s_F = @cuStaticSharedMem(eltype(Q), (Nq, _nstate))
+      eM, eP = e, ((idP - 1) ÷ Np) + 1
+      vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
 
-  rhsρ = zero(eltype(rhs))
-  @inbounds if i <= Nq && j == 1 && k == 1 && e <= nelem
-    for n in 1:Nq
-      s_D[i, n] = D[i, n]
+      ρM = Q[vidM, _ρ, eM]
+      UxM = Q[vidM, _Ux, eM]
+      FxM = ρM * UxM
+
+      ρP = Q[vidP, _ρ, eP]
+      UxP = Q[vidP, _Ux, eP]
+      FxP = ρP * UxP
+
+      λ = max(abs(nxM * UxM), abs(nxM * UxP))
+
+      F = (nxM * (FxM + FxP) + λ * (ρM - ρP)) / 2
+      rhs[vidM, _ρ, eM] -= sMJ * F
     end
-
-    # Load values will need into registers
-    MJ = vgeo[i, _MJ, e]
-    ξx = vgeo[i, _ξx, e]
-    ρ =  Q[i, _ρ, e]
-    Ux = Q[i, _Ux, e]
-    rhsρ = rhs[i, _ρ, e]
-
-    # store flux in shared memory
-    s_F[i, _ρ] = MJ * ρ * ξx * Ux
   end
-
-  sync_threads()
-
-  @inbounds if i <= Nq && j == 1 && k == 1 && e <= nelem
-    for n in 1:Nq
-      rhsρ += s_D[n, i] * s_F[n, _ρ]
-    end
-    rhs[i, _ρ, e] = rhsρ
-  end
-  nothing
 end
 # }}}
 
-# {{{ Volume RHS for 2-D
-function kernel_volumerhs_orig!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+# {{{ 2-D
+# Volume RHS for 2-D
+function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
   Nq = N + 1
 
-  (i, j, k) = threadIdx()
-  e = blockIdx().x
+  ~, ~, nelem = size(Q)
+  Q = reshape(Q, Nq, Nq, _nstate, nelem)
+  rhs = reshape(rhs, Nq, Nq, _nstate, nelem)
+  vgeo = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
 
-  @inbounds if i <= Nq && j <= Nq && k == 1 && e <= nelem
+  @inbounds for e in elems
     # loop of ξ-grid lines
-    for n = 1:Nq
+    for j = 1:Nq, i = 1:Nq, n = 1:Nq
       rhs[i, j, _ρ, e] += D[n, i] * (vgeo[n, j, _MJ, e] * Q[n, j, _ρ, e] *
                                      (vgeo[n, j, _ξx, e] .* Q[n, j, _Ux, e] +
                                       vgeo[n, j, _ξy, e] .* Q[n, j, _Uy, e]))
     end
-
     # loop of η-grid lines
-    for n = 1:Nq
+    for i = 1:Nq, j = 1:Nq, n = 1:Nq
       rhs[i, j, _ρ, e] += D[n, j] * (vgeo[i, n, _MJ, e] * Q[i, n, _ρ, e] *
                                      (vgeo[i, n, _ηx, e] .* Q[i, n, _Ux, e] +
                                       vgeo[i, n, _ηy, e] .* Q[i, n, _Uy, e]))
     end
   end
-end
-
-function kernel_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
-  Nq = N + 1
-
-  (i, j, k) = threadIdx()
-  e = blockIdx().x
-
-  s_D = @cuStaticSharedMem(eltype(D), (Nq, Nq))
-  s_F = @cuStaticSharedMem(eltype(Q), (Nq, Nq, _nstate))
-  s_G = @cuStaticSharedMem(eltype(Q), (Nq, Nq, _nstate))
-
-  rhsρ = zero(eltype(rhs))
-  if i <= Nq && j <= Nq && k == 1 && e <= nelem
-    # Load derivative into shared memory
-    if k == 1
-      s_D[i, j] = D[i, j]
-    end
-
-    # Load values will need into registers
-    MJ = vgeo[i, j, _MJ, e]
-    (ξx, ξy) = (vgeo[i, j, _ξx, e], vgeo[i, j, _ξy, e])
-    (ηx, ηy) = (vgeo[i, j, _ηx, e], vgeo[i, j, _ηy, e])
-    (Ux, Uy) = (Q[i, j, _Ux, e], Q[i, j, _Uy, e])
-    (ρ, rhsρ) = (Q[i, j, _ρ, e], rhs[i, j, _ρ, e])
-
-    # store flux in shared memory
-    s_F[i, j, _ρ] = MJ * ρ * (ξx * Ux + ξy * Uy)
-    s_G[i, j, _ρ] = MJ * ρ * (ηx * Ux + ηy * Uy)
-  end
-
-  sync_threads()
-
-  @inbounds if i <= Nq && j <= Nq && k == 1 && e <= nelem
-    # loop of ξ-grid lines
-    for n = 1:Nq
-      rhsρ += s_D[n, i] * s_F[n, j, _ρ]
-    end
-
-    # loop of η-grid lines
-    for n = 1:Nq
-      rhsρ += s_D[n, j] * s_G[i, n, _ρ]
-    end
-
-    rhs[i, j, _ρ, e] = rhsρ
-  end
-  nothing
 end
 
 # Face RHS for 2-D
@@ -290,98 +238,44 @@ function facerhs!(::Val{2}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
 end
 # }}}
 
-# {{{ Volume RHS for 3-D
-function kernel_volumerhs_orig!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D,
-                                nelem) where N
+# {{{ 3-D
+# Volume RHS for 3-D
+function volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
   Nq = N + 1
+  ~, ~, nelem = size(Q)
 
-  (i, j, k) = threadIdx()
-  e = blockIdx().x
+  Q = reshape(Q, Nq, Nq, Nq, _nstate, nelem)
+  rhs = reshape(rhs, Nq, Nq, Nq, _nstate, nelem)
+  vgeo = reshape(vgeo, Nq, Nq, Nq, _nvgeo, nelem)
 
-  @inbounds if i <= Nq && j <= Nq && k <= Nq && e <= nelem
+  @inbounds for e in elems
     # loop of ξ-grid lines
-    for n = 1:Nq
+    for k = 1:Nq, j = 1:Nq, i = 1:Nq,  n = 1:Nq
       rhs[i, j, k, _ρ, e] +=
-        D[n, i] * ( vgeo[n, j, k, _MJ, e] * Q[n, j, k, _ρ, e] *
+        D[n, i] * (vgeo[n, j, k, _MJ, e] * Q[n, j, k, _ρ, e] *
                    (vgeo[n, j, k, _ξx, e] * Q[n, j, k, _Ux, e] +
                     vgeo[n, j, k, _ξy, e] * Q[n, j, k, _Uy, e] +
                     vgeo[n, j, k, _ξz, e] * Q[n, j, k, _Uz, e]))
     end
 
     # loop of η-grid lines
-    for n = 1:Nq
+    for k = 1:Nq, i = 1:Nq, j = 1:Nq, n = 1:Nq
       rhs[i, j, k, _ρ, e] +=
-        D[n, j] * ( vgeo[i, n, k, _MJ, e] * Q[i, n, k, _ρ, e] *
+        D[n, j] * (vgeo[i, n, k, _MJ, e] * Q[i, n, k, _ρ, e] *
                    (vgeo[i, n, k, _ηx, e] * Q[i, n, k, _Ux, e] +
                     vgeo[i, n, k, _ηy, e] * Q[i, n, k, _Uy, e] +
                     vgeo[i, n, k, _ηz, e] * Q[i, n, k, _Uz, e]))
     end
 
     # loop of ζ-grid lines
-    for n = 1:Nq
+    for j = 1:Nq, i = 1:Nq, k = 1:Nq, n = 1:Nq
       rhs[i, j, k, _ρ, e] +=
-        D[n, k] * ( vgeo[i, j, n, _MJ, e] * Q[i, j, n, _ρ, e] *
+        D[n, k] * (vgeo[i, j, n, _MJ, e] * Q[i, j, n, _ρ, e] *
                    (vgeo[i, j, n, _ζx, e] * Q[i, j, n, _Ux, e] +
                     vgeo[i, j, n, _ζy, e] * Q[i, j, n, _Uy, e] +
                     vgeo[i, j, n, _ζz, e] * Q[i, j, n, _Uz, e]))
     end
   end
-  nothing
-end
-
-function kernel_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
-  Nq = N + 1
-
-  (i, j, k) = threadIdx()
-  e = blockIdx().x
-
-  s_D = @cuStaticSharedMem(eltype(D), (Nq, Nq))
-  s_F = @cuStaticSharedMem(eltype(Q), (Nq, Nq, Nq, _nstate))
-  s_G = @cuStaticSharedMem(eltype(Q), (Nq, Nq, Nq, _nstate))
-  s_H = @cuStaticSharedMem(eltype(Q), (Nq, Nq, Nq, _nstate))
-
-  rhsρ = zero(eltype(rhs))
-  if i <= Nq && j <= Nq && k <= Nq && e <= nelem
-    # Load derivative into shared memory
-    if k == 1
-      s_D[i, j] = D[i, j]
-    end
-
-    # Load values will need into registers
-    MJ = vgeo[i, j, k, _MJ, e]
-    (ξx, ξy, ξz) = (vgeo[i,j,k,_ξx,e], vgeo[i,j,k,_ξy,e], vgeo[i,j,k,_ξz,e])
-    (ηx, ηy, ηz) = (vgeo[i,j,k,_ηx,e], vgeo[i,j,k,_ηy,e], vgeo[i,j,k,_ηz,e])
-    (ζx, ζy, ζz) = (vgeo[i,j,k,_ζx,e], vgeo[i,j,k,_ζy,e], vgeo[i,j,k,_ζz,e])
-    (Ux, Uy, Uz) = (Q[i, j, k, _Ux, e], Q[i, j, k, _Uy, e], Q[i, j, k, _Uz, e])
-    (ρ, rhsρ) =  (Q[i, j, k, _ρ, e], rhs[i, j, k, _ρ, e])
-
-    # store flux in shared memory
-    s_F[i, j, k, _ρ] = MJ * ρ * (ξx * Ux + ξy * Uy + ξz * Uz)
-    s_G[i, j, k, _ρ] = MJ * ρ * (ηx * Ux + ηy * Uy + ηz * Uz)
-    s_H[i, j, k, _ρ] = MJ * ρ * (ζx * Ux + ζy * Uy + ζz * Uz)
-  end
-
-  sync_threads()
-
-  @inbounds if i <= Nq && j <= Nq && k <= Nq && e <= nelem
-    # loop of ξ-grid lines
-    for n = 1:Nq
-      rhsρ += s_D[n, i] * s_F[n, j, k, _ρ]
-    end
-
-    # loop of η-grid lines
-    for n = 1:Nq
-      rhsρ += s_D[n, j] * s_G[i, n, k, _ρ]
-    end
-
-    # loop of ζ-grid lines
-    for n = 1:Nq
-      rhsρ += s_D[n, k] * s_H[i, j, n, _ρ]
-    end
-
-    rhs[i, j, k, _ρ, e] = rhsρ
-  end
-  nothing
 end
 
 # Face RHS for 3-D
@@ -425,6 +319,96 @@ function facerhs!(::Val{3}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
       end
     end
   end
+end
+# }}}
+
+# {{{ Update solution (for all dimensions)
+function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, elems, rka,
+                         rkb, dt) where {dim, N}
+  @inbounds for e = elems, s = 1:_nstate, i = 1:(N+1)^dim
+    Q[i, s, e] += rkb * dt * rhs[i, s, e] * vgeo[i, _MJI, e]
+    rhs[i, s, e] *= rka
+  end
+end
+
+# }}}
+# }}}
+
+# {{{ Naive GPU kernles
+function kernel_volumerhs_orig!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D,
+                                nelem) where N
+  Nq = N + 1
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  @inbounds if i <= Nq && j <= 1 && k == 1 && e <= nelem
+    for n in 1:Nq
+      rhs[i, _ρ, e] += D[n, i] * (vgeo[n, _MJ, e] * vgeo[n, _ξx, e] *
+                                  Q[n, _Ux, e] * Q[n, _ρ, e])
+    end
+  end
+end
+
+function kernel_volumerhs_orig!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+  Nq = N + 1
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  @inbounds if i <= Nq && j <= Nq && k == 1 && e <= nelem
+    # loop of ξ-grid lines
+    for n = 1:Nq
+      rhs[i, j, _ρ, e] += D[n, i] * (vgeo[n, j, _MJ, e] * Q[n, j, _ρ, e] *
+                                     (vgeo[n, j, _ξx, e] .* Q[n, j, _Ux, e] +
+                                      vgeo[n, j, _ξy, e] .* Q[n, j, _Uy, e]))
+    end
+
+    # loop of η-grid lines
+    for n = 1:Nq
+      rhs[i, j, _ρ, e] += D[n, j] * (vgeo[i, n, _MJ, e] * Q[i, n, _ρ, e] *
+                                     (vgeo[i, n, _ηx, e] .* Q[i, n, _Ux, e] +
+                                      vgeo[i, n, _ηy, e] .* Q[i, n, _Uy, e]))
+    end
+  end
+end
+
+function kernel_volumerhs_orig!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D,
+                                nelem) where N
+  Nq = N + 1
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  @inbounds if i <= Nq && j <= Nq && k <= Nq && e <= nelem
+    # loop of ξ-grid lines
+    for n = 1:Nq
+      rhs[i, j, k, _ρ, e] +=
+        D[n, i] * ( vgeo[n, j, k, _MJ, e] * Q[n, j, k, _ρ, e] *
+                   (vgeo[n, j, k, _ξx, e] * Q[n, j, k, _Ux, e] +
+                    vgeo[n, j, k, _ξy, e] * Q[n, j, k, _Uy, e] +
+                    vgeo[n, j, k, _ξz, e] * Q[n, j, k, _Uz, e]))
+    end
+
+    # loop of η-grid lines
+    for n = 1:Nq
+      rhs[i, j, k, _ρ, e] +=
+        D[n, j] * ( vgeo[i, n, k, _MJ, e] * Q[i, n, k, _ρ, e] *
+                   (vgeo[i, n, k, _ηx, e] * Q[i, n, k, _Ux, e] +
+                    vgeo[i, n, k, _ηy, e] * Q[i, n, k, _Uy, e] +
+                    vgeo[i, n, k, _ηz, e] * Q[i, n, k, _Uz, e]))
+    end
+
+    # loop of ζ-grid lines
+    for n = 1:Nq
+      rhs[i, j, k, _ρ, e] +=
+        D[n, k] * ( vgeo[i, j, n, _MJ, e] * Q[i, j, n, _ρ, e] *
+                   (vgeo[i, j, n, _ζx, e] * Q[i, j, n, _Ux, e] +
+                    vgeo[i, j, n, _ζy, e] * Q[i, j, n, _Uy, e] +
+                    vgeo[i, j, n, _ζz, e] * Q[i, j, n, _Uz, e]))
+    end
+  end
+  nothing
 end
 
 function kernel_facerhs_orig!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
@@ -483,6 +467,171 @@ function kernel_facerhs_orig!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
   nothing
 end
 
+function kernel_updatesolution_orig!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem,
+                                     rka, rkb, dt) where {dim, N}
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  Nq = N+1
+  if i <= Nq && j <= Nq && k <= Nq && e <= nelem
+    n = i + (j-1) * Nq + (k-1) * Nq * Nq
+    @inbounds for s = 1:_nstate
+      Q[n, s, e] += rkb * dt * rhs[n, s, e] * vgeo[n, _MJI, e]
+      rhs[n, s, e] *= rka
+    end
+  end
+  nothing
+end
+# }}}
+
+# {{{ improved GPU kernles
+
+# {{{ Volume RHS for 1-D
+function kernel_volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+  Nq = N + 1
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  s_D = @cuStaticSharedMem(eltype(D), (Nq, Nq))
+  s_F = @cuStaticSharedMem(eltype(Q), (Nq, _nstate))
+
+  rhsρ = zero(eltype(rhs))
+  @inbounds if i <= Nq && j == 1 && k == 1 && e <= nelem
+    for n in 1:Nq
+      s_D[i, n] = D[i, n]
+    end
+
+    # Load values will need into registers
+    MJ = vgeo[i, _MJ, e]
+    ξx = vgeo[i, _ξx, e]
+    ρ =  Q[i, _ρ, e]
+    Ux = Q[i, _Ux, e]
+    rhsρ = rhs[i, _ρ, e]
+
+    # store flux in shared memory
+    s_F[i, _ρ] = MJ * ρ * ξx * Ux
+  end
+
+  sync_threads()
+
+  @inbounds if i <= Nq && j == 1 && k == 1 && e <= nelem
+    for n in 1:Nq
+      rhsρ += s_D[n, i] * s_F[n, _ρ]
+    end
+    rhs[i, _ρ, e] = rhsρ
+  end
+  nothing
+end
+# }}}
+
+# {{{ Volume RHS for 2-D
+function kernel_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+  Nq = N + 1
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  s_D = @cuStaticSharedMem(eltype(D), (Nq, Nq))
+  s_F = @cuStaticSharedMem(eltype(Q), (Nq, Nq, _nstate))
+  s_G = @cuStaticSharedMem(eltype(Q), (Nq, Nq, _nstate))
+
+  rhsρ = zero(eltype(rhs))
+  if i <= Nq && j <= Nq && k == 1 && e <= nelem
+    # Load derivative into shared memory
+    if k == 1
+      s_D[i, j] = D[i, j]
+    end
+
+    # Load values will need into registers
+    MJ = vgeo[i, j, _MJ, e]
+    (ξx, ξy) = (vgeo[i, j, _ξx, e], vgeo[i, j, _ξy, e])
+    (ηx, ηy) = (vgeo[i, j, _ηx, e], vgeo[i, j, _ηy, e])
+    (Ux, Uy) = (Q[i, j, _Ux, e], Q[i, j, _Uy, e])
+    (ρ, rhsρ) = (Q[i, j, _ρ, e], rhs[i, j, _ρ, e])
+
+    # store flux in shared memory
+    s_F[i, j, _ρ] = MJ * ρ * (ξx * Ux + ξy * Uy)
+    s_G[i, j, _ρ] = MJ * ρ * (ηx * Ux + ηy * Uy)
+  end
+
+  sync_threads()
+
+  @inbounds if i <= Nq && j <= Nq && k == 1 && e <= nelem
+    # loop of ξ-grid lines
+    for n = 1:Nq
+      rhsρ += s_D[n, i] * s_F[n, j, _ρ]
+    end
+
+    # loop of η-grid lines
+    for n = 1:Nq
+      rhsρ += s_D[n, j] * s_G[i, n, _ρ]
+    end
+
+    rhs[i, j, _ρ, e] = rhsρ
+  end
+  nothing
+end
+# }}}
+
+# {{{ Volume RHS for 3-D
+function kernel_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+  Nq = N + 1
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  s_D = @cuStaticSharedMem(eltype(D), (Nq, Nq))
+  s_F = @cuStaticSharedMem(eltype(Q), (Nq, Nq, Nq, _nstate))
+  s_G = @cuStaticSharedMem(eltype(Q), (Nq, Nq, Nq, _nstate))
+  s_H = @cuStaticSharedMem(eltype(Q), (Nq, Nq, Nq, _nstate))
+
+  rhsρ = zero(eltype(rhs))
+  if i <= Nq && j <= Nq && k <= Nq && e <= nelem
+    # Load derivative into shared memory
+    if k == 1
+      s_D[i, j] = D[i, j]
+    end
+
+    # Load values will need into registers
+    MJ = vgeo[i, j, k, _MJ, e]
+    (ξx, ξy, ξz) = (vgeo[i,j,k,_ξx,e], vgeo[i,j,k,_ξy,e], vgeo[i,j,k,_ξz,e])
+    (ηx, ηy, ηz) = (vgeo[i,j,k,_ηx,e], vgeo[i,j,k,_ηy,e], vgeo[i,j,k,_ηz,e])
+    (ζx, ζy, ζz) = (vgeo[i,j,k,_ζx,e], vgeo[i,j,k,_ζy,e], vgeo[i,j,k,_ζz,e])
+    (Ux, Uy, Uz) = (Q[i, j, k, _Ux, e], Q[i, j, k, _Uy, e], Q[i, j, k, _Uz, e])
+    (ρ, rhsρ) =  (Q[i, j, k, _ρ, e], rhs[i, j, k, _ρ, e])
+
+    # store flux in shared memory
+    s_F[i, j, k, _ρ] = MJ * ρ * (ξx * Ux + ξy * Uy + ξz * Uz)
+    s_G[i, j, k, _ρ] = MJ * ρ * (ηx * Ux + ηy * Uy + ηz * Uz)
+    s_H[i, j, k, _ρ] = MJ * ρ * (ζx * Ux + ζy * Uy + ζz * Uz)
+  end
+
+  sync_threads()
+
+  @inbounds if i <= Nq && j <= Nq && k <= Nq && e <= nelem
+    # loop of ξ-grid lines
+    for n = 1:Nq
+      rhsρ += s_D[n, i] * s_F[n, j, k, _ρ]
+    end
+
+    # loop of η-grid lines
+    for n = 1:Nq
+      rhsρ += s_D[n, j] * s_G[i, n, k, _ρ]
+    end
+
+    # loop of ζ-grid lines
+    for n = 1:Nq
+      rhsρ += s_D[n, k] * s_H[i, j, n, _ρ]
+    end
+
+    rhs[i, j, k, _ρ, e] = rhsρ
+  end
+  nothing
+end
+# }}}
+
+# {{{ Face RHS (all dimensions)
 function kernel_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
                          vmapP) where {dim, N}
   if dim == 1
@@ -545,22 +694,6 @@ end
 # }}}
 
 # {{{ Update solution (for all dimensions)
-function kernel_updatesolution_orig!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem,
-                                     rka, rkb, dt) where {dim, N}
-  (i, j, k) = threadIdx()
-  e = blockIdx().x
-
-  Nq = N+1
-  if i <= Nq && j <= Nq && k <= Nq && e <= nelem
-    n = i + (j-1) * Nq + (k-1) * Nq * Nq
-    @inbounds for s = 1:_nstate
-      Q[n, s, e] += rkb * dt * rhs[n, s, e] * vgeo[n, _MJI, e]
-      rhs[n, s, e] *= rka
-    end
-  end
-  nothing
-end
-
 function kernel_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
                                 rkb, dt) where {dim, N}
   (i, j, k) = threadIdx()
@@ -577,6 +710,8 @@ function kernel_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
   end
   nothing
 end
+# }}}
+
 # }}}
 
 # {{{ Fill sendQ on device with Q (for all dimensions)
