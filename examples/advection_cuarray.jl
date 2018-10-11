@@ -5,10 +5,12 @@ using Printf: @sprintf
 using CUDAnative
 using CUDAdrv
 
+# {{{ reshape for CuArray
 function Base.reshape(A::CuArray, dims::NTuple{N, Int}) where {N}
   @assert prod(dims) == prod(size(A))
   CuArray{eltype(A), length(dims)}(dims, A.buf)
 end
+# }}}
 
 # {{{ constants
 # note the order of the fields below is also assumed in the code.
@@ -828,6 +830,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
 
   start_time = t1 = time_ns()
   vthreads=(fill(N+1, dim)...,)
+  # putting 1 at end of threads tuple enables 1-D
   fthreads=(fill(N+1, dim-1)..., 1)
   for step = 1:nsteps
     for s = 1:length(RKA)
