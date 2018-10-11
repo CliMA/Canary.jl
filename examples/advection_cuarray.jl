@@ -911,8 +911,8 @@ function main()
   =#
 
   mpirank == 0 && println("Running 3d...")
-  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (30, 30, 30), Float64(π);
-            meshwarp=warping3D)
+  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (30, 30, 30),
+            Float64(π); meshwarp=warping3D)
 
   # MPI.Finalize()
 end
