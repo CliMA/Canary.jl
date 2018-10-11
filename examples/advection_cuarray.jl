@@ -139,6 +139,20 @@ function volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
   end
 end
 
+function kernel_volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+  Nq = N + 1
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  @inbounds if i <= Nq && j <= 1 && k == 1 && e <= nelem
+    for n in 1:Nq
+      rhs[i, _ρ, e] += D[n, i] * (vgeo[n, _MJ, e] * vgeo[n, _ξx, e] *
+                                  Q[n, _Ux, e] * Q[n, _ρ, e])
+    end
+  end
+end
+
 # Face RHS for 1-D
 function facerhs!(::Val{1}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
                   vmapP) where N
@@ -189,6 +203,29 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
     end
     # loop of η-grid lines
     for i = 1:Nq, j = 1:Nq, n = 1:Nq
+      rhs[i, j, _ρ, e] += D[n, j] * (vgeo[i, n, _MJ, e] * Q[i, n, _ρ, e] *
+                                     (vgeo[i, n, _ηx, e] .* Q[i, n, _Ux, e] +
+                                      vgeo[i, n, _ηy, e] .* Q[i, n, _Uy, e]))
+    end
+  end
+end
+
+function kernel_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+  Nq = N + 1
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  @inbounds if i <= Nq && j <= Nq && k == 1 && e <= nelem
+    # loop of ξ-grid lines
+    for n = 1:Nq
+      rhs[i, j, _ρ, e] += D[n, i] * (vgeo[n, j, _MJ, e] * Q[n, j, _ρ, e] *
+                                     (vgeo[n, j, _ξx, e] .* Q[n, j, _Ux, e] +
+                                      vgeo[n, j, _ξy, e] .* Q[n, j, _Uy, e]))
+    end
+
+    # loop of η-grid lines
+    for n = 1:Nq
       rhs[i, j, _ρ, e] += D[n, j] * (vgeo[i, n, _MJ, e] * Q[i, n, _ρ, e] *
                                      (vgeo[i, n, _ηx, e] .* Q[i, n, _Ux, e] +
                                       vgeo[i, n, _ηy, e] .* Q[i, n, _Uy, e]))
@@ -706,8 +743,8 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
   d_recvQ = CuArray(recvQ)
   (d_D, ) = (CuArray(D), )
 
-  Qshape    = (fill(N+1, dim)..., fill(1, 3-dim)..., size(Q, 2), size(Q, 3))
-  vgeoshape = (fill(N+1, dim)..., fill(1, 3-dim)..., _nvgeo, size(Q, 3))
+  Qshape    = (fill(N+1, dim)..., size(Q, 2), size(Q, 3))
+  vgeoshape = (fill(N+1, dim)..., _nvgeo, size(Q, 3))
 
   d_QC = reshape(d_QL, Qshape)
   d_rhsC = reshape(d_rhsL, Qshape...)
@@ -898,7 +935,6 @@ function main()
   Uy(x...) = -π*one(x[1])
   Uz(x...) =  exp(one(x[1]))
 
-  #=
   mpirank == 0 && println("Running 1d...")
   advection(mpicomm, (ρ=ρ1D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, ), Float32(π);
             meshwarp=warping1D)
@@ -908,10 +944,9 @@ function main()
   advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3), Float32(π);
             meshwarp=warping2D)
   mpirank == 0 && println()
-  =#
 
   mpirank == 0 && println("Running 3d...")
-  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (30, 30, 30),
+  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3),
             Float64(π); meshwarp=warping3D)
 
   # MPI.Finalize()
