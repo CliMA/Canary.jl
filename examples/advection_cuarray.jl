@@ -2,11 +2,25 @@ include(joinpath(@__DIR__,"vtk.jl"))
 using MPI
 using Canary
 using Printf: @sprintf
-using CUDAnative
-using CUDAdrv
+const HAVE_CUDA = try
+  using CUDAnative
+  using CUDAdrv
+  true
+catch
+  false
+end
+if HAVE_CUDA
+  macro hascuda(ex)
+    return :($(esc(ex)))
+  end
+else
+  macro hascuda(ex)
+    return :()
+  end
+end
 
 # {{{ reshape for CuArray
-function Base.reshape(A::CuArray, dims::NTuple{N, Int}) where {N}
+@hascuda function Base.reshape(A::CuArray, dims::NTuple{N, Int}) where {N}
   @assert prod(dims) == prod(size(A))
   CuArray{eltype(A), length(dims)}(dims, A.buf)
 end
@@ -335,7 +349,7 @@ end
 # }}}
 
 # {{{ Naive GPU kernles
-function knl_volumerhs_v1!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+@hascuda function knl_volumerhs_v1!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -349,7 +363,7 @@ function knl_volumerhs_v1!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   end
 end
 
-function knl_volumerhs_v1!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+@hascuda function knl_volumerhs_v1!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -372,7 +386,7 @@ function knl_volumerhs_v1!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   end
 end
 
-function knl_volumerhs_v1!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+@hascuda function knl_volumerhs_v1!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -409,7 +423,7 @@ function knl_volumerhs_v1!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   nothing
 end
 
-function knl_facerhs_v1!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
+@hascuda function knl_facerhs_v1!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
                          vmapP) where {dim, N}
   if dim == 1
     Np = (N+1)
@@ -465,7 +479,7 @@ function knl_facerhs_v1!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
   nothing
 end
 
-function knl_updatesolution_v1!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
+@hascuda function knl_updatesolution_v1!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
                                 rkb, dt) where {dim, N}
   (i, j, k) = threadIdx()
   e = blockIdx().x
@@ -485,7 +499,7 @@ end
 # {{{ improved GPU kernles
 
 # {{{ Volume RHS for 1-D
-function knl_volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+@hascuda function knl_volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -524,7 +538,7 @@ end
 # }}}
 
 # {{{ Volume RHS for 2-D
-function knl_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+@hascuda function knl_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -573,7 +587,7 @@ end
 # }}}
 
 # {{{ Volume RHS for 3-D
-function knl_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+@hascuda function knl_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -630,7 +644,7 @@ end
 # }}}
 
 # {{{ Face RHS (all dimensions)
-function knl_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
+@hascuda function knl_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
                       vmapP) where {dim, N}
   if dim == 1
     Np = (N+1)
@@ -692,7 +706,7 @@ end
 # }}}
 
 # {{{ Update solution (for all dimensions)
-function knl_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
+@hascuda function knl_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
                              rkb, dt) where {dim, N}
   (i, j, k) = threadIdx()
   e = blockIdx().x
@@ -713,7 +727,7 @@ end
 # }}}
 
 # {{{ Fill sendQ on device with Q (for all dimensions)
-function knl_fillsendQ!(::Val{dim}, ::Val{N}, sendQ, Q,
+@hascuda function knl_fillsendQ!(::Val{dim}, ::Val{N}, sendQ, Q,
                         sendelems) where {N, dim}
   Nq = N + 1
   (i, j, k) = threadIdx()
@@ -731,7 +745,7 @@ end
 # }}}
 
 # {{{ Fill Q on device with recvQ (for all dimensions)
-function knl_transferrecvQ!(::Val{dim}, ::Val{N}, Q, recvQ, nelem,
+@hascuda function knl_transferrecvQ!(::Val{dim}, ::Val{N}, Q, recvQ, nelem,
                             nrealelem) where {N, dim}
   Nq = N + 1
   (i, j, k) = threadIdx()
@@ -753,7 +767,7 @@ function fillsendQ!(::Val{dim}, ::Val{N}, sendQ, d_sendQ::Array, Q,
   sendQ[:, :, :] .= Q[:, :, sendelems]
 end
 
-function fillsendQ!(::Val{dim}, ::Val{N}, sendQ, d_sendQ::CuArray, d_QL,
+@hascuda function fillsendQ!(::Val{dim}, ::Val{N}, sendQ, d_sendQ::CuArray, d_QL,
                     d_sendelems) where {dim, N}
   nsendelem = length(d_sendelems)
   if nsendelem > 0
@@ -763,7 +777,7 @@ function fillsendQ!(::Val{dim}, ::Val{N}, sendQ, d_sendQ::CuArray, d_QL,
   end
 end
 
-function transferrecvQ!(::Val{dim}, ::Val{N}, d_recvQ::CuArray, recvQ, d_QL,
+@hascuda function transferrecvQ!(::Val{dim}, ::Val{N}, d_recvQ::CuArray, recvQ, d_QL,
                         nrealelem) where {dim, N}
   nrecvelem = size(recvQ)[end]
   if nrecvelem > 0
@@ -781,14 +795,14 @@ end
 # }}}
 
 # {{{ GPU kernel wrappers
-function volumerhs!(::Val{dim}, ::Val{N}, d_rhsC::CuArray, d_QC, d_vgeoC, d_D,
+@hascuda function volumerhs!(::Val{dim}, ::Val{N}, d_rhsC::CuArray, d_QC, d_vgeoC, d_D,
                     elems) where {dim, N}
   nelem = length(elems)
   @cuda(threads=ntuple(j->N+1, dim), blocks=nelem,
         knl_volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, nelem))
 end
 
-function facerhs!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_sgeo, elems,
+@hascuda function facerhs!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_sgeo, elems,
                   d_vmapM, d_vmapP) where {dim, N}
   nelem = length(elems)
   @cuda(threads=(ntuple(j->N+1, dim-1)..., 1), blocks=nelem,
@@ -796,7 +810,7 @@ function facerhs!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_sgeo, elems,
                      d_vmapP))
 end
 
-function updatesolution!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_vgeoL,
+@hascuda function updatesolution!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_vgeoL,
                          elems, rka, rkb, dt) where {dim, N}
   nelem = length(elems)
   @cuda(threads=ntuple(j->N+1, dim), blocks=nelem,
@@ -943,7 +957,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                       RKA[s%length(RKA)+1], RKB[s], dt)
     end
     step == 1 && (start_time = time_ns())
-    synchronize()
+    @hascuda synchronize()
     if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
       t1 = time_ns()
       avg_stage_time = (time_ns() - start_time) * 1e-9 / ((step-1) * length(RKA))
@@ -1054,7 +1068,7 @@ function main()
   mpirank = MPI.Comm_rank(mpicomm)
 
   # FIXME: query via hostname
-  device!(mpirank % length(devices()))
+  @hascuda device!(mpirank % length(devices()))
 
   warping1D(x...) = (x[1] +  sin( π*x[1])/10, zero(x[1]), zero(x[1]))
   warping2D(x...) = (x[1] +  sin( π*x[1])*sin(2π*x[2])/10,
@@ -1077,29 +1091,35 @@ function main()
             meshwarp=warping1D, ArrType=Array)
   mpirank == 0 && println()
 
-  mpirank == 0 && println("Running 1d (GPU)...")
-  advection(mpicomm, (ρ=ρ1D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, ), Float64(π);
-            meshwarp=warping1D, ArrType=CuArray)
-  mpirank == 0 && println()
+  @hascuda begin
+    mpirank == 0 && println("Running 1d (GPU)...")
+    advection(mpicomm, (ρ=ρ1D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, ), Float64(π);
+              meshwarp=warping1D, ArrType=CuArray)
+    mpirank == 0 && println()
+  end
 
   mpirank == 0 && println("Running 2d (CPU)...")
   advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3), Float64(π);
             meshwarp=warping2D, ArrType=Array)
   mpirank == 0 && println()
 
-  mpirank == 0 && println("Running 2d (GPU)...")
-  advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3), Float64(π);
-            meshwarp=warping2D, ArrType=CuArray)
-  mpirank == 0 && println()
+  @hascuda begin
+    mpirank == 0 && println("Running 2d (GPU)...")
+    advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3), Float64(π);
+              meshwarp=warping2D, ArrType=CuArray)
+    mpirank == 0 && println()
+  end
 
   mpirank == 0 && println("Running 3d (CPU)...")
   advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3),
             Float64(π); meshwarp=warping3D, ArrType=Array)
   mpirank == 0 && println()
 
-  mpirank == 0 && println("Running 3d (GPU)...")
-  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3),
-            Float64(π); meshwarp=warping3D, ArrType=CuArray)
+  @hascuda begin
+    mpirank == 0 && println("Running 3d (GPU)...")
+    advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3),
+              Float64(π); meshwarp=warping3D, ArrType=CuArray)
+  end
 
   # MPI.Finalize()
   nothing
