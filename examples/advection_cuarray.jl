@@ -5,6 +5,11 @@ using Printf: @sprintf
 using CUDAnative
 using CUDAdrv
 
+function Base.reshape(A::CuArray, dims::NTuple{N, Int}) where {N}
+  @assert prod(dims) == prod(size(A))
+  CuArray{eltype(A), length(dims)}(dims, A.buf)
+end
+
 # {{{ constants
 # note the order of the fields below is also assumed in the code.
 const _nstate = 4
@@ -693,21 +698,23 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
   nrecvelem = length(mesh.ghostelems)
   nelem = length(mesh.elems)
 
-  (d_Q, d_rhs) = (CuArray(Q), CuArray(rhs))
+  (d_QL, d_rhsL) = (CuArray(Q), CuArray(rhs))
   (d_vgeo, d_sgeo) = (CuArray(vgeo), CuArray(sgeo))
   (d_vmapM, d_vmapP) = (CuArray(vmapM), CuArray(vmapP))
   (d_sendelems, d_sendQ) = (CuArray(mesh.sendelems), CuArray(sendQ))
   d_recvQ = CuArray(recvQ)
   (d_D, ) = (CuArray(D), )
 
-  cartshape = (fill(N+1, dim)..., fill(1, 3-dim)..., size(Q, 2), size(Q, 3))
-  d_QC = CuArray{DFloat, dim+2}(cartshape, d_Q.buf)
-  d_rhsC = CuArray{DFloat, dim+2}(cartshape, d_rhs.buf)
-  cartshape = (fill(N+1, dim)..., fill(1, 3-dim)..., _nvgeo, size(Q, 3))
-  d_vgeoC = CuArray{DFloat, dim+2}(cartshape, d_vgeo.buf)
+  Qshape    = (fill(N+1, dim)..., fill(1, 3-dim)..., size(Q, 2), size(Q, 3))
+  vgeoshape = (fill(N+1, dim)..., fill(1, 3-dim)..., _nvgeo, size(Q, 3))
+
+  d_QC = reshape(d_QL, Qshape)
+  d_rhsC = reshape(d_rhsL, Qshape...)
+  d_vgeoC = reshape(d_vgeo, vgeoshape)
 
   start_time = t1 = time_ns()
-  # FIXME: variables for threads and blocks
+  vthreads=(fill(N+1, dim)...,)
+  fthreads=(fill(N+1, dim-1)..., 1)
   for step = 1:nsteps
     for s = 1:length(RKA)
       # post MPI receives
@@ -721,9 +728,9 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
 
       # pack data in send buffer
       if nsendelem > 0
-        @cuda(threads=(fill(N+1, dim)...,), blocks=nsendelem,
-              kernel_sendQ!(Val(dim), Val(N), d_sendQ, d_Q, d_sendelems))
-        Mem.download!(sendQ, d_sendQ.buf)
+        @cuda(threads=vthreads, blocks=nsendelem,
+              kernel_sendQ!(Val(dim), Val(N), d_sendQ, d_QL, d_sendelems))
+        sendQ .= d_sendQ
       end
 
       # post MPI sends
@@ -734,7 +741,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
 
       # volume RHS computation
       # volumerhs!(Val(dim), Val(N), rhs, Q, vgeo, D, mesh.realelems)
-      @cuda(threads=(fill(N+1, dim)...,), blocks=nrealelem,
+      @cuda(threads=vthreads, blocks=nrealelem,
             kernel_volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC,
                               d_D, nrealelem))
 
@@ -743,24 +750,24 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
 
       # copy data to state vectors
       if nrecvelem > 0
-        Mem.upload!(d_recvQ.buf, recvQ)
-        @cuda(threads=(fill(N+1, dim)...,), blocks=nrecvelem,
-              kernel_recvQ!(Val(dim), Val(N), d_Q, d_recvQ, nrecvelem,
+        d_recvQ .= recvQ
+        @cuda(threads=vthreads, blocks=nrecvelem,
+              kernel_recvQ!(Val(dim), Val(N), d_QL, d_recvQ, nrecvelem,
                             nrealelem))
       end
 
       # face RHS computation
       # facerhs!(Val(dim), Val(N), rhs, Q, sgeo, mesh.realelems, vmapM, vmapP)
       # putting 1 at end of threads tuple enables 1-D
-      @cuda(threads=(fill(N+1, dim-1)..., 1), blocks=nrealelem,
-            kernel_facerhs!(Val(dim), Val(N), d_rhs, d_Q, d_sgeo,
+      @cuda(threads=fthreads, blocks=nrealelem,
+            kernel_facerhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo,
                             nrealelem, d_vmapM, d_vmapP))
 
       # update solution and scale RHS
       # updatesolution!(Val(dim), Val(N), rhs, Q, vgeo, mesh.realelems,
       #                 RKA[s%length(RKA)+1], RKB[s], dt)
-      @cuda(threads=(fill(N+1, dim)...,), blocks=nrealelem,
-            kernel_updatesolution!(Val(dim), Val(N), d_rhs, d_Q, d_vgeo,
+      @cuda(threads=vthreads, blocks=nrealelem,
+            kernel_updatesolution!(Val(dim), Val(N), d_rhsL, d_QL, d_vgeo,
                                    nrealelem, RKA[s%length(RKA)+1], RKB[s],
                                   DFloat(dt)))
     end
@@ -772,8 +779,8 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       @show (step, nsteps, avg_stage_time)
     end
   end
-  Mem.download!(Q, d_Q.buf)
-  Mem.download!(rhs, d_rhs.buf)
+  Q .= d_QL
+  rhs .= d_rhsL
 end
 # }}}
 
