@@ -900,12 +900,12 @@ function main()
   Uz(x...) =  exp(one(x[1]))
 
   mpirank == 0 && println("Running 1d...")
-  advection(mpicomm, (ρ=ρ1D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, ), Float32(π);
+  advection(mpicomm, (ρ=ρ1D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, ), Float64(π);
             meshwarp=warping1D)
   mpirank == 0 && println()
 
   mpirank == 0 && println("Running 2d...")
-  advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3), Float32(π);
+  advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3), Float64(π);
             meshwarp=warping2D)
   mpirank == 0 && println()
 
