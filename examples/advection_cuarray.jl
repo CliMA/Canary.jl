@@ -817,6 +817,10 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       @show (step, nsteps, avg_stage_time)
     end
   end
+  if mpirank == 0
+    avg_stage_time = (time_ns() - start_time) * 1e-9 / ((nsteps-1) * length(RKA))
+    @show (nsteps, avg_stage_time)
+  end
   Q .= d_QL
   rhs .= d_rhsL
 end
