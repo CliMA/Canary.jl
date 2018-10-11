@@ -404,12 +404,8 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
 
   nrealelem = length(mesh.realelems)
 
-  t1 = time_ns()
+  start_time = t1 = time_ns()
   for step = 1:nsteps
-    if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
-      t1 = time_ns()
-      @show (step, nsteps)
-    end
     for s = 1:length(RKA)
       # post MPI receives
       for n = 1:nnabr
@@ -445,6 +441,15 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       updatesolution!(Val(dim), Val(N), rhs, Q, vgeo, mesh.realelems,
                       RKA[s%length(RKA)+1], RKB[s], dt)
     end
+    if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
+      t1 = time_ns()
+      avg_stage_time = (time_ns() - start_time) * 1e-9 / ((step-1) * length(RKA))
+      @show (step, nsteps, avg_stage_time)
+    end
+  end
+  if mpirank == 0
+    avg_stage_time = (time_ns() - start_time) * 1e-9 / ((nsteps-1) * length(RKA))
+    @show (nsteps, avg_stage_time)
   end
 end
 # }}}
@@ -570,8 +575,8 @@ function main()
   mpirank == 0 && println()
 
   mpirank == 0 && println("Running 3d...")
-  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (30, 30, 30), Float64(π);
-            meshwarp=warping3D)
+  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3),
+            Float64(π); meshwarp=warping3D)
 
   # MPI.Finalize()
 end
