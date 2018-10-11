@@ -126,8 +126,7 @@ function computegeometry(::Val{dim}, mesh, D, ξ, ω, meshwarp, vmapM) where dim
 end
 # }}}
 
-# {{{ 1-D
-# Volume RHS for 1-D
+# {{{ Volume RHS for 1-D
 function kernel_volumerhs_orig!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D,
                                 nelem) where N
   Nq = N + 1
@@ -181,8 +180,7 @@ function kernel_volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
 end
 # }}}
 
-# {{{ 2-D
-# Volume RHS for 2-D
+# {{{ Volume RHS for 2-D
 function kernel_volumerhs_orig!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
@@ -292,8 +290,7 @@ function facerhs!(::Val{2}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
 end
 # }}}
 
-# {{{ 3-D
-# Volume RHS for 3-D
+# {{{ Volume RHS for 3-D
 function kernel_volumerhs_orig!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D,
                                 nelem) where N
   Nq = N + 1
