@@ -139,7 +139,8 @@ function volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
   end
 end
 
-function kernel_volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+function kernel_volumerhs_orig!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D,
+                                nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -151,6 +152,43 @@ function kernel_volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
                                   Q[n, _Ux, e] * Q[n, _ρ, e])
     end
   end
+end
+
+function kernel_volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+  Nq = N + 1
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  s_D = @cuStaticSharedMem(eltype(D), (Nq, Nq))
+  s_F = @cuStaticSharedMem(eltype(Q), (Nq, _nstate))
+
+  rhsρ = zero(eltype(rhs))
+  @inbounds if i <= Nq && j == 1 && k == 1 && e <= nelem
+    for n in 1:Nq
+      s_D[i, n] = D[i, n]
+    end
+
+    # Load values will need into registers
+    MJ = vgeo[i, _MJ, e]
+    ξx = vgeo[i, _ξx, e]
+    ρ =  Q[i, _ρ, e]
+    Ux = Q[i, _Ux, e]
+    rhsρ = rhs[i, _ρ, e]
+
+    # store flux in shared memory
+    s_F[i, _ρ] = MJ * ρ * ξx * Ux
+  end
+
+  sync_threads()
+
+  @inbounds if i <= Nq && j == 1 && k == 1 && e <= nelem
+    for n in 1:Nq
+      rhsρ += s_D[n, i] * s_F[n, _ρ]
+    end
+    rhs[i, _ρ, e] = rhsρ
+  end
+  nothing
 end
 
 # Face RHS for 1-D
@@ -210,7 +248,7 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
   end
 end
 
-function kernel_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+function kernel_volumerhs_orig!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -231,6 +269,59 @@ function kernel_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
                                       vgeo[i, n, _ηy, e] .* Q[i, n, _Uy, e]))
     end
   end
+end
+
+function kernel_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+  Nq = N + 1
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  s_D = @cuStaticSharedMem(eltype(D), (Nq, Nq))
+  s_F = @cuStaticSharedMem(eltype(Q), (Nq, Nq, _nstate))
+  s_G = @cuStaticSharedMem(eltype(Q), (Nq, Nq, _nstate))
+
+  rhsρ = zero(eltype(rhs))
+  if i <= Nq && j <= Nq && k == 1 && e <= nelem
+    # Load derivative into shared memory
+    if k == 1
+      s_D[i, j] = D[i, j]
+    end
+
+    # Load values will need into registers
+    MJ = vgeo[i, j, _MJ, e]
+    ξx = vgeo[i, j, _ξx, e]
+    ξy = vgeo[i, j, _ξy, e]
+    ηx = vgeo[i, j, _ηx, e]
+    ηy = vgeo[i, j, _ηy, e]
+    ζx = vgeo[i, j, _ζx, e]
+    ζy = vgeo[i, j, _ζy, e]
+    ρ =  Q[i, j, _ρ, e]
+    Ux = Q[i, j, _Ux, e]
+    Uy = Q[i, j, _Uy, e]
+    rhsρ = rhs[i, j, _ρ, e]
+
+    # store flux in shared memory
+    s_F[i, j, _ρ] = MJ * ρ * (ξx * Ux + ξy * Uy)
+    s_G[i, j, _ρ] = MJ * ρ * (ηx * Ux + ηy * Uy)
+  end
+
+  sync_threads()
+
+  @inbounds if i <= Nq && j <= Nq && k == 1 && e <= nelem
+    # loop of ξ-grid lines
+    for n = 1:Nq
+      rhsρ += s_D[n, i] * s_F[n, j, _ρ]
+    end
+
+    # loop of η-grid lines
+    for n = 1:Nq
+      rhsρ += s_D[n, j] * s_G[i, n, _ρ]
+    end
+
+    rhs[i, j, _ρ, e] = rhsρ
+  end
+  nothing
 end
 
 # Face RHS for 2-D
