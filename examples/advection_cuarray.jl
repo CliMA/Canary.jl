@@ -747,6 +747,7 @@ function knl_transferrecvQ!(::Val{dim}, ::Val{N}, Q, recvQ, nelem,
 end
 # }}}
 
+# {{{ MPI Buffer handling
 function fillsendQ!(::Val{dim}, ::Val{N}, sendQ, d_sendQ::Array, Q,
                     sendelems) where {dim, N}
   sendQ[:, :, :] .= Q[:, :, sendelems]
@@ -777,7 +778,9 @@ function transferrecvQ!(::Val{dim}, ::Val{N}, d_recvQ::Array, recvQ, Q,
                         nrealelem) where {dim, N}
   Q[:, :, nrealelem+1:end] .= recvQ[:, :, :]
 end
+# }}}
 
+# {{{ GPU kernel wrappers
 function volumerhs!(::Val{dim}, ::Val{N}, d_rhsC::CuArray, d_QC, d_vgeoC, d_D,
                     elems) where {dim, N}
   nelem = length(elems)
@@ -800,6 +803,7 @@ function updatesolution!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_vgeoL,
         knl_updatesolution!(Val(dim), Val(N), d_rhsL, d_QL, d_vgeoL, nelem, rka,
                             rkb, dt))
 end
+# }}}
 
 # {{{ L2 Error (for all dimensions)
 function L2errorsquared(::Val{dim}, ::Val{N}, Q, vgeo, elems, Qex,
