@@ -275,7 +275,8 @@ function volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
   end
 end
 
-function kernel_volumerhs_1!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+function kernel_volumerhs_orig!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D,
+                                nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -419,8 +420,8 @@ function facerhs!(::Val{3}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
   end
 end
 
-function kernel_facerhs_1!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
-                         vmapP) where {dim, N}
+function kernel_facerhs_orig!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
+                              vmapP) where {dim, N}
   if dim == 1
     Np = (N+1)
     nface = 2
@@ -562,8 +563,8 @@ function kernel_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
   nothing
 end
 
-function kernel_updatesolution_1!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
-                                rkb, dt) where {dim, N}
+function kernel_updatesolution_orig!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem,
+                                     rka, rkb, dt) where {dim, N}
   (i, j, k) = threadIdx()
   e = blockIdx().x
 
