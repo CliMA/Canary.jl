@@ -290,16 +290,10 @@ function kernel_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
 
     # Load values will need into registers
     MJ = vgeo[i, j, _MJ, e]
-    ξx = vgeo[i, j, _ξx, e]
-    ξy = vgeo[i, j, _ξy, e]
-    ηx = vgeo[i, j, _ηx, e]
-    ηy = vgeo[i, j, _ηy, e]
-    ζx = vgeo[i, j, _ζx, e]
-    ζy = vgeo[i, j, _ζy, e]
-    ρ =  Q[i, j, _ρ, e]
-    Ux = Q[i, j, _Ux, e]
-    Uy = Q[i, j, _Uy, e]
-    rhsρ = rhs[i, j, _ρ, e]
+    (ξx, ξy) = (vgeo[i, j, _ξx, e], vgeo[i, j, _ξy, e])
+    (ηx, ηy) = (vgeo[i, j, _ηx, e], vgeo[i, j, _ηy, e])
+    (Ux, Uy) = (Q[i, j, _Ux, e], Q[i, j, _Uy, e])
+    (ρ, rhsρ) = (Q[i, j, _ρ, e], rhs[i, j, _ρ, e])
 
     # store flux in shared memory
     s_F[i, j, _ρ] = MJ * ρ * (ξx * Ux + ξy * Uy)
@@ -461,20 +455,11 @@ function kernel_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
 
     # Load values will need into registers
     MJ = vgeo[i, j, k, _MJ, e]
-    ξx = vgeo[i, j, k, _ξx, e]
-    ξy = vgeo[i, j, k, _ξy, e]
-    ξz = vgeo[i, j, k, _ξz, e]
-    ηx = vgeo[i, j, k, _ηx, e]
-    ηy = vgeo[i, j, k, _ηy, e]
-    ηz = vgeo[i, j, k, _ηz, e]
-    ζx = vgeo[i, j, k, _ζx, e]
-    ζy = vgeo[i, j, k, _ζy, e]
-    ζz = vgeo[i, j, k, _ζz, e]
-    ρ =  Q[i, j, k, _ρ, e]
-    Ux = Q[i, j, k, _Ux, e]
-    Uy = Q[i, j, k, _Uy, e]
-    Uz = Q[i, j, k, _Uz, e]
-    rhsρ = rhs[i, j, k, _ρ, e]
+    (ξx, ξy, ξz) = (vgeo[i,j,k,_ξx,e], vgeo[i,j,k,_ξy,e], vgeo[i,j,k,_ξz,e])
+    (ηx, ηy, ηz) = (vgeo[i,j,k,_ηx,e], vgeo[i,j,k,_ηy,e], vgeo[i,j,k,_ηz,e])
+    (ζx, ζy, ζz) = (vgeo[i,j,k,_ζx,e], vgeo[i,j,k,_ζy,e], vgeo[i,j,k,_ζz,e])
+    (Ux, Uy, Uz) = (Q[i, j, k, _Ux, e], Q[i, j, k, _Uy, e], Q[i, j, k, _Uz, e])
+    (ρ, rhsρ) =  (Q[i, j, k, _ρ, e], rhs[i, j, k, _ρ, e])
 
     # store flux in shared memory
     s_F[i, j, k, _ρ] = MJ * ρ * (ξx * Ux + ξy * Uy + ξz * Uz)
