@@ -129,7 +129,7 @@ end
 # {{{ CPU Kernels
 # {{{ 1-D
 # Volume RHS for 1-D
-function volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
+function volumerhs!(::Val{1}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
   Nq = N + 1
 
   @inbounds for e in elems
@@ -143,7 +143,7 @@ function volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
 end
 
 # Face RHS for 1-D
-function facerhs!(::Val{1}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
+function facerhs!(::Val{1}, ::Val{N}, rhs::Array, Q, sgeo, elems, vmapM,
                   vmapP) where N
   Np = N+1
   nface = 2
@@ -175,10 +175,10 @@ end
 
 # {{{ 2-D
 # Volume RHS for 2-D
-function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
+function volumerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
   Nq = N + 1
 
-  ~, ~, nelem = size(Q)
+  nelem = size(Q)[end]
   Q = reshape(Q, Nq, Nq, _nstate, nelem)
   rhs = reshape(rhs, Nq, Nq, _nstate, nelem)
   vgeo = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
@@ -200,7 +200,7 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
 end
 
 # Face RHS for 2-D
-function facerhs!(::Val{2}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
+function facerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, sgeo, elems, vmapM,
                   vmapP) where N
   Np = (N+1)^2
   Nfp = N+1
@@ -240,9 +240,9 @@ end
 
 # {{{ 3-D
 # Volume RHS for 3-D
-function volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
+function volumerhs!(::Val{3}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
   Nq = N + 1
-  ~, ~, nelem = size(Q)
+  nelem = size(Q)[end]
 
   Q = reshape(Q, Nq, Nq, Nq, _nstate, nelem)
   rhs = reshape(rhs, Nq, Nq, Nq, _nstate, nelem)
@@ -279,7 +279,7 @@ function volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
 end
 
 # Face RHS for 3-D
-function facerhs!(::Val{3}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
+function facerhs!(::Val{3}, ::Val{N}, rhs::Array, Q, sgeo, elems, vmapM,
                   vmapP) where N
   Np = (N+1)^3
   Nfp = (N+1)^2
@@ -323,7 +323,7 @@ end
 # }}}
 
 # {{{ Update solution (for all dimensions)
-function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, elems, rka,
+function updatesolution!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, elems, rka,
                          rkb, dt) where {dim, N}
   @inbounds for e = elems, s = 1:_nstate, i = 1:(N+1)^dim
     Q[i, s, e] += rkb * dt * rhs[i, s, e] * vgeo[i, _MJI, e]
@@ -335,8 +335,7 @@ end
 # }}}
 
 # {{{ Naive GPU kernles
-function kernel_volumerhs_orig!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D,
-                                nelem) where N
+function knl_volumerhs_v1!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -350,7 +349,7 @@ function kernel_volumerhs_orig!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D,
   end
 end
 
-function kernel_volumerhs_orig!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+function knl_volumerhs_v1!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -373,8 +372,7 @@ function kernel_volumerhs_orig!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) wher
   end
 end
 
-function kernel_volumerhs_orig!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D,
-                                nelem) where N
+function knl_volumerhs_v1!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -411,8 +409,8 @@ function kernel_volumerhs_orig!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D,
   nothing
 end
 
-function kernel_facerhs_orig!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
-                              vmapP) where {dim, N}
+function knl_facerhs_v1!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
+                         vmapP) where {dim, N}
   if dim == 1
     Np = (N+1)
     nface = 2
@@ -467,8 +465,8 @@ function kernel_facerhs_orig!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
   nothing
 end
 
-function kernel_updatesolution_orig!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem,
-                                     rka, rkb, dt) where {dim, N}
+function knl_updatesolution_v1!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
+                                rkb, dt) where {dim, N}
   (i, j, k) = threadIdx()
   e = blockIdx().x
 
@@ -487,7 +485,7 @@ end
 # {{{ improved GPU kernles
 
 # {{{ Volume RHS for 1-D
-function kernel_volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+function knl_volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -526,7 +524,7 @@ end
 # }}}
 
 # {{{ Volume RHS for 2-D
-function kernel_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+function knl_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -575,7 +573,7 @@ end
 # }}}
 
 # {{{ Volume RHS for 3-D
-function kernel_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+function knl_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   Nq = N + 1
 
   (i, j, k) = threadIdx()
@@ -632,8 +630,8 @@ end
 # }}}
 
 # {{{ Face RHS (all dimensions)
-function kernel_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
-                         vmapP) where {dim, N}
+function knl_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
+                      vmapP) where {dim, N}
   if dim == 1
     Np = (N+1)
     nface = 2
@@ -694,8 +692,8 @@ end
 # }}}
 
 # {{{ Update solution (for all dimensions)
-function kernel_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
-                                rkb, dt) where {dim, N}
+function knl_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka,
+                             rkb, dt) where {dim, N}
   (i, j, k) = threadIdx()
   e = blockIdx().x
 
@@ -715,7 +713,8 @@ end
 # }}}
 
 # {{{ Fill sendQ on device with Q (for all dimensions)
-function kernel_sendQ!(::Val{dim}, ::Val{N}, sendQ, Q, sendelems) where {N, dim}
+function knl_fillsendQ!(::Val{dim}, ::Val{N}, sendQ, Q,
+                        sendelems) where {N, dim}
   Nq = N + 1
   (i, j, k) = threadIdx()
   e = blockIdx().x
@@ -732,8 +731,8 @@ end
 # }}}
 
 # {{{ Fill Q on device with recvQ (for all dimensions)
-function kernel_recvQ!(::Val{dim}, ::Val{N}, Q, recvQ, nelem,
-                       nrealelem) where {N, dim}
+function knl_transferrecvQ!(::Val{dim}, ::Val{N}, Q, recvQ, nelem,
+                            nrealelem) where {N, dim}
   Nq = N + 1
   (i, j, k) = threadIdx()
   e = blockIdx().x
@@ -747,6 +746,60 @@ function kernel_recvQ!(::Val{dim}, ::Val{N}, Q, recvQ, nelem,
   nothing
 end
 # }}}
+
+function fillsendQ!(::Val{dim}, ::Val{N}, sendQ, d_sendQ::Array, Q,
+                    sendelems) where {dim, N}
+  sendQ[:, :, :] .= Q[:, :, sendelems]
+end
+
+function fillsendQ!(::Val{dim}, ::Val{N}, sendQ, d_sendQ::CuArray, d_QL,
+                    d_sendelems) where {dim, N}
+  nsendelem = length(d_sendelems)
+  if nsendelem > 0
+    @cuda(threads=ntuple(j->N+1, dim), blocks=nsendelem,
+          knl_fillsendQ!(Val(dim), Val(N), d_sendQ, d_QL, d_sendelems))
+    sendQ .= d_sendQ
+  end
+end
+
+function transferrecvQ!(::Val{dim}, ::Val{N}, d_recvQ::CuArray, recvQ, d_QL,
+                        nrealelem) where {dim, N}
+  nrecvelem = size(recvQ)[end]
+  if nrecvelem > 0
+    d_recvQ .= recvQ
+    @cuda(threads=ntuple(j->N+1, dim), blocks=nrecvelem,
+          knl_transferrecvQ!(Val(dim), Val(N), d_QL, d_recvQ, nrecvelem,
+                             nrealelem))
+  end
+end
+
+function transferrecvQ!(::Val{dim}, ::Val{N}, d_recvQ::Array, recvQ, Q,
+                        nrealelem) where {dim, N}
+  Q[:, :, nrealelem+1:end] .= recvQ[:, :, :]
+end
+
+function volumerhs!(::Val{dim}, ::Val{N}, d_rhsC::CuArray, d_QC, d_vgeoC, d_D,
+                    elems) where {dim, N}
+  nelem = length(elems)
+  @cuda(threads=ntuple(j->N+1, dim), blocks=nelem,
+        knl_volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, nelem))
+end
+
+function facerhs!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_sgeo, elems,
+                  d_vmapM, d_vmapP) where {dim, N}
+  nelem = length(elems)
+  @cuda(threads=(ntuple(j->N+1, dim-1)..., 1), blocks=nelem,
+        knl_facerhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, nelem, d_vmapM,
+                     d_vmapP))
+end
+
+function updatesolution!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_vgeoL,
+                         elems, rka, rkb, dt) where {dim, N}
+  nelem = length(elems)
+  @cuda(threads=ntuple(j->N+1, dim), blocks=nelem,
+        knl_updatesolution!(Val(dim), Val(N), d_rhsL, d_QL, d_vgeoL, nelem, rka,
+                            rkb, dt))
+end
 
 # {{{ L2 Error (for all dimensions)
 function L2errorsquared(::Val{dim}, ::Val{N}, Q, vgeo, elems, Qex,
@@ -784,7 +837,8 @@ end
 
 # {{{ RK loop
 function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
-                      dt, nsteps, tout, vmapM, vmapP, mpicomm) where {dim, N}
+                      dt, nsteps, tout, vmapM, vmapP, mpicomm;
+                      ArrType=CuArray) where {dim, N}
   DFloat = eltype(Q)
   mpirank = MPI.Comm_rank(mpicomm)
 
@@ -832,24 +886,21 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
   nrecvelem = length(mesh.ghostelems)
   nelem = length(mesh.elems)
 
-  (d_QL, d_rhsL) = (CuArray(Q), CuArray(rhs))
-  (d_vgeo, d_sgeo) = (CuArray(vgeo), CuArray(sgeo))
-  (d_vmapM, d_vmapP) = (CuArray(vmapM), CuArray(vmapP))
-  (d_sendelems, d_sendQ) = (CuArray(mesh.sendelems), CuArray(sendQ))
-  d_recvQ = CuArray(recvQ)
-  (d_D, ) = (CuArray(D), )
+  (d_QL, d_rhsL) = (ArrType(Q), ArrType(rhs))
+  (d_vgeoL, d_sgeo) = (ArrType(vgeo), ArrType(sgeo))
+  (d_vmapM, d_vmapP) = (ArrType(vmapM), ArrType(vmapP))
+  (d_sendelems, d_sendQ) = (ArrType(mesh.sendelems), ArrType(sendQ))
+  d_recvQ = ArrType(recvQ)
+  (d_D, ) = (ArrType(D), )
 
   Qshape    = (fill(N+1, dim)..., size(Q, 2), size(Q, 3))
   vgeoshape = (fill(N+1, dim)..., _nvgeo, size(Q, 3))
 
   d_QC = reshape(d_QL, Qshape)
   d_rhsC = reshape(d_rhsL, Qshape...)
-  d_vgeoC = reshape(d_vgeo, vgeoshape)
+  d_vgeoC = reshape(d_vgeoL, vgeoshape)
 
   start_time = t1 = time_ns()
-  vthreads=(fill(N+1, dim)...,)
-  # putting 1 at end of threads tuple enables 1-D
-  fthreads=(fill(N+1, dim-1)..., 1)
   for step = 1:nsteps
     for s = 1:length(RKA)
       # post MPI receives
@@ -862,11 +913,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       MPI.Waitall!(sendreq)
 
       # pack data in send buffer
-      if nsendelem > 0
-        @cuda(threads=vthreads, blocks=nsendelem,
-              kernel_sendQ!(Val(dim), Val(N), d_sendQ, d_QL, d_sendelems))
-        sendQ .= d_sendQ
-      end
+      fillsendQ!(Val(dim), Val(N), sendQ, d_sendQ, d_QL, d_sendelems)
 
       # post MPI sends
       for n = 1:nnabr
@@ -875,31 +922,21 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       end
 
       # volume RHS computation
-      @cuda(threads=vthreads, blocks=nrealelem,
-            kernel_volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC,
-                              d_D, nrealelem))
+      volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, mesh.realelems)
 
       # wait on MPI receives
       MPI.Waitall!(recvreq)
 
       # copy data to state vectors
-      if nrecvelem > 0
-        d_recvQ .= recvQ
-        @cuda(threads=vthreads, blocks=nrecvelem,
-              kernel_recvQ!(Val(dim), Val(N), d_QL, d_recvQ, nrecvelem,
-                            nrealelem))
-      end
+      transferrecvQ!(Val(dim), Val(N), d_recvQ, recvQ, d_QL, nrealelem)
 
       # face RHS computation
-      @cuda(threads=fthreads, blocks=nrealelem,
-            kernel_facerhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo,
-                            nrealelem, d_vmapM, d_vmapP))
+      facerhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, mesh.realelems, d_vmapM,
+               d_vmapP)
 
       # update solution and scale RHS
-      @cuda(threads=vthreads, blocks=nrealelem,
-            kernel_updatesolution!(Val(dim), Val(N), d_rhsL, d_QL, d_vgeo,
-                                   nrealelem, RKA[s%length(RKA)+1], RKB[s],
-                                  DFloat(dt)))
+      updatesolution!(Val(dim), Val(N), d_rhsL, d_QL, d_vgeoL, mesh.realelems,
+                      RKA[s%length(RKA)+1], RKB[s], dt)
     end
     step == 1 && (start_time = time_ns())
     synchronize()
@@ -921,7 +958,7 @@ end
 # {{{ advection driver
 function advection(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend;
                    meshwarp=(x...)->identity(x),
-                   tout = 1) where {N, dim}
+                   tout = 1, ArrType=Array) where {N, dim}
   DFloat = typeof(tend)
 
   mpirank = MPI.Comm_rank(mpicomm)
@@ -987,7 +1024,7 @@ function advection(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend;
   stats[1] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
 
   lowstorageRK(Val(dim), Val(N), mesh, vgeo, sgeo, Q, rhs, D, dt, nsteps,
-               tout, vmapM, vmapP, mpicomm)
+               tout, vmapM, vmapP, mpicomm; ArrType=ArrType)
 
   stats[2] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
   stats[3] = L2errorsquared(Val(dim), Val(N), Q, vgeo, mesh.realelems, ic,
@@ -1031,19 +1068,34 @@ function main()
   Uy(x...) = -π*one(x[1])
   Uz(x...) =  exp(one(x[1]))
 
-  mpirank == 0 && println("Running 1d...")
+  mpirank == 0 && println("Running 1d (CPU)...")
   advection(mpicomm, (ρ=ρ1D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, ), Float64(π);
-            meshwarp=warping1D)
+            meshwarp=warping1D, ArrType=Array)
   mpirank == 0 && println()
 
-  mpirank == 0 && println("Running 2d...")
+  mpirank == 0 && println("Running 1d (GPU)...")
+  advection(mpicomm, (ρ=ρ1D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, ), Float64(π);
+            meshwarp=warping1D, ArrType=CuArray)
+  mpirank == 0 && println()
+
+  mpirank == 0 && println("Running 2d (CPU)...")
   advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3), Float64(π);
-            meshwarp=warping2D)
+            meshwarp=warping2D, ArrType=Array)
   mpirank == 0 && println()
 
-  mpirank == 0 && println("Running 3d...")
+  mpirank == 0 && println("Running 2d (GPU)...")
+  advection(mpicomm, (ρ=ρ2D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3), Float64(π);
+            meshwarp=warping2D, ArrType=CuArray)
+  mpirank == 0 && println()
+
+  mpirank == 0 && println("Running 3d (CPU)...")
   advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3),
-            Float64(π); meshwarp=warping3D)
+            Float64(π); meshwarp=warping3D, ArrType=Array)
+  mpirank == 0 && println()
+
+  mpirank == 0 && println("Running 3d (GPU)...")
+  advection(mpicomm, (ρ=ρ3D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, 3, 3),
+            Float64(π); meshwarp=warping3D, ArrType=CuArray)
 
   # MPI.Finalize()
   nothing
