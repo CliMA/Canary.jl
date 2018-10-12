@@ -497,6 +497,9 @@ end
 # }}}
 
 # {{{ improved GPU kernles
+#
+# The optimizations used in these kernels were inspired by libParanumal
+# <https://github.com/paranumal/libparanumal>.
 
 # {{{ Volume RHS for 1-D
 @hascuda function knl_volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
