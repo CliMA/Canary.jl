@@ -525,6 +525,15 @@ function advection(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend;
   lowstorageRK(Val(dim), Val(N), mesh, vgeo, sgeo, Q, rhs, D, dt, nsteps,
                tout, vmapM, vmapP, mpicomm)
 
+  if dim > 1
+    X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
+                          nelem), dim)
+    ρ = reshape((@view Q[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
+    writemesh(@sprintf("viz/advection%dD_rank_%04d_step_%05d", dim,
+                       mpirank, 1), X...; fields=(("ρ", ρ),),
+              realelems=mesh.realelems)
+  end
+
   stats[2] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
   stats[3] = L2errorsquared(Val(dim), Val(N), Q, vgeo, mesh.realelems, ic,
                             tend)
@@ -548,6 +557,7 @@ function main()
   mpicomm = MPI.COMM_WORLD
   mpirank = MPI.Comm_rank(mpicomm)
 
+  #=
   warping1D(x...) = (x[1] +  sin( π*x[1])/10, zero(x[1]), zero(x[1]))
   warping2D(x...) = (x[1] +  sin( π*x[1])*sin(2π*x[2])/10,
                      x[2] +  sin(2π*x[1])*sin( π*x[2])/10,
@@ -555,14 +565,33 @@ function main()
   warping3D(x...) = (x[1] + (sin( π*x[1])*sin(2π*x[2])*cos(2π*x[3]))/10,
                      x[2] + (sin( π*x[2])*sin(2π*x[1])*cos(2π*x[3]))/10,
                      x[3] + (sin( π*x[3])*sin(2π*x[1])*cos(2π*x[2]))/10)
+  =#
+  warping1D(x...) = (x[1], zero(x[1]), zero(x[1]))
+  warping2D(x...) = (x[1], x[2], zero(x[1]))
+  warping3D(x...) = (x[1], x[2], x[3])
 
   ρ1D(x...) = sin(2π*x[1])
-  ρ2D(x...) = sin(2π*x[1])*sin(2π*x[2])
-  ρ3D(x...) = sin(2π*x[1])*sin(2π*x[2])*sin(2π*x[3])
+    #ρ2D(x...) = sin(2π*x[1])*sin(2π*x[2])
+  ρ2D(x...) = sin(π*x[1])*sin(π*x[2])
+  #ρ3D(x...) = sin(2π*x[1])*sin(2π*x[2])*sin(2π*x[3])
+  ρ3D(x...) = sin(π*x[1])*sin(π*x[3])
 
+  Ux(x...) = zero(x[1])
+  Uy(x...) = zero(x[1])
+  Uz(x...) = one(x[1])
+
+  #=
   Ux(x...) = -3*one(x[1])/2
   Uy(x...) = -π*one(x[1])
   Uz(x...) =  exp(one(x[1]))
+  =#
+
+  #Input Parameters
+  N=4
+  Ne=10
+  iplot=10
+  dim=3
+  time_final=0.5
 
   mpirank == 0 && println("Running 1d...")
   advection(mpicomm, (ρ=ρ1D, Ux=Ux, Uy=Uy, Uz=Uz), Val(5), (3, ), Float64(π);

@@ -423,6 +423,9 @@ function volumerhs!(::Val{3}, ::Val{N}, rhs, Q, Pressure, vgeo, D, elems, gravit
         fluxV[1,:,:,:]=ρ .* v .* u
         fluxV[2,:,:,:]=ρ .* v .* v + p
         fluxV[3,:,:,:]=ρ .* v .* w
+        fluxW[1,:,:,:]=ρ .* w .* u
+        fluxW[2,:,:,:]=ρ .* w .* v
+        fluxW[3,:,:,:]=ρ .* w .* w + p
         fluxE[1,:,:,:]=Q[:,:,:,_E,e] .* u
         fluxE[2,:,:,:]=Q[:,:,:,_E,e] .* v
         fluxE[3,:,:,:]=Q[:,:,:,_E,e] .* w
@@ -431,7 +434,6 @@ function volumerhs!(::Val{3}, ::Val{N}, rhs, Q, Pressure, vgeo, D, elems, gravit
         for k = 1:Nq, j = 1:Nq, i = 1:Nq,  n = 1:Nq
             rhs[i, j, k, _ρ, e] += D[n,i] * Jac[n,j,k] *
                                    (ξx[n,j,k] * fluxρ[1,n,j,k] + ξy[n,j,k] * fluxρ[2,n,j,k] + ξz[n,j,k] * fluxρ[3,n,j,k])
-            #=
             rhs[i, j, k, _U, e] += D[n,i] * Jac[n,j,k] *
                                    (ξx[n,j,k] * fluxU[1,n,j,k] + ξy[n,j,k] * fluxU[2,n,j,k] + ξz[n,j,k] * fluxU[3,n,j,k])
             rhs[i, j, k, _V, e] += D[n,i] * Jac[n,j,k] *
@@ -440,14 +442,12 @@ function volumerhs!(::Val{3}, ::Val{N}, rhs, Q, Pressure, vgeo, D, elems, gravit
                                    (ξx[n,j,k] * fluxW[1,n,j,k] + ξy[n,j,k] * fluxW[2,n,j,k] + ξz[n,j,k] * fluxW[3,n,j,k])
             rhs[i, j, k, _E, e] += D[n,i] * Jac[n,j,k] *
                                    (ξx[n,j,k] * fluxE[1,n,j,k] + ξy[n,j,k] * fluxE[2,n,j,k] + ξz[n,j,k] * fluxE[3,n,j,k])
-            =#
         end
 
         # loop of η-grid lines
         for k = 1:Nq, i = 1:Nq, j = 1:Nq, n = 1:Nq
             rhs[i, j, k, _ρ, e] += D[n,j] *  Jac[i,n,k] *
-            (ηx[i,n,k] * fluxρ[1,i,n,k] + ηy[i,n,k] * fluxρ[2,i,n,k] + ηz[i,n,k] * fluxρ[3,i,n,k])
-            #=
+                                   (ηx[i,n,k] * fluxρ[1,i,n,k] + ηy[i,n,k] * fluxρ[2,i,n,k] + ηz[i,n,k] * fluxρ[3,i,n,k])
             rhs[i, j, k, _U, e] += D[n,j] *  Jac[i,n,k] *
                                    (ηx[i,n,k] * fluxU[1,i,n,k] + ηy[i,n,k] * fluxU[2,i,n,k] + ηz[i,n,k] * fluxU[3,i,n,k])
             rhs[i, j, k, _V, e] += D[n,j] *  Jac[i,n,k] *
@@ -456,14 +456,12 @@ function volumerhs!(::Val{3}, ::Val{N}, rhs, Q, Pressure, vgeo, D, elems, gravit
                                    (ηx[i,n,k] * fluxW[1,i,n,k] + ηy[i,n,k] * fluxW[2,i,n,k] + ηz[i,n,k] * fluxW[3,i,n,k])
             rhs[i, j, k, _E, e] += D[n,j] *  Jac[i,n,k] *
                                    (ηx[i,n,k] * fluxE[1,i,n,k] + ηy[i,n,k] * fluxE[2,i,n,k] + ηz[i,n,k] * fluxE[3,i,n,k])
-            =#
         end
 
         # loop of ζ-grid lines
         for j = 1:Nq, i = 1:Nq, k = 1:Nq, n = 1:Nq
             rhs[i, j, k, _ρ, e] += D[n,k]  *  Jac[i,j,n] *
-            (ζx[i,j,n] * fluxρ[1,i,j,n] + ζy[i,j,n] * fluxρ[2,i,j,n] + ζz[i,j,n] * fluxρ[3,i,j,n])
-            #=
+                                   (ζx[i,j,n] * fluxρ[1,i,j,n] + ζy[i,j,n] * fluxρ[2,i,j,n] + ζz[i,j,n] * fluxρ[3,i,j,n])
             rhs[i, j, k, _U, e] += D[n,k]  *  Jac[i,j,n] *
                                    (ζx[i,j,n] * fluxU[1,i,j,n] + ζy[i,j,n] * fluxU[2,i,j,n] + ζz[i,j,n] * fluxU[3,i,j,n])
             rhs[i, j, k, _V, e] += D[n,k]  *  Jac[i,j,n] *
@@ -472,8 +470,13 @@ function volumerhs!(::Val{3}, ::Val{N}, rhs, Q, Pressure, vgeo, D, elems, gravit
                                    (ζx[i,j,n] * fluxW[1,i,j,n] + ζy[i,j,n] * fluxW[2,i,j,n] + ζz[i,j,n] * fluxW[3,i,j,n])
             rhs[i, j, k, _E, e] += D[n,k]  *  Jac[i,j,n] *
                                    (ζx[i,j,n] * fluxE[1,i,j,n] + ζy[i,j,n] * fluxE[2,i,j,n] + ζz[i,j,n] * fluxE[3,i,j,n])
-            =#
         end
+
+        # buoyancy term
+        for i = 1:Nq, j = 1:Nq, k = 1:Nq
+            rhs[i,j,k,_W,e] -= Jac[i,j,k] * ρ[i,j,k] * gravity
+        end
+
     end
 end
 
@@ -539,9 +542,9 @@ function facerhs!(::Val{3}, ::Val{N}, rhs, Q, Pressure, sgeo, elems, boundary, v
                 fluxVM[1] = ρM * vM * uM
                 fluxVM[2] = ρM * vM * vM + pM
                 fluxVM[3] = ρM * vM * wM
-                fluxWP[1] = ρM * wM * uM
-                fluxWP[2] = ρM * wM * vM
-                fluxWP[3] = ρM * wM * wM + pM
+                fluxWM[1] = ρM * wM * uM
+                fluxWM[2] = ρM * wM * vM
+                fluxWM[3] = ρM * wM * wM + pM
                 fluxEM[1] = EM * uM
                 fluxEM[2] = EM * vM
                 fluxEM[3] = EM * wM
@@ -600,13 +603,10 @@ function facerhs!(::Val{3}, ::Val{N}, rhs, Q, Pressure, sgeo, elems, boundary, v
 
                 #Update RHS
                 rhs[vidM, _ρ, eM] -= sMJ * fluxρ_star
-                #=
                 rhs[vidM, _U, eM] -= sMJ * fluxU_star
                 rhs[vidM, _V, eM] -= sMJ * fluxV_star
                 rhs[vidM, _W, eM] -= sMJ * fluxW_star
                 rhs[vidM, _E, eM] -= sMJ * fluxE_star
-                =#
-
             end
         end
     end
@@ -634,7 +634,7 @@ function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, elems, rka, rkb, dt
             ρ[i, e] = Q[i,_ρ,e]
             u[i, e] = Q[i,_U,e] / ρ[i,e]
             v[i, e] = Q[i,_V,e] / ρ[i,e]
-            w[i, e] = Q[i,_V,e] / ρ[i,e]
+            w[i, e] = Q[i,_W,e] / ρ[i,e]
         end
     end
 
@@ -735,71 +735,76 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, Pressure, 
   sendQ = zeros(DFloat, (N+1)^dim, size(Q,2), length(mesh.sendelems))
   recvQ = zeros(DFloat, (N+1)^dim, size(Q,2), length(mesh.ghostelems))
 
-  nrealelem = length(mesh.realelems)
+    nrealelem = length(mesh.realelems)
 
-  t1 = time_ns()
-  time=0
-  for step = 1:nsteps
-    time=time + dt
-    if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
-      t1 = time_ns()
-      @show (step, nsteps)
-    end
-    for s = 1:length(RKA)
-      # post MPI receives
-      for n = 1:nnabr
-        recvreq[n] = MPI.Irecv!((@view recvQ[:, :, mesh.nabrtorecv[n]]),
-                                mesh.nabrtorank[n], 777, mpicomm)
-      end
+    t1 = time_ns()
+    time=0
+    for step = 1:nsteps
+        time=time + dt
+        if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
+            t1 = time_ns()
+            @show (step, nsteps)
+        end
+        for s = 1:length(RKA)
+            # post MPI receives
+            for n = 1:nnabr
+                recvreq[n] = MPI.Irecv!((@view recvQ[:, :, mesh.nabrtorecv[n]]),
+                                        mesh.nabrtorank[n], 777, mpicomm)
+            end
 
-      # wait on (prior) MPI sends
-      MPI.Waitall!(sendreq)
+            # wait on (prior) MPI sends
+            MPI.Waitall!(sendreq)
 
-      # pack data in send buffer
-      sendQ[:, :, :] .= Q[:, :, mesh.sendelems]
+            # pack data in send buffer
+            sendQ[:, :, :] .= Q[:, :, mesh.sendelems]
 
-      # post MPI sends
-      for n = 1:nnabr
-        sendreq[n] = MPI.Isend((@view sendQ[:, :, mesh.nabrtosend[n]]),
-                               mesh.nabrtorank[n], 777, mpicomm)
-      end
+            # post MPI sends
+            for n = 1:nnabr
+                sendreq[n] = MPI.Isend((@view sendQ[:, :, mesh.nabrtosend[n]]),
+                                       mesh.nabrtorank[n], 777, mpicomm)
+            end
 
-      # compute Pressure
-      compute_pressure!(Val(dim), Val(N), Pressure, Q, icase)
+            # compute Pressure
+            compute_pressure!(Val(dim), Val(N), Pressure, Q, icase)
 
-      # volume RHS computation
-      volumerhs!(Val(dim), Val(N), rhs, Q, Pressure, vgeo, D, mesh.realelems, gravity)
+            # volume RHS computation
+            volumerhs!(Val(dim), Val(N), rhs, Q, Pressure, vgeo, D, mesh.realelems, gravity)
 
-      # wait on MPI receives
-      MPI.Waitall!(recvreq)
+            # wait on MPI receives
+            MPI.Waitall!(recvreq)
 
-      # copy data to state vectors
-      Q[:, :, nrealelem+1:end] .= recvQ[:, :, :]
+            # copy data to state vectors
+            Q[:, :, nrealelem+1:end] .= recvQ[:, :, :]
 
-      # face RHS computation
-      facerhs!(Val(dim), Val(N), rhs, Q, Pressure, sgeo, mesh.realelems, mesh.elemtobndy, vmapM, vmapP)
+            # face RHS computation
+            facerhs!(Val(dim), Val(N), rhs, Q, Pressure, sgeo, mesh.realelems, mesh.elemtobndy, vmapM, vmapP)
 
-      # update solution and scale RHS
-      updatesolution!(Val(dim), Val(N), rhs, Q, vgeo, mesh.realelems, RKA[s%length(RKA)+1], RKB[s], dt, icase)
-    end #s-stages
+            # update solution and scale RHS
+            updatesolution!(Val(dim), Val(N), rhs, Q, vgeo, mesh.realelems, RKA[s%length(RKA)+1], RKB[s], dt, icase)
+        end #s-stages
 
-   #Plot VTK
-   println("step=",step," time=",time)
-   if dim > 1 && mod(step,iplot) == 0
-       (nface, nelem) = size(mesh.elemtoelem)
-       X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
-                             nelem), dim)
-       ρ = reshape((@view Q[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
-       U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ ρ
-       θ = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-       if icase == 20
-           θ = θ ./ ρ .- 300.0
-       end
-       writemesh(@sprintf("viz/euler%dD_rank_%04d_step_%05d", dim,
-                          mpirank, step), X...; fields=(("ρ", ρ),("U",U),("θ", θ),), realelems=mesh.realelems)
-   end
+        #Plot VTK
+        if mpirank == 0
+            println("step=",step," time=",time)
+        end
+        if dim > 1 && mod(step,iplot) == 0
+            (nface, nelem) = size(mesh.elemtoelem)
+            X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
+                                  nelem), dim)
+            ρ = reshape((@view Q[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
+            U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ ρ
+            V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ ρ
+            W = reshape((@view Q[:, _W, :]), ntuple(j->(N+1),dim)..., nelem) ./ ρ
+            θ = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
+            P = reshape((@view Pressure[:, :]), ntuple(j->(N+1),dim)..., nelem)
+            if icase == 20
+                θ = θ ./ ρ .- 300.0
+            end
+            writemesh(@sprintf("viz/euler%dD_rank_%04d_step_%05d", dim,
+                               mpirank, step), X...; fields=(("ρ", ρ),("U",U),("V",V),("W",W),("θ", θ),("P", P),), realelems=mesh.realelems)
+        end
 
-  end #dt
+    end #dt
 end #end lowStorageRK
 # }}}
 
@@ -814,6 +819,7 @@ function euler(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend, iplot, ica
   mesh = brickmesh(ntuple(i->range(DFloat(0); length=brickN[i]+1, stop=1), dim),
                    (fill(true, dim)...,);
                    part=mpirank+1, numparts=mpisize)
+
   if (icase == 20)
       mesh = brickmesh(ntuple(i->range(DFloat(0); length=brickN[i]+1, stop=1), dim),
                        (fill(true, dim-1)...,false);
@@ -838,7 +844,7 @@ function euler(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend, iplot, ica
   (vgeo, sgeo) = computegeometry(Val(dim), mesh, D, ξ, ω, meshwarp, vmapM, icase)
   (nface, nelem) = size(mesh.elemtoelem)
 
-    # Storage for the solution, rhs, and error
+  # Storage for the solution, rhs, and error
   Qexact = zeros(DFloat, (N+1)^dim, _nstate, nelem)
   Q = zeros(DFloat, (N+1)^dim, _nstate, nelem)
   rhs = zeros(DFloat, (N+1)^dim, _nstate, nelem)
@@ -871,18 +877,21 @@ function euler(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend, iplot, ica
                           nelem), dim)
     ρ = reshape((@view Q[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
     U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ ρ
+    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ ρ
+    W = reshape((@view Q[:, _W, :]), ntuple(j->(N+1),dim)..., nelem) ./ ρ
     θ = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-    if icase == 20
-       θ = θ ./ ρ .- 300.0
+    P = reshape((@view Pressure[:, :]), ntuple(j->(N+1),dim)..., nelem)
+      if icase == 20
+        θ = θ ./ ρ .- 300.0
     end
     writemesh(@sprintf("viz/euler%dD_rank_%04d_step_%05d", dim,
-                        mpirank, 0), X...; fields=(("ρ", ρ),("U",U),("θ", θ),), realelems=mesh.realelems)
+                       mpirank, 0), X...; fields=(("ρ", ρ),("U",U),("V",V),("W",W),("θ", θ),("P", P),), realelems=mesh.realelems)
   end
 
   # Compute time step
   dt = cfl(Val(dim), Val(N), vgeo, Q, Pressure, mpicomm) / N^√2
-    #dt=0.025
-  dt=0.01
+  #dt=0.025 #for case 20 with N=4 10x10x1
+  dt=0.02
 
   nsteps = ceil(Int64, tend / dt)
   dt = tend / nsteps
@@ -902,12 +911,15 @@ function euler(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend, iplot, ica
                           nelem), dim)
     ρ = reshape((@view Q[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
     U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ ρ
+    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ ρ
+    W = reshape((@view Q[:, _W, :]), ntuple(j->(N+1),dim)..., nelem) ./ ρ
     θ = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
+    P = reshape((@view Pressure[:, :]), ntuple(j->(N+1),dim)..., nelem)
     if icase == 20
-       θ = θ ./ ρ .- 300.0
+        θ = θ ./ ρ .- 300.0
     end
     writemesh(@sprintf("viz/euler%dD_rank_%04d_step_%05d", dim,
-                        mpirank, nsteps), X...; fields=(("ρ", ρ),("U",U),("θ", θ),), realelems=mesh.realelems)
+                       mpirank, nsteps), X...; fields=(("ρ", ρ),("U",U),("V",V),("W",W),("θ", θ),("P", P),), realelems=mesh.realelems)
   end
 
   stats[2] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
@@ -946,22 +958,26 @@ function main()
   #Input Parameters
   N=4
   Ne=10
-  iplot=10
-  dim=3
+  iplot=1000
+  dim=2
 
-  #Cases
-  icase=1
-  gravity=0
-  time_final=1.0
-  #=
-  icase=2
-  time_final=1.0
-  icase=3
-  time_final=0.5
-  icase=20
-  time_final=300
-  gravity=10.0
-  =#
+    #Cases
+    #=
+    icase=1
+    gravity=0
+    time_final=1.0
+    =#
+
+    #=
+    icase=2
+    time_final=1.0
+    icase=3
+    time_final=0.5
+    =#
+
+    icase=20
+    time_final=300.0
+    gravity=10.0
 
   #Initial Conditions
   function ic(icase,gravity,dim,x...)
@@ -989,7 +1005,7 @@ function main()
           p0=100000.0
           u0=1000.0
           c=c_v/R_gas
-          r = sqrt( (x[1]-500)^2 + (x[2]-350)^2 )
+          r = sqrt( (x[1]-500)^2 + (x[dim]-350)^2 )
           rc = 250.0
           θ_ref=300.0
           θ_c=0.5
@@ -998,13 +1014,13 @@ function main()
               Δθ = 0.5 * θ_c * (1.0 + cos(π * r/rc))
           end
           θ_k=θ_ref + Δθ
-          π_k=1.0 - gravity/(c_p*θ_k)*x[2]
+          π_k=1.0 - gravity/(c_p*θ_k)*x[dim]
           ρ_k=p0/(R_gas*θ_k)*(π_k)^c
           ρ_k=Δθ + 1.0
           ρ = ρ_k
-          U = ρ*(u0)
+          U = ρ*(0.0)
           V = ρ*(0.0)
-          W = ρ*(0.0)
+          W = ρ*(u0)
           E = ρ*(1.0)
           ρ, U, V, W, E
       elseif icase == 20
@@ -1014,7 +1030,7 @@ function main()
           p0=100000.0
           u0=0.0
           c=c_v/R_gas
-          r = sqrt( (x[1]-500)^2 + (x[2]-350)^2 )
+          r = sqrt( (x[1]-500)^2 + (x[dim]-350)^2 )
           rc = 250.0
           θ_ref=300.0
           θ_c=0.5
@@ -1023,8 +1039,7 @@ function main()
               Δθ = 0.5 * θ_c * (1.0 + cos(π * r/rc))
           end
           θ_k=θ_ref + Δθ
-          z=x[dim]
-          π_k=1.0 - gravity/(c_p*θ_k)*z
+          π_k=1.0 - gravity/(c_p*θ_k)*x[dim]
           ρ_k=p0/(R_gas*θ_k)*(π_k)^c
           ρ = ρ_k
           U = ρ*(u0)
