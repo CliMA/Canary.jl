@@ -1343,7 +1343,7 @@ function main()
   end
 
   tend = DFloat(0.1)
-  Ne = 100
+  Ne = 10
   N  = 4
 
   mesh2D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
