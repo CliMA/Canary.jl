@@ -2,6 +2,8 @@
 # - How to handle parameters for different case? Dictionaries?
 
 # FIXME: Be consistent with tuple assignments (either with or without parens)
+#
+# FIXME: Add logging
 
 # FIXME: Add link to https://github.com/paranumal/libparanumal here and in
 # advection (also update the license)
@@ -1183,7 +1185,8 @@ end
 # }}}
 
 # {{{ euler driver
-function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend; meshwarp=(x...)->identity(x),
+function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend;
+               meshwarp=(x...)->identity(x),
                tout = 1, ArrType=Array, plotstep=0) where {dim, N}
   DFloat = typeof(tend)
 
@@ -1191,12 +1194,15 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend; meshwarp=(x...)->i
   mpisize = MPI.Comm_size(mpicomm)
 
   # Partion the mesh using a Hilbert curve based partitioning
+  mpirank == 0 && println("[CPU] partiting mesh...")
   mesh = partition(mpicomm, mesh...)
 
   # Connect the mesh in parallel
+  mpirank == 0 && println("[CPU] connecting mesh...")
   mesh = connectmesh(mpicomm, mesh...)
 
   # Get the vmaps
+  mpirank == 0 && println("[CPU] computing mappings...")
   (vmapM, vmapP) = mappings(N, mesh.elemtoelem, mesh.elemtoface,
                             mesh.elemtoordr)
 
@@ -1205,14 +1211,17 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend; meshwarp=(x...)->i
   D = spectralderivative(ξ)
 
   # Compute the geometry
+  mpirank == 0 && println("[CPU] computing metrics...")
   (vgeo, sgeo) = computegeometry(Val(dim), mesh, D, ξ, ω, meshwarp, vmapM)
   (nface, nelem) = size(mesh.elemtoelem)
 
   # Storage for the solution, rhs, and error
+  mpirank == 0 && println("[CPU] creating fields (CPU)...")
   Q = zeros(DFloat, (N+1)^dim, _nstate, nelem)
   rhs = zeros(DFloat, (N+1)^dim, _nstate, nelem)
 
   # setup the initial condition
+  mpirank == 0 && println("[CPU] computing initial conditions (CPU)...")
   @inbounds for e = 1:nelem, i = 1:(N+1)^dim
     x, y, z = vgeo[i, _x, e], vgeo[i, _y, e], vgeo[i, _z, e]
     ρ, U, V, W, E = ic(x, y, z)
@@ -1222,6 +1231,20 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend; meshwarp=(x...)->i
     Q[i, _W, e] = W
     Q[i, _E, e] = E
   end
+
+  # Compute time step
+  mpirank == 0 && println("[CPU] computing dt (CPU)...")
+  base_dt = cfl(Val(dim), Val(N), vgeo, Q, mpicomm) / N^√2
+  mpirank == 0 && @show base_dt
+
+  nsteps = ceil(Int64, tend / base_dt)
+  dt = tend / nsteps
+  mpirank == 0 && @show (dt, nsteps, dt * nsteps, tend)
+
+  # Do time stepping
+  stats = zeros(DFloat, 2)
+  mpirank == 0 && println("[CPU] computing initial energy...")
+  stats[1] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
 
   # plot the initial condition
   mkpath("viz")
@@ -1240,18 +1263,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend; meshwarp=(x...)->i
               realelems=mesh.realelems)
   end
 
-  # Compute time step
-  base_dt = cfl(Val(dim), Val(N), vgeo, Q, mpicomm) / N^√2
-  mpirank == 0 && @show base_dt
-
-  nsteps = ceil(Int64, tend / base_dt)
-  dt = tend / nsteps
-  mpirank == 0 && @show (dt, nsteps, dt * nsteps, tend)
-
-  # Do time stepping
-  stats = zeros(DFloat, 2)
-  stats[1] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
-
+  mpirank == 0 && println("[DEV] starting time stepper...")
   lowstorageRK(Val(dim), Val(N), mesh, vgeo, sgeo, Q, rhs, D, dt, nsteps, tout,
                vmapM, vmapP, mpicomm; ArrType=ArrType, plotstep=plotstep)
 
@@ -1270,6 +1282,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend; meshwarp=(x...)->i
               realelems=mesh.realelems)
   end
 
+  mpirank == 0 && println("[CPU] computing final energy...")
   stats[2] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
 
   stats = sqrt.(MPI.allreduce(stats, MPI.SUM, mpicomm))
