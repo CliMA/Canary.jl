@@ -784,7 +784,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, Pressure, 
         end #s-stages
 
         #Plot VTK
-        if mpirank == 0
+        if mpirank == 0 && mod(step,iplot) == 0
             println("step=",step," time=",time)
         end
         if dim > 1 && mod(step,iplot) == 0
@@ -810,7 +810,7 @@ end #end lowStorageRK
 
 # {{{ Euler driver
 function euler(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend, iplot, icase, gravity;
-                   meshwarp=(x...)->identity(x), tout = 1) where {N, dim}
+                   meshwarp=(x...)->identity(x), tout = 60) where {N, dim}
   DFloat = Float64
   mpirank = MPI.Comm_rank(mpicomm)
   mpisize = MPI.Comm_size(mpicomm)
@@ -960,6 +960,8 @@ function main()
   Ne=10
   iplot=1000
   dim=2
+#  iplot=5000
+#  dim=3
 
     #Cases
     #=
