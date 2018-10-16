@@ -1,10 +1,11 @@
 ```math
  \mathbf{f}=\left( \mathbf{U}, \frac{\mathbf{U} \otimes \mathbf{U}}{h} + g (h^2 - h^2_b) \mathbf{I}_2 \right).
 
+const DFloat = Float64 #Number Type
+
 N = 1 #polynomial order
 #brickN = (10) #1D brickmesh
 brickN = (100, 100) #2D brickmesh
-DFloat = Float64 #Number Type
 tend = DFloat(0.005) #Final Time
 δnl = 1.0 #switch to turn on/off nonlinear equations
 gravity = 10.0 #gravity
