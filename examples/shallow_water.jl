@@ -46,13 +46,14 @@
 #
 #--------------------------------Markdown Language Header-----------------------
 
+const DFloat = Float64 #Number Type
+
 # ### Define Input Parameters:
 # N is polynomial order and
 # brickN(Ne) generates a brick-grid with Ne elements in each direction
 N = 1 #polynomial order
 #brickN = (10) #1D brickmesh
 brickN = (100, 100) #2D brickmesh
-DFloat = Float64 #Number Type
 tend = DFloat(0.005) #Final Time
 δnl = 1.0 #switch to turn on/off nonlinear equations
 gravity = 10.0 #gravity
