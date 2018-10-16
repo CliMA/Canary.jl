@@ -15,7 +15,7 @@ function creategrid!(x, e2c, r)
   x = reshape(x, (Nq, nelem))
 
   # linear blend
-  for e = 1:nelem
+  @inbounds for e = 1:nelem
     for i = 1:Nq
       x[i, e] = ((1 - r[i]) * e2c[1, 1, e] + (1 + r[i])e2c[1, 2, e]) / 2
     end
@@ -41,7 +41,7 @@ function creategrid!(x, y, e2c, r)
   y = reshape(y, (Nq, Nq, nelem))
 
   # bilinear blend of corners
-  for (f, n) = zip((x, y), 1:d)
+  @inbounds for (f, n) = zip((x, y), 1:d)
     for e = 1:nelem
       for j = 1:Nq
         for i = 1:Nq
@@ -77,7 +77,7 @@ function creategrid!(x, y, z, e2c, r)
   z = reshape(z, (Nq, Nq, Nq, nelem))
 
   # trilinear blend of corners
-  for (f, n) = zip((x,y,z), 1:d)
+  @inbounds for (f, n) = zip((x,y,z), 1:d)
     for e = 1:nelem
       for k = 1:Nq
         for j = 1:Nq
@@ -129,7 +129,7 @@ function computemetric!(x, J, ξx, sJ, nx, D)
 
   d = 1
 
-  for e = 1:nelem
+  @inbounds for e = 1:nelem
     J[:, e] = D * x[:, e]
   end
   ξx .=  1 ./ J
@@ -153,6 +153,7 @@ nelem)`.  Similarly, the face arrays `sJ`, `nx`, and `ny` should be of size
 `(Nq, nface, nelem)` with `nface = 4`.
 """
 function computemetric!(x, y, J, ξx, ηx, ξy, ηy, sJ, nx, ny, D)
+  T = eltype(x)
   Nq = size(D, 1)
   nelem = div(length(J), Nq^2)
   d = 2
@@ -168,62 +169,40 @@ function computemetric!(x, y, J, ξx, ηx, ξy, ηy, sJ, nx, ny, D)
   ny = reshape(ny, (Nq, nface, nelem))
   sJ = reshape(sJ, (Nq, nface, nelem))
 
-  # we can resuse this storage
-  (ys, yr, xs, xr) = (ξx, ηx, ξy, ηy)
-
-  for e = 1:nelem
-    for n = 1:Nq
-      # @views xr[:, n, e] = D * x[:, n, e]
-      for j = 1:Nq
-        xr[j, n, e] = 0
-        for i = 1:Nq
-          xr[j, n, e] += D[j, i] * x[i, n, e]
-        end
+  @inbounds for e = 1:nelem
+    for j = 1:Nq, i = 1:Nq
+      xr = xs = zero(T)
+      yr = ys = zero(T)
+      for n = 1:Nq
+        xr += D[i, n] * x[n, j, e]
+        xs += D[j, n] * x[i, n, e]
+        yr += D[i, n] * y[n, j, e]
+        ys += D[j, n] * y[i, n, e]
       end
+      J[i, j, e] = xr * ys - yr * xs
+      ξx[i, j, e] =  ys / J[i, j, e]
+      ηx[i, j, e] = -yr / J[i, j, e]
+      ξy[i, j, e] = -xs / J[i, j, e]
+      ηy[i, j, e] =  xr / J[i, j, e]
+    end
 
-      # @views xs[n, :, e] = D * x[n, :, e]
-      for j = 1:Nq
-        xs[n, j, e] = 0
-        for i = 1:Nq
-          xs[n, j, e] += D[j, i] * x[n, i, e]
-        end
+    for i = 1:Nq
+      nx[i, 1, e] = -J[ 1,  i, e] * ξx[ 1,  i, e]
+      ny[i, 1, e] = -J[ 1,  i, e] * ξy[ 1,  i, e]
+      nx[i, 2, e] =  J[Nq,  i, e] * ξx[Nq,  i, e]
+      ny[i, 2, e] =  J[Nq,  i, e] * ξy[Nq,  i, e]
+      nx[i, 3, e] = -J[ i,  1, e] * ηx[ i,  1, e]
+      ny[i, 3, e] = -J[ i,  1, e] * ηy[ i,  1, e]
+      nx[i, 4, e] =  J[ i, Nq, e] * ηx[ i, Nq, e]
+      ny[i, 4, e] =  J[ i, Nq, e] * ηy[ i, Nq, e]
+
+      for n = 1:4
+        sJ[i, n, e] = hypot(nx[i, n, e], ny[i, n, e])
+        nx[i, n, e] /= sJ[i, n, e]
+        ny[i, n, e] /= sJ[i, n, e]
       end
-
-      # @views yr[:, n, e] = D * y[:, n, e]
-      for j = 1:Nq
-        yr[j, n, e] = 0
-        for i = 1:Nq
-          yr[j, n, e] += D[j, i] * y[i, n, e]
-        end
-      end
-
-      # @views ys[n, :, e] = D * y[n, :, e]
-      for j = 1:Nq
-        ys[n, j, e] = 0
-        for i = 1:Nq
-          ys[n, j, e] += D[j, i] * y[n, i, e]
-        end
-      end
-
     end
   end
-  @. J = xr * ys - yr * xs
-  @. ξx =  ys / J
-  @. ηx = -yr / J
-  @. ξy = -xs / J
-  @. ηy =  xr / J
-
-  @views nx[:, 1, :] .= -J[ 1,  :, :] .* ξx[ 1,  :, :]
-  @views ny[:, 1, :] .= -J[ 1,  :, :] .* ξy[ 1,  :, :]
-  @views nx[:, 2, :] .=  J[Nq,  :, :] .* ξx[Nq,  :, :]
-  @views ny[:, 2, :] .=  J[Nq,  :, :] .* ξy[Nq,  :, :]
-  @views nx[:, 3, :] .= -J[ :,  1, :] .* ηx[ :,  1, :]
-  @views ny[:, 3, :] .= -J[ :,  1, :] .* ηy[ :,  1, :]
-  @views nx[:, 4, :] .=  J[ :, Nq, :] .* ηx[ :, Nq, :]
-  @views ny[:, 4, :] .=  J[ :, Nq, :] .* ηy[ :, Nq, :]
-  @. sJ = hypot(nx, ny)
-  @. nx = nx / sJ
-  @. ny = ny / sJ
 
   nothing
 end
@@ -250,6 +229,7 @@ Reference:
 """
 function computemetric!(x, y, z, J, ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz, sJ, nx,
                         ny, nz, D)
+  T = eltype(x)
 
   Nq = size(D, 1)
   nelem = div(length(J), Nq^3)
@@ -269,136 +249,152 @@ function computemetric!(x, y, z, J, ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz,
   ζz = reshape(ζz, (Nq, Nq, Nq, nelem))
 
   nface = 6
+  #= This code is broken when views are used
   nx = reshape(nx, Nq, Nq, nface, nelem)
   ny = reshape(ny, Nq, Nq, nface, nelem)
   nz = reshape(nz, Nq, Nq, nface, nelem)
   sJ = reshape(sJ, Nq, Nq, nface, nelem)
+  =#
 
-  (xr, xs, xt) = (ξx, ηx, ζx)
-  (yr, ys, yt) = (ξy, ηy, ζy)
-  (zr, zs, zt) = (ξz, ηz, ζz)
-
-  for e = 1:nelem
-    for m = 1:Nq
-      for n = 1:Nq
-        @views xr[:, n, m, e] = D * x[:, n, m, e]
-        @views xs[n, :, m, e] = D * x[n, :, m, e]
-        @views xt[n, m, :, e] = D * x[n, m, :, e]
-        @views yr[:, n, m, e] = D * y[:, n, m, e]
-        @views ys[n, :, m, e] = D * y[n, :, m, e]
-        @views yt[n, m, :, e] = D * y[n, m, :, e]
-        @views zr[:, n, m, e] = D * z[:, n, m, e]
-        @views zs[n, :, m, e] = D * z[n, :, m, e]
-        @views zt[n, m, :, e] = D * z[n, m, :, e]
-      end
-    end
-  end
-
-
-  @. J = (xr * (ys * zt - zs * yt) +
-          yr * (zs * xt - xs * zt) +
-          zr * (xs * yt - ys * xt))
-
-  JI2 = similar(@view J[:,:,:,1])
+  JI2 = similar(J, (Nq, Nq, Nq))
   (yzr, yzs, yzt) = (similar(JI2), similar(JI2), similar(JI2))
   (zxr, zxs, zxt) = (similar(JI2), similar(JI2), similar(JI2))
   (xyr, xys, xyt) = (similar(JI2), similar(JI2), similar(JI2))
 
-  for e = 1:nelem
-    for k = 1:Nq
-      for j = 1:Nq
-        for i = 1:Nq
-          JI2[i,j,k] = 1 / (2 * J[i,j,k,e])
+  ξx .= zero(T)
+  ηx .= zero(T)
+  ζx .= zero(T)
+  ξy .= zero(T)
+  ηy .= zero(T)
+  ζy .= zero(T)
+  ξz .= zero(T)
+  ηz .= zero(T)
+  ζz .= zero(T)
 
-          yzr[i,j,k] = y[i,j,k,e] * zr[i,j,k,e] - z[i,j,k,e] * yr[i,j,k,e]
-          yzs[i,j,k] = y[i,j,k,e] * zs[i,j,k,e] - z[i,j,k,e] * ys[i,j,k,e]
-          yzt[i,j,k] = y[i,j,k,e] * zt[i,j,k,e] - z[i,j,k,e] * yt[i,j,k,e]
-
-          zxr[i,j,k] = z[i,j,k,e] * xr[i,j,k,e] - x[i,j,k,e] * zr[i,j,k,e]
-          zxs[i,j,k] = z[i,j,k,e] * xs[i,j,k,e] - x[i,j,k,e] * zs[i,j,k,e]
-          zxt[i,j,k] = z[i,j,k,e] * xt[i,j,k,e] - x[i,j,k,e] * zt[i,j,k,e]
-
-          xyr[i,j,k] = x[i,j,k,e] * yr[i,j,k,e] - y[i,j,k,e] * xr[i,j,k,e]
-          xys[i,j,k] = x[i,j,k,e] * ys[i,j,k,e] - y[i,j,k,e] * xs[i,j,k,e]
-          xyt[i,j,k] = x[i,j,k,e] * yt[i,j,k,e] - y[i,j,k,e] * xt[i,j,k,e]
-        end
-      end
-    end
-    @views ξx[:, :, :, e] .= 0
-    @views ηx[:, :, :, e] .= 0
-    @views ζx[:, :, :, e] .= 0
-    @views ξy[:, :, :, e] .= 0
-    @views ηy[:, :, :, e] .= 0
-    @views ζy[:, :, :, e] .= 0
-    @views ξz[:, :, :, e] .= 0
-    @views ηz[:, :, :, e] .= 0
-    @views ζz[:, :, :, e] .= 0
-    for m = 1:Nq
+  @inbounds for e = 1:nelem
+    for k = 1:Nq, j = 1:Nq, i = 1:Nq
+      xr = xs = xt = zero(T)
+      yr = ys = yt = zero(T)
+      zr = zs = zt = zero(T)
       for n = 1:Nq
-        @views ξx[n, :, m, e] += D * yzt[n, :, m]
-        @views ξx[n, m, :, e] -= D * yzs[n, m, :]
+        xr += D[i, n] * x[n, j, k, e]
+        xs += D[j, n] * x[i, n, k, e]
+        xt += D[k, n] * x[i, j, n, e]
+        yr += D[i, n] * y[n, j, k, e]
+        ys += D[j, n] * y[i, n, k, e]
+        yt += D[k, n] * y[i, j, n, e]
+        zr += D[i, n] * z[n, j, k, e]
+        zs += D[j, n] * z[i, n, k, e]
+        zt += D[k, n] * z[i, j, n, e]
+      end
+      J[i, j, k, e] = (xr * (ys * zt - zs * yt) +
+                       yr * (zs * xt - xs * zt) +
+                       zr * (xs * yt - ys * xt))
 
-        @views ηx[n, m, :, e] += D * yzr[n, m, :]
-        @views ηx[:, n, m, e] -= D * yzt[:, n, m]
+      JI2[i,j,k] = 1 / (2 * J[i,j,k,e])
 
-        @views ζx[:, n, m, e] += D * yzs[:, n, m]
-        @views ζx[n, :, m, e] -= D * yzr[n, :, m]
+      yzr[i, j, k] = y[i, j, k, e] * zr - z[i, j, k, e] * yr
+      yzs[i, j, k] = y[i, j, k, e] * zs - z[i, j, k, e] * ys
+      yzt[i, j, k] = y[i, j, k, e] * zt - z[i, j, k, e] * yt
+      zxr[i, j, k] = z[i, j, k, e] * xr - x[i, j, k, e] * zr
+      zxs[i, j, k] = z[i, j, k, e] * xs - x[i, j, k, e] * zs
+      zxt[i, j, k] = z[i, j, k, e] * xt - x[i, j, k, e] * zt
+      xyr[i, j, k] = x[i, j, k, e] * yr - y[i, j, k, e] * xr
+      xys[i, j, k] = x[i, j, k, e] * ys - y[i, j, k, e] * xs
+      xyt[i, j, k] = x[i, j, k, e] * yt - y[i, j, k, e] * xt
+    end
 
-        @views ξy[n, :, m, e] += D * zxt[n, :, m]
-        @views ξy[n, m, :, e] -= D * zxs[n, m, :]
+    for k = 1:Nq, j = 1:Nq, i = 1:Nq
+      for n = 1:Nq
+        ξx[i, j, k, e] += D[j, n] * yzt[i, n, k]
+        ξx[i, j, k, e] -= D[k, n] * yzs[i, j, n]
+        ηx[i, j, k, e] += D[k, n] * yzr[i, j, n]
+        ηx[i, j, k, e] -= D[i, n] * yzt[n, j, k]
+        ζx[i, j, k, e] += D[i, n] * yzs[n, j, k]
+        ζx[i, j, k, e] -= D[j, n] * yzr[i, n, k]
+        ξy[i, j, k, e] += D[j, n] * zxt[i, n, k]
+        ξy[i, j, k, e] -= D[k, n] * zxs[i, j, n]
+        ηy[i, j, k, e] += D[k, n] * zxr[i, j, n]
+        ηy[i, j, k, e] -= D[i, n] * zxt[n, j, k]
+        ζy[i, j, k, e] += D[i, n] * zxs[n, j, k]
+        ζy[i, j, k, e] -= D[j, n] * zxr[i, n, k]
+        ξz[i, j, k, e] += D[j, n] * xyt[i, n, k]
+        ξz[i, j, k, e] -= D[k, n] * xys[i, j, n]
+        ηz[i, j, k, e] += D[k, n] * xyr[i, j, n]
+        ηz[i, j, k, e] -= D[i, n] * xyt[n, j, k]
+        ζz[i, j, k, e] += D[i, n] * xys[n, j, k]
+        ζz[i, j, k, e] -= D[j, n] * xyr[i, n, k]
+      end
+      ξx[i, j, k, e] *= JI2[i, j, k]
+      ηx[i, j, k, e] *= JI2[i, j, k]
+      ζx[i, j, k, e] *= JI2[i, j, k]
+      ξy[i, j, k, e] *= JI2[i, j, k]
+      ηy[i, j, k, e] *= JI2[i, j, k]
+      ζy[i, j, k, e] *= JI2[i, j, k]
+      ξz[i, j, k, e] *= JI2[i, j, k]
+      ηz[i, j, k, e] *= JI2[i, j, k]
+      ζz[i, j, k, e] *= JI2[i, j, k]
+    end
 
-        @views ηy[n, m, :, e] += D * zxr[n, m, :]
-        @views ηy[:, n, m, e] -= D * zxt[:, n, m]
+    for j = 1:Nq, i = 1:Nq
+      #= This code is broken when views are used
+      nx[i, j, 1, e] = -J[ 1, i, j, e] * ξx[ 1, i, j, e]
+      nx[i, j, 2, e] =  J[Nq, i, j, e] * ξx[Nq, i, j, e]
+      nx[i, j, 3, e] = -J[ i, 1, j, e] * ηx[ i, 1, j, e]
+      nx[i, j, 4, e] =  J[ i,Nq, j, e] * ηx[ i,Nq, j, e]
+      nx[i, j, 5, e] = -J[ i, j, 1, e] * ζx[ i, j, 1, e]
+      nx[i, j, 6, e] =  J[ i, j,Nq, e] * ζx[ i, j,Nq, e]
+      ny[i, j, 1, e] = -J[ 1, i, j, e] * ξy[ 1, i, j, e]
+      ny[i, j, 2, e] =  J[Nq, i, j, e] * ξy[Nq, i, j, e]
+      ny[i, j, 3, e] = -J[ i, 1, j, e] * ηy[ i, 1, j, e]
+      ny[i, j, 4, e] =  J[ i,Nq, j, e] * ηy[ i,Nq, j, e]
+      ny[i, j, 5, e] = -J[ i, j, 1, e] * ζy[ i, j, 1, e]
+      ny[i, j, 6, e] =  J[ i, j,Nq, e] * ζy[ i, j,Nq, e]
+      nz[i, j, 1, e] = -J[ 1, i, j, e] * ξz[ 1, i, j, e]
+      nz[i, j, 2, e] =  J[Nq, i, j, e] * ξz[Nq, i, j, e]
+      nz[i, j, 3, e] = -J[ i, 1, j, e] * ηz[ i, 1, j, e]
+      nz[i, j, 4, e] =  J[ i,Nq, j, e] * ηz[ i,Nq, j, e]
+      nz[i, j, 5, e] = -J[ i, j, 1, e] * ζz[ i, j, 1, e]
+      nz[i, j, 6, e] =  J[ i, j,Nq, e] * ζz[ i, j,Nq, e]
 
-        @views ζy[:, n, m, e] += D * zxs[:, n, m]
-        @views ζy[n, :, m, e] -= D * zxr[n, :, m]
+      for n = 1:6
+        sJ[i, j, n, e] = hypot(nx[i, j, n, e], ny[i, j, n, e], nz[i, j, n, e])
+        nx[i, j, n, e] /= sJ[i, j, n, e]
+        ny[i, j, n, e] /= sJ[i, j, n, e]
+        nz[i, j, n, e] /= sJ[i, j, n, e]
+      end
+      =#
 
-        @views ξz[n, :, m, e] += D * xyt[n, :, m]
-        @views ξz[n, m, :, e] -= D * xys[n, m, :]
+      ije = i + (j-1) * Nq + (e-1) * nface * Nq^2
+      nx[ije + (1-1) * Nq^2] = -J[ 1, i, j, e] * ξx[ 1, i, j, e]
+      nx[ije + (2-1) * Nq^2] =  J[Nq, i, j, e] * ξx[Nq, i, j, e]
+      nx[ije + (3-1) * Nq^2] = -J[ i, 1, j, e] * ηx[ i, 1, j, e]
+      nx[ije + (4-1) * Nq^2] =  J[ i,Nq, j, e] * ηx[ i,Nq, j, e]
+      nx[ije + (5-1) * Nq^2] = -J[ i, j, 1, e] * ζx[ i, j, 1, e]
+      nx[ije + (6-1) * Nq^2] =  J[ i, j,Nq, e] * ζx[ i, j,Nq, e]
+      ny[ije + (1-1) * Nq^2] = -J[ 1, i, j, e] * ξy[ 1, i, j, e]
+      ny[ije + (2-1) * Nq^2] =  J[Nq, i, j, e] * ξy[Nq, i, j, e]
+      ny[ije + (3-1) * Nq^2] = -J[ i, 1, j, e] * ηy[ i, 1, j, e]
+      ny[ije + (4-1) * Nq^2] =  J[ i,Nq, j, e] * ηy[ i,Nq, j, e]
+      ny[ije + (5-1) * Nq^2] = -J[ i, j, 1, e] * ζy[ i, j, 1, e]
+      ny[ije + (6-1) * Nq^2] =  J[ i, j,Nq, e] * ζy[ i, j,Nq, e]
+      nz[ije + (1-1) * Nq^2] = -J[ 1, i, j, e] * ξz[ 1, i, j, e]
+      nz[ije + (2-1) * Nq^2] =  J[Nq, i, j, e] * ξz[Nq, i, j, e]
+      nz[ije + (3-1) * Nq^2] = -J[ i, 1, j, e] * ηz[ i, 1, j, e]
+      nz[ije + (4-1) * Nq^2] =  J[ i,Nq, j, e] * ηz[ i,Nq, j, e]
+      nz[ije + (5-1) * Nq^2] = -J[ i, j, 1, e] * ζz[ i, j, 1, e]
+      nz[ije + (6-1) * Nq^2] =  J[ i, j,Nq, e] * ζz[ i, j,Nq, e]
 
-        @views ηz[n, m, :, e] += D * xyr[n, m, :]
-        @views ηz[:, n, m, e] -= D * xyt[:, n, m]
-
-        @views ζz[:, n, m, e] += D * xys[:, n, m]
-        @views ζz[n, :, m, e] -= D * xyr[n, :, m]
+      for n = 1:6
+        sJ[ije + (n-1) * Nq^2] = hypot(nx[ije + (n-1) *  Nq^2],
+                                       ny[ije + (n-1) *  Nq^2],
+                                       nz[ije + (n-1) *  Nq^2])
+        nx[ije + (n-1) * Nq^2] /= sJ[ije + (n-1) *  Nq^2]
+        ny[ije + (n-1) * Nq^2] /= sJ[ije + (n-1) *  Nq^2]
+        nz[ije + (n-1) * Nq^2] /= sJ[ije + (n-1) *  Nq^2]
       end
     end
-    @views ξx[:, :, :, e] = ξx[:, :, :, e] .* JI2
-    @views ηx[:, :, :, e] = ηx[:, :, :, e] .* JI2
-    @views ζx[:, :, :, e] = ζx[:, :, :, e] .* JI2
-    @views ξy[:, :, :, e] = ξy[:, :, :, e] .* JI2
-    @views ηy[:, :, :, e] = ηy[:, :, :, e] .* JI2
-    @views ζy[:, :, :, e] = ζy[:, :, :, e] .* JI2
-    @views ξz[:, :, :, e] = ξz[:, :, :, e] .* JI2
-    @views ηz[:, :, :, e] = ηz[:, :, :, e] .* JI2
-    @views ζz[:, :, :, e] = ζz[:, :, :, e] .* JI2
   end
-
-  @views nx[:, :, 1, :] .= -J[ 1, :, :, :] .* ξx[ 1, :, :, :]
-  @views nx[:, :, 2, :] .=  J[Nq, :, :, :] .* ξx[Nq, :, :, :]
-  @views nx[:, :, 3, :] .= -J[ :, 1, :, :] .* ηx[ :, 1, :, :]
-  @views nx[:, :, 4, :] .=  J[ :,Nq, :, :] .* ηx[ :,Nq, :, :]
-  @views nx[:, :, 5, :] .= -J[ :, :, 1, :] .* ζx[ :, :, 1, :]
-  @views nx[:, :, 6, :] .=  J[ :, :,Nq, :] .* ζx[ :, :,Nq, :]
-
-  @views ny[:, :, 1, :] .= -J[ 1, :, :, :] .* ξy[ 1, :, :, :]
-  @views ny[:, :, 2, :] .=  J[Nq, :, :, :] .* ξy[Nq, :, :, :]
-  @views ny[:, :, 3, :] .= -J[ :, 1, :, :] .* ηy[ :, 1, :, :]
-  @views ny[:, :, 4, :] .=  J[ :,Nq, :, :] .* ηy[ :,Nq, :, :]
-  @views ny[:, :, 5, :] .= -J[ :, :, 1, :] .* ζy[ :, :, 1, :]
-  @views ny[:, :, 6, :] .=  J[ :, :,Nq, :] .* ζy[ :, :,Nq, :]
-
-  @views nz[:, :, 1, :] .= -J[ 1, :, :, :] .* ξz[ 1, :, :, :]
-  @views nz[:, :, 2, :] .=  J[Nq, :, :, :] .* ξz[Nq, :, :, :]
-  @views nz[:, :, 3, :] .= -J[ :, 1, :, :] .* ηz[ :, 1, :, :]
-  @views nz[:, :, 4, :] .=  J[ :,Nq, :, :] .* ηz[ :,Nq, :, :]
-  @views nz[:, :, 5, :] .= -J[ :, :, 1, :] .* ζz[ :, :, 1, :]
-  @views nz[:, :, 6, :] .=  J[ :, :,Nq, :] .* ζz[ :, :,Nq, :]
-
-  @. sJ = hypot(nx, ny, nz)
-  @. nx = nx / sJ
-  @. ny = ny / sJ
-  @. nz = nz / sJ
 
   nothing
 end

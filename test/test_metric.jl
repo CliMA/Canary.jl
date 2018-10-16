@@ -6,7 +6,7 @@ const VGEO3D = (x = 1, y = 2, z = 3, J = 4, ξx = 5, ηx = 6, ζx = 7, ξy = 8,
 const SGEO3D = (sJ = 1, nx = 2, ny = 3, nz = 4)
 
 @testset "1-D Metric terms" begin
-  for T ∈ (Float32, Float64, BigFloat)
+  for T ∈ (Float32, Float64)
     #{{{
     let
       N = 4
@@ -41,7 +41,7 @@ const SGEO3D = (sJ = 1, nx = 2, ny = 3, nz = 4)
 end
 
 @testset "2-D Metric terms" begin
-  for T ∈ (Float32, Float64, BigFloat)
+  for T ∈ (Float32, Float64)
     # linear and rotation test
     #{{{
     let
@@ -304,7 +304,7 @@ end
 @testset "3-D Metric terms" begin
   # linear test
     #{{{
-  for T ∈ (Float32, Float64, BigFloat)
+    for T ∈ (Float32, Float64)
     let
       N = 2
 
@@ -410,7 +410,7 @@ end
 
   # linear test with rotation
   #{{{
-  for T ∈ (Float32, Float64, BigFloat)
+  for T ∈ (Float32, Float64)
     θ1 = 2 * T(π) * T( 0.9 )
     θ2 = 2 * T(π) * T(-0.56)
     θ3 = 2 * T(π) * T( 0.33)
@@ -536,7 +536,7 @@ end
 
   # Polynomial 3-D test
   #{{{
-  for T ∈ (Float32, Float64, BigFloat)
+  for T ∈ (Float32, Float64)
     f(r, s, t) = @.( (s + r*t - (r^2*s^2*t^2)/4,
                       t - ((r*s*t)/2 + 1/2)^3 + 1,
                       r + (r/2 + 1/2)^6*(s/2 + 1/2)^6*(t/2 + 1/2)^6))
@@ -640,7 +640,7 @@ end
   #}}}
 
   #{{{
-  for T ∈ (Float32, Float64, BigFloat)
+  for T ∈ (Float32, Float64)
     f(r, s, t) = @.( (s + r*t - (r^2*s^2*t^2)/4,
                       t - ((r*s*t)/2 + 1/2)^3 + 1,
                       r + (r/2 + 1/2)^6*(s/2 + 1/2)^6*(t/2 + 1/2)^6))
@@ -739,7 +739,7 @@ end
 
   # Constant preserving test
   #{{{
-  for T ∈ (Float32, Float64, BigFloat)
+  for T ∈ (Float32, Float64)
     f(r, s, t) = @.( (s + r*t - (r^2*s^2*t^2)/4,
                       t - ((r*s*t)/2 + 1/2)^3 + 1,
                       r + (r/2 + 1/2)^6*(s/2 + 1/2)^6*(t/2 + 1/2)^6))
