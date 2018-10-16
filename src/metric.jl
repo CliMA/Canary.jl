@@ -249,10 +249,12 @@ function computemetric!(x, y, z, J, ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz,
   ζz = reshape(ζz, (Nq, Nq, Nq, nelem))
 
   nface = 6
+  #= This code is broken when views are used
   nx = reshape(nx, Nq, Nq, nface, nelem)
   ny = reshape(ny, Nq, Nq, nface, nelem)
   nz = reshape(nz, Nq, Nq, nface, nelem)
   sJ = reshape(sJ, Nq, Nq, nface, nelem)
+  =#
 
   JI2 = similar(J, (Nq, Nq, Nq))
   (yzr, yzs, yzt) = (similar(JI2), similar(JI2), similar(JI2))
@@ -335,6 +337,7 @@ function computemetric!(x, y, z, J, ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz,
     end
 
     for j = 1:Nq, i = 1:Nq
+      #= This code is broken when views are used
       nx[i, j, 1, e] = -J[ 1, i, j, e] * ξx[ 1, i, j, e]
       nx[i, j, 2, e] =  J[Nq, i, j, e] * ξx[Nq, i, j, e]
       nx[i, j, 3, e] = -J[ i, 1, j, e] * ηx[ i, 1, j, e]
@@ -359,6 +362,36 @@ function computemetric!(x, y, z, J, ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz,
         nx[i, j, n, e] /= sJ[i, j, n, e]
         ny[i, j, n, e] /= sJ[i, j, n, e]
         nz[i, j, n, e] /= sJ[i, j, n, e]
+      end
+      =#
+
+      ije = i + (j-1) * Nq + (e-1) * nface * Nq^2
+      nx[ije + (1-1) * Nq^2] = -J[ 1, i, j, e] * ξx[ 1, i, j, e]
+      nx[ije + (2-1) * Nq^2] =  J[Nq, i, j, e] * ξx[Nq, i, j, e]
+      nx[ije + (3-1) * Nq^2] = -J[ i, 1, j, e] * ηx[ i, 1, j, e]
+      nx[ije + (4-1) * Nq^2] =  J[ i,Nq, j, e] * ηx[ i,Nq, j, e]
+      nx[ije + (5-1) * Nq^2] = -J[ i, j, 1, e] * ζx[ i, j, 1, e]
+      nx[ije + (6-1) * Nq^2] =  J[ i, j,Nq, e] * ζx[ i, j,Nq, e]
+      ny[ije + (1-1) * Nq^2] = -J[ 1, i, j, e] * ξy[ 1, i, j, e]
+      ny[ije + (2-1) * Nq^2] =  J[Nq, i, j, e] * ξy[Nq, i, j, e]
+      ny[ije + (3-1) * Nq^2] = -J[ i, 1, j, e] * ηy[ i, 1, j, e]
+      ny[ije + (4-1) * Nq^2] =  J[ i,Nq, j, e] * ηy[ i,Nq, j, e]
+      ny[ije + (5-1) * Nq^2] = -J[ i, j, 1, e] * ζy[ i, j, 1, e]
+      ny[ije + (6-1) * Nq^2] =  J[ i, j,Nq, e] * ζy[ i, j,Nq, e]
+      nz[ije + (1-1) * Nq^2] = -J[ 1, i, j, e] * ξz[ 1, i, j, e]
+      nz[ije + (2-1) * Nq^2] =  J[Nq, i, j, e] * ξz[Nq, i, j, e]
+      nz[ije + (3-1) * Nq^2] = -J[ i, 1, j, e] * ηz[ i, 1, j, e]
+      nz[ije + (4-1) * Nq^2] =  J[ i,Nq, j, e] * ηz[ i,Nq, j, e]
+      nz[ije + (5-1) * Nq^2] = -J[ i, j, 1, e] * ζz[ i, j, 1, e]
+      nz[ije + (6-1) * Nq^2] =  J[ i, j,Nq, e] * ζz[ i, j,Nq, e]
+
+      for n = 1:6
+        sJ[ije + (n-1) * Nq^2] = hypot(nx[ije + (n-1) *  Nq^2],
+                                       ny[ije + (n-1) *  Nq^2],
+                                       nz[ije + (n-1) *  Nq^2])
+        nx[ije + (n-1) * Nq^2] /= sJ[ije + (n-1) *  Nq^2]
+        ny[ije + (n-1) * Nq^2] /= sJ[ije + (n-1) *  Nq^2]
+        nz[ije + (n-1) * Nq^2] /= sJ[ije + (n-1) *  Nq^2]
       end
     end
   end
