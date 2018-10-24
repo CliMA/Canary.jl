@@ -3,10 +3,10 @@
 
 const DFloat = Float64 #Number Type
 
-N = 1 #polynomial order
+N = 4 #polynomial order
 #brickN = (10) #1D brickmesh
-brickN = (100, 100) #2D brickmesh
-tend = DFloat(0.005) #Final Time
+brickN = (10, 10) #2D brickmesh
+tend = DFloat(0.25) #Final Time
 δnl = 1.0 #switch to turn on/off nonlinear equations
 gravity = 10.0 #gravity
 advection=false #Boolean to turn on/off advection or swe
@@ -84,7 +84,7 @@ elseif dim == 3
 end
 
 include(joinpath(@__DIR__, "vtk.jl"))
-writemesh(@sprintf("SWE%dD_rank_%04d_mesh", dim, mpirank), coord...;
+writemesh(@sprintf("viz/SWE%dD_rank_%04d_mesh", dim, mpirank), coord...;
           realelems=mesh.realelems)
 
 metric = computemetric(coord..., D)
@@ -283,7 +283,7 @@ function volumerhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, D, 
     end #e ∈ elems
 end #function volumerhs-2d
 
-function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, elems, vmapM, vmapP, gravity, N, δnl) where {S, T}
+function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, elems, vmapM, vmapP, gravity, δnl) where {S, T}
 
     (rhsh, rhsU) = (rhs.h, rhs.U)
     (h, U) = (Q.h, Q.U)
@@ -327,11 +327,11 @@ function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, e
     end #e ∈ elems
 end #function fluxrhs-1d
 
-function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, ω, elems, vmapM, vmapP, gravity, N, δnl) where {S, T}
+function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, ω, elems, vmapM, vmapP, gravity, δnl) where {S, T}
     (rhsh, rhsU, rhsV) = (rhs.h, rhs.U, rhs.V)
     (h, U, V) = (Q.h, Q.U, Q.V)
     nface = 4
-    Nq=N+1
+    Nq=size(h,1)
     dim=2
     (nx, ny, sJ) = (metric.nx, metric.ny, metric.sJ)
     fluxhM=Array{DFloat,2}(undef,dim,Nq)
@@ -481,7 +481,7 @@ nrealelem = length(mesh.realelems)
 
 include(joinpath(@__DIR__, "vtk.jl"))
 temp=Q.h + bathymetry
-writemesh(@sprintf("SWE%dD_rank_%04d_step_%05d", dim, mpirank, 0),
+writemesh(@sprintf("viz/SWE%dD_rank_%04d_step_%05d", dim, mpirank, 0),
           coord...; fields=(("hs+hb", temp),), realelems=mesh.realelems)
 
 for step = 1:nsteps
@@ -518,14 +518,14 @@ for step = 1:nsteps
             end
         end
 
-        fluxrhs!(rhs, Q, bathymetry, metric, ω, mesh.realelems, vmapM, vmapP, gravity, N, δnl)
+        fluxrhs!(rhs, Q, bathymetry, metric, ω, mesh.realelems, vmapM, vmapP, gravity, δnl)
 
         #call updatesolution
         updatesolution!(rhs, Q, bathymetry, metric, ω, mesh.realelems, RKA[s%length(RKA)+1], RKB[s], dt, advection)
     end #s-stages
 
     temp=Q.h + bathymetry
-    writemesh(@sprintf("SWE%dD_rank_%04d_step_%05d", dim, mpirank, step),
+    writemesh(@sprintf("viz/SWE%dD_rank_%04d_step_%05d", dim, mpirank, step),
               coord...; fields=(("hs+hb", temp),), realelems=mesh.realelems)
 end #step
 
