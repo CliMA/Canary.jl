@@ -46,18 +46,21 @@
 #
 #--------------------------------Markdown Language Header-----------------------
 
-const DFloat = Float64 #Number Type
-
 # ### Define Input Parameters:
 # N is polynomial order and
 # brickN(Ne) generates a brick-grid with Ne elements in each direction
-N = 4 #polynomial order
-#brickN = (10) #1D brickmesh
-brickN = (10, 10) #2D brickmesh
-tend = DFloat(0.25) #Final Time
-δnl = 1.0 #switch to turn on/off nonlinear equations
-gravity = 10.0 #gravity
-advection=false #Boolean to turn on/off advection or swe
+N=4 #polynomial order
+#brickN=(50) #1D brickmesh
+brickN=(10, 10) #2D brickmesh
+DFloat=Float64 #Number Type
+tend=DFloat(1.0) #Final Time
+δnl=0.0 #switch to turn on/off nonlinear equations
+gravity=10.0 #gravity
+icase=3 #1=advection;
+#2=Gaussian with periodic (horizontal flow) and no gravity;
+#3=Gaussian with periodic and gravity but no horizontal flow;
+#4=Gaussian with NFBC and gravity but no horizontal flow;
+#5=Dam-break problem;
 
 # ### Load the MPI and Canary packages where Canary builds the mesh, generates basis functions, and metric terms.
 using MPI
@@ -74,7 +77,7 @@ println("brickN= ",brickN)
 println("DFloat= ",DFloat)
 println("δnl= ",δnl)
 println("gravity= ",gravity)
-println("advection= ",advection)
+println("icase= ",icase)
 
 # ### Initialize MPI and get the communicator, rank, and size
 MPI.Initialized() || MPI.Init() # only initialize MPI if not initialized
@@ -87,18 +90,20 @@ mpisize = MPI.Comm_size(mpicomm)
 if dim == 1
   (Nx, ) = brickN
   local x = range(DFloat(0); length=Nx+1, stop=1)
-  mesh = brickmesh((x, ), (true, ); part=mpirank+1, numparts=mpisize)
+  if icase <= 3
+      mesh = brickmesh((x, ), (true, ); part=mpirank+1, numparts=mpisize)
+  elseif icase >= 4
+      mesh = brickmesh((x, ), (false, ); part=mpirank+1, numparts=mpisize)
+  end
 elseif dim == 2
   (Nx, Ny) = brickN
   local x = range(DFloat(0); length=Nx+1, stop=1)
   local y = range(DFloat(0); length=Ny+1, stop=1)
-  mesh = brickmesh((x, y), (true, true); part=mpirank+1, numparts=mpisize)
-else
-  (Nx, Ny, Nz) = brickN
-  local x = range(DFloat(0); length=Nx+1, stop=1)
-  local y = range(DFloat(0); length=Ny+1, stop=1)
-  local z = range(DFloat(0); length=Nz+1, stop=1)
-  mesh = brickmesh((x, y, z), (true, true, true); part=mpirank+1, numparts=mpisize)
+  if icase <= 2
+      mesh = brickmesh((x, y), (true, true); part=mpirank+1, numparts=mpisize)
+  elseif icase >= 3
+      mesh = brickmesh((x, y), (false, false); part=mpirank+1, numparts=mpisize)
+  end
 end
 
 # ### Partition the mesh using a Hilbert curve based partitioning
@@ -132,22 +137,12 @@ elseif dim == 2
                     y[j] .+ sin.(2 * π * x[j]) .* sin.(π * y[j]) / 10)
 =#
   end
-elseif dim == 3
-  (x, y, z) = (coord.x, coord.y, coord.z)
-  for j = 1:length(x)
-    (x[j], y[j], z[j]) = (x[j] + (sin(π * x[j]) * sin(2 * π * y[j]) *
-                                  cos(2 * π * z[j])) / 10,
-                          y[j] + (sin(π * y[j]) * sin(2 * π * x[j]) *
-                                  cos(2 * π * z[j])) / 10,
-                          z[j] + (sin(π * z[j]) * sin(2 * π * x[j]) *
-                                  cos(2 * π * y[j])) / 10)
-  end
 end
 
 # ### First VTK Call
 # This first VTK call dumps the mesh out for all mpiranks.
-include(joinpath(@__DIR__, "vtk.jl"))
-writemesh(@sprintf("viz/SWE%dD_rank_%04d_mesh", dim, mpirank), coord...;
+include("vtk.jl")
+writemesh(@sprintf("SWE%dD_rank_%04d_mesh", dim, mpirank), coord...;
           realelems=mesh.realelems)
 
 # ### Compute the metric terms
@@ -160,8 +155,6 @@ if dim == 1
   statesyms = (:h, :U)
 elseif dim == 2
   statesyms = (:h, :U, :V)
-elseif dim == 3
-  statesyms = (:h, :U, :V, :W)
 end
 
 # ### Create storage for state vector and right-hand side
@@ -169,26 +162,45 @@ end
 # In addition, here we generate the initial conditions
 Q   = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))
 rhs = NamedTuple{statesyms}(ntuple(j->zero(coord.x), length(statesyms)))
+
+advection=false
 if dim == 1
     bathymetry = zero(coord.x)
     for i=1:length(coord.x)
         bathymetry[i]=0.1
     end
-    r=(x .- 0.5).^2
-    Q.h .= 0.5 .* exp.(-32.0 .* r)
-    Q.U .= 0
-    if (advection)
+
+    if (icase ==1) #advection
+        advection=true
         δnl=1.0
         gravity=0.0
+        r=(x .- 0.5).^2
+        Q.h .= 0.5 .* exp.(-32.0 .* r)
         Q.U .= (Q.h+bathymetry) .* (1.0)
+    elseif (icase == 2) #Gaussian bump with Periodic no gravity
+        r=(x .- 0.5).^2
+        Q.h .= 0.5 .* exp.(-32.0 .* r)
+        Q.U .= (Q.h+bathymetry) .* (1.0)
+        gravity = 0.0
+    elseif (icase == 3) #Gaussian bump with Periodic and gravity
+        r=(x .- 0.5).^2
+        Q.h .= 0.5 .* exp.(-32.0 .* r)
+        Q.U .= 0.0
+    elseif (icase == 4) #Gaussian bump with NFBC
+        r=(x .- 0.5).^2
+        Q.h .= 0.5 .* exp.(-32.0 .* r)
+        Q.U .= 0.0
+    elseif (icase == 5) #Dam-break problem
+        for i = 1:length(coord.x)
+            bathymetry[i]=0.5
+            if x[i] <= 0.5
+                Q.h[i]=0.5
+            elseif x[i] > 0.5
+                Q.h[i]=0
+            end
+        end
+        Q.U .= 0
     end
-    #=
-  for i=1:length(coord.x)
-     bathymetry[i]=2.0
-  end
-  Q.h .= sin.(2 * π * x) .+ 0.0
-  Q.U .= (Q.h+bathymetry) .* (1.0)
-=#
 elseif dim == 2
     bathymetry = zero(coord.x)
     for i=1:length(coord.x)
@@ -198,27 +210,13 @@ elseif dim == 2
     Q.h .= 0.5 .* exp.(-100.0 .* r)
     Q.U .= 0
     Q.V .= 0
-    if (advection)
+    if (icase == 1) #advection
+        advection=true
         δnl=1.0
         gravity=0.0
         Q.U .= (Q.h+bathymetry) .* (1.0)
         Q.V .= (Q.h+bathymetry) .* (0.0)
     end
-#=
-    for i=1:length(coord.x)
-     bathymetry[i]=2.0
-  end
-  r=(x .- 0.5).^2 + (y .- 0.5).^2
-  Q.h .= sin.(2 * π * x) .* sin.(2 *  π * y)
-  #Q.h .= 0.5 .* exp.(-8.0 .* r)
-  Q.U .= (Q.h+bathymetry) .* (1.0)
-  Q.V .= (Q.h+bathymetry) .* (1.0)
-=#
-elseif dim == 3
-  Q.h .= sin.(2 * π * x) .* sin.(2 *  π * y) .* sin.(2 * π * z) .+ 2.0
-  Q.U .= Q.h .* (1.0)
-  Q.V .= Q.h .* (1.0)
-  Q.W .= Q.h .* (1.0)
 end
 
 # ### Compute the time-step size and number of time-steps
@@ -241,17 +239,6 @@ elseif dim == 2
                           abs.(U[n] * ηx[n] + V[n] * ηy[n]))
         dt[1] = min(dt[1], loc_dt)
     end
-elseif dim == 3
-    (ξx, ξy, ξz) = (metric.ξx, metric.ξy, metric.ξz)
-    (ηx, ηy, ηz) = (metric.ηx, metric.ηy, metric.ηz)
-    (ζx, ζy, ζz) = (metric.ζx, metric.ζy, metric.ζz)
-    (h,U,V,W) = (Q.h,Q.U,Q.V,Q.W)
-    for n = 1:length(U)
-        loc_dt = (2h[n]) ./ max(abs.(U[n] * ξx[n] + V[n] * ξy[n] + W[n] * ξz[n]),
-                          abs.(U[n] * ηx[n] + V[n] * ηy[n] + W[n] * ηz[n]),
-                          abs.(U[n] * ζx[n] + V[n] * ζy[n] + W[n] * ζz[n]))
-        dt[1] = min(dt[1], loc_dt)
-    end
 end
 dt = MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
 dt = DFloat(dt / N^sqrt(2))
@@ -270,15 +257,6 @@ elseif dim == 2
   Δ.h .= Q.h
   Δ.U .= Q.U
   Δ.V .= Q.V
-elseif dim == 3
-  u = Q.U ./ Q.h
-  v = Q.V ./ Q.h
-  w = Q.W ./ Q.h
-  Δ.h .= sin.(2 * π * (x - tend * u)) .* sin.(2 *  π * (y - tend * v)) .*
-         sin.(2 * π * (z - tend * w)) .+ 2
-  Δ.U .=  Q.U
-  Δ.V .=  Q.V
-  Δ.W .=  Q.W
 end
 
 # ### Store Explicit RK Time-stepping Coefficients
@@ -383,7 +361,7 @@ end #function volumerhs-2d
 # ### Flux RHS Routines
 # These functions solve the flux integral term $\int_{\Gamma_e} \psi \mathbf{n} \cdot \left( \rho \mathbf{u} \right)^{(*,e)}_N$ for:
 # Flux RHS for 1D
-function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, elems, vmapM, vmapP, gravity, δnl) where {S, T}
+function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, elems, boundary, vmapM, vmapP, gravity, δnl) where {S, T}
 
     (rhsh, rhsU) = (rhs.h, rhs.U)
     (h, U) = (Q.h, Q.U)
@@ -394,21 +372,37 @@ function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, e
 
     for e ∈ elems
         for f ∈ 1:nface
+
+            #Check Boundary Condition
+            bc=boundary[f,e]
+
             #Compute fluxes on M/Left/- side
             hsM = h[vmapM[1, f, e]]
             hbM=bathymetry[vmapM[1, f, e]]
             hM=hsM + hbM
             UM = U[vmapM[1, f, e]]
             uM = UM ./ hM
+
+            #Left Fluxes
             fluxhM = UM
             fluxUM = ( hM .* uM .* uM + 0.5 .* gravity .* hsM .^2) .* δnl + gravity .* hsM .* hbM
 
             #Compute fluxes on P/Right/+ side
             hsP = h[vmapP[1, f, e]]
             hbP=bathymetry[vmapP[1, f, e]]
-            hP=hsP + hbP
             UP = U[vmapP[1, f, e]]
+
+            if bc == 0 #no boundary or periodic
+                #do nothing
+            elseif bc == 1 #No-flux
+                hsP = hsM
+                hbP = hbM
+                UP = -UM
+            end
+            hP=hsP + hbP
             uP = UP ./ hP
+
+            #Right Fluxes
             fluxhP = UP
             fluxUP = (hP .* uP .* uP + 0.5 .* gravity .* hsP .^2) .* δnl + gravity .* hsP .* hbP
 
@@ -428,7 +422,8 @@ function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{2, T}}, bathymetry, metric, ω, e
 end #function fluxrhs-1d
 
 # Flux RHS for 2D
-function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, ω, elems, vmapM, vmapP, gravity, δnl) where {S, T}
+function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, ω, elems, boundary, vmapM, vmapP, gravity, δnl) where {S, T}
+
     (rhsh, rhsU, rhsV) = (rhs.h, rhs.U, rhs.V)
     (h, U, V) = (Q.h, Q.U, Q.V)
     nface = 4
@@ -443,6 +438,10 @@ function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, ω, e
     fluxVP=Array{DFloat,2}(undef,dim,Nq)
     for e ∈ elems
         for f ∈ 1:nface
+
+            #Check Boundary Condition
+            bc=boundary[f,e]
+
             #Compute fluxes on M/Left/- side
             hsM = h[vmapM[:, f, e]]
             hbM=bathymetry[vmapM[:, f, e]]
@@ -451,6 +450,8 @@ function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, ω, e
             uM = UM ./ hM
             VM = V[vmapM[:, f, e]]
             vM = VM ./ hM
+
+            #Left Fluxes
             fluxhM[1,:] = UM
             fluxhM[2,:] = VM
             fluxUM[1,:] = ( hM .* uM .* uM + 0.5 .* gravity .* hsM .^2) .* δnl + gravity .* hsM .* hbM
@@ -461,11 +462,21 @@ function fluxrhs!(rhs, Q::NamedTuple{S, NTuple{3, T}}, bathymetry, metric, ω, e
             #Compute fluxes on P/right/+ side
             hsP = h[vmapP[:, f, e]]
             hbP=bathymetry[vmapP[:, f, e]]
-            hP=hsP + hbP
             UP = U[vmapP[:, f, e]]
-            uP = UP ./ hP
             VP = V[vmapP[:, f, e]]
+            if bc == 0 #no boundary or periodic
+                #do nothing
+            elseif bc == 1 #No-flux
+                hsP = hsM
+                hbP = hbM
+                UP = -UM
+                VP = -VM
+            end
+            hP=hsP + hbP
+            uP = UP ./ hP
             vP = VP ./ hP
+
+            #Right Fluxes
             fluxhP[1,:] = UP
             fluxhP[2,:] = VP
             fluxUP[1,:] = ( hP .* uP .* uP + 0.5 .* gravity .* hsP .^2) .* δnl + gravity .* hsP .* hbP
@@ -600,10 +611,10 @@ nrealelem = length(mesh.realelems)
 
 # ### Dump the initial condition
 # Dump out the initial conditin to VTK prior to entering the time-step loop.
-include(joinpath(@__DIR__, "vtk.jl"))
+include("vtk.jl")
 temp=Q.h + bathymetry
-writemesh(@sprintf("viz/SWE%dD_rank_%04d_step_%05d", dim, mpirank, 0),
-          coord...; fields=(("hs+hb", temp),), realelems=mesh.realelems)
+writemesh(@sprintf("SWE%dD_rank_%04d_step_%05d", dim, mpirank, 0),
+          coord...; fields=(("hs+hb", temp),("U",Q.U),), realelems=mesh.realelems)
 
 # ### Begin Time-step loop
 # Go through nsteps time-steps and for each time-step, loop through the s-stages of the explicit RK method.
@@ -662,7 +673,7 @@ for step = 1:nsteps
         # #### Compute RHS Flux Integral
         # We compute the flux integral on all "realelems" which are the elements owned by the current mpirank.
         # call fluxrhs
-        fluxrhs!(rhs, Q, bathymetry, metric, ω, mesh.realelems, vmapM, vmapP, gravity, δnl)
+        fluxrhs!(rhs, Q, bathymetry, metric, ω, mesh.realelems, mesh.elemtobndy, vmapM, vmapP, gravity, δnl)
 
         # #### Update solution and scale RHS
         # We need to update/evolve the solution in time and multiply by the inverse mass matrix.
@@ -673,8 +684,8 @@ for step = 1:nsteps
     # #### Write VTK Output
     # After each time-step, we dump out VTK data for Paraview/VisIt.
     temp=Q.h + bathymetry
-    writemesh(@sprintf("viz/SWE%dD_rank_%04d_step_%05d", dim, mpirank, step),
-              coord...; fields=(("hs+hb", temp),), realelems=mesh.realelems)
+    writemesh(@sprintf("SWE%dD_rank_%04d_step_%05d", dim, mpirank, step),
+              coord...; fields=(("hs+hb", temp),("U",Q.U),), realelems=mesh.realelems)
 end #step
 
 # ### Compute L2 Error Norms
