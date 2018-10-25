@@ -101,50 +101,59 @@ end
 #=
 # {{{ 1-D
 # Volume RHS for 1-D
-function volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, elems) where N
+function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems, gravity, δnl) where N
   Nq = N + 1
 
   @inbounds for e in elems
     for i in 1:Nq
       for n in 1:Nq
-        rhs[i, _hs, e] += D[n, i] * (vgeo[n, _MJ, e] * vgeo[n, _ξx, e] *
+        rhs[i, _h, e] += D[n, i] * (vgeo[n, _MJ, e] * vgeo[n, _ξx, e] *
                                     Q[n, _U, e] * Q[n, _h, e])
       end
     end
   end
 end
-
-# Face RHS for 1-D
-function fluxrhs!(::Val{1}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
-                  vmapP) where N
-  Np = N+1
-  nface = 2
-
-  @inbounds for e in elems
-    for f = 1:nface
-      (nxM, ~, sMJ, ~) = sgeo[:, 1, f, e]
-      idM, idP = vmapM[1, f, e], vmapP[1, f, e]
-
-      eM, eP = e, ((idP - 1) ÷ Np) + 1
-      vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
-
-      hM = Q[vidM, _h, eM]
-      UM = Q[vidM, _U, eM]
-      FxM = hM * UM
-
-      hP = Q[vidP, _h, eP]
-      UP = Q[vidP, _U, eP]
-      FxP = hP * UP
-
-      λ = max(abs(nxM * UM), abs(nxM * UP))
-
-      F = (nxM * (FxM + FxP) + λ * (hM - hP)) / 2
-      rhs[vidM, _h, eM] -= sMJ * F
-    end
-  end
-end
-# }}}
 =#
+
+# {{{ 1-D
+# Volume RHS for 1-D
+function volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, elems, gravity, δnl) where N
+    Nq = N + 1
+    DFloat = eltype(Q)
+    dim=1
+    ~, ~, nelem = size(Q)
+
+    Q = reshape(Q, Nq, _nstate, nelem)
+    rhs = reshape(rhs, Nq, _nstate, nelem)
+    vgeo = reshape(vgeo, Nq, _nvgeo, nelem)
+
+    #Allocate local flux arrays
+    fluxh=Array{DFloat,2}(undef,dim,Nq)
+    fluxU=Array{DFloat,2}(undef,dim,Nq)
+
+    @inbounds for e = 1:nelem
+
+        #Metric Terms
+        Jac=vgeo[:,_MJ,e]
+        ξx=vgeo[:,_ξx,e]
+
+        #Get primitive variables and fluxes
+        h=Q[:,_h,e]
+        b=Q[:,_b,e]
+        H=h + b
+        u=Q[:,_U,e] ./ H
+
+        #Compute Fluxes
+        fluxh[1,:]=Q[:,_U,e]
+        fluxU[1,:]=(H .* u .* u + 0.5 .* gravity .* h.^2) .* δnl + gravity .* h .* b
+
+        # loop of ξ-grid lines
+        for i = 1:Nq, k = 1:Nq
+            rhs[i,_h,e] += D[k, i] * Jac[k] * ξx[k] * fluxh[1,k]
+            rhs[i,_U,e] += D[k, i] * Jac[k] * ξx[k] * fluxU[1,k]
+        end
+    end
+end
 
 # {{{ 2-D
 # Volume RHS for 2-D
@@ -201,6 +210,111 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems, gravity, δnl) w
         end
     end
 end
+
+#=
+# Face RHS for 1-D
+function fluxrhs!(::Val{1}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
+                  vmapP) where N
+  Np = N+1
+  nface = 2
+
+  @inbounds for e in elems
+    for f = 1:nface
+      (nxM, ~, sMJ, ~) = sgeo[:, 1, f, e]
+      idM, idP = vmapM[1, f, e], vmapP[1, f, e]
+
+      eM, eP = e, ((idP - 1) ÷ Np) + 1
+      vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
+
+      hM = Q[vidM, _h, eM]
+      UM = Q[vidM, _U, eM]
+      FxM = hM * UM
+
+      hP = Q[vidP, _h, eP]
+      UP = Q[vidP, _U, eP]
+      FxP = hP * UP
+
+      λ = max(abs(nxM * UM), abs(nxM * UP))
+
+      F = (nxM * (FxM + FxP) + λ * (hM - hP)) / 2
+      rhs[vidM, _h, eM] -= sMJ * F
+    end
+  end
+end
+# }}}
+=#
+
+# Face RHS for 1-D
+function fluxrhs!(::Val{1}, ::Val{N}, rhs, Q, sgeo, elems, boundary, vmapM, vmapP, gravity, δnl) where N
+
+    DFloat = eltype(Q)
+    Np = (N+1)
+    Nfp = 1
+    nface = 2
+    (~, ~, nelem) = size(Q)
+    dim=1
+
+    @inbounds for e = 1:nelem
+        for f = 1:nface
+
+            #Check Boundary Condition
+            bc=boundary[f,e]
+
+            for n = 1:Nfp
+                (nxM, ~, sMJ, ~) = sgeo[:, n, f, e]
+                idM, idP = vmapM[n, f, e], vmapP[n, f, e]
+
+                eM, eP = e, ((idP - 1) ÷ Np) + 1
+                vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
+
+                #Compute Quantities on Left side
+                hM = Q[vidM, _h, eM]
+                bM = Q[vidM, _b, eM]
+                HM = hM + bM
+                UM = Q[vidM, _U, eM]
+                uM = UM / HM
+
+                #Left Fluxes
+                fluxhM = UM
+                fluxUM = (HM * uM * uM + 0.5 * gravity * hM^2) * δnl + gravity * hM * bM
+
+                #Compute Quantities on Right side
+                hP = Q[vidP, _h, eP]
+                bP = Q[vidP, _b, eP]
+                HP = hP + bP
+                UP = Q[vidP, _U, eP]
+
+                if bc == 0 #no boundary or periodic
+                    #do nothing
+                elseif bc == 1 #No-flux
+                    Unormal=nxM * UM
+                    UP = UM - 2 * Unormal * nxM
+                    hP = hM
+                    HP = HM
+                end
+                uP = UP / HP
+
+                #Right Fluxes
+                fluxhP = UP
+                fluxUP = (HP * uP * uP + 0.5 * gravity * hP^2) * δnl + gravity * hP * bP
+
+                #Compute wave speed
+                λM=( abs(nxM * uM) + sqrt(gravity*HM) ) * δnl + ( sqrt(gravity*bM) ) * (1.0-δnl)
+                λP=( abs(nxM * uP) + sqrt(gravity*HP) ) * δnl + ( sqrt(gravity*bP) ) * (1.0-δnl)
+                λ = max( λM, λP )
+
+                #Compute Numerical Flux and Update
+                fluxh_star = (nxM * (fluxhM + fluxhP) - λ * (hP - hM)) / 2
+                fluxU_star = (nxM * (fluxUM + fluxUP) - λ * (UP - UM)) / 2
+
+                #Update RH
+                rhs[vidM, _h, eM] -= sMJ * fluxh_star
+                rhs[vidM, _U, eM] -= sMJ * fluxU_star
+            end
+        end
+    end
+end
+# }}}
 
 # Face RHS for 2-D
 function fluxrhs!(::Val{2}, ::Val{N}, rhs, Q, sgeo, elems, boundary, vmapM, vmapP, gravity, δnl) where N
@@ -460,7 +574,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
         if mpirank == 0 && mod(step,iplot) == 0
             println("step=",step," time=",time)
         end
-        if dim > 1 && mod(step,iplot) == 0
+        if dim > 0 && mod(step,iplot) == 0
             (nface, nelem) = size(mesh.elemtoelem)
             X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                                   nelem), dim)
@@ -534,7 +648,7 @@ function swe(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend, iplot, icase
   # plot the initial condition
   mkpath("viz")
   # TODO: Fix VTK for 1-D
-  if dim > 1
+  if dim > 0
     X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
     h = reshape((@view Q[:, _h, :]), ntuple(j->(N+1),dim)..., nelem)
@@ -546,7 +660,7 @@ function swe(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend, iplot, icase
   end
 
   # Compute time step
-  dt = cfl(Val(dim), Val(N), vgeo, Q, mpicomm, gravity, δnl) / N^√2
+  #dt = cfl(Val(dim), Val(N), vgeo, Q, mpicomm, gravity, δnl) / N^√2
   #dt=0.025 #for case 20 with N=4 10x10x1
   dt=0.001
 
@@ -563,7 +677,7 @@ function swe(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend, iplot, icase
 
   # plot the final Solution
   # TODO: Fix VTK for 1-D
-  if dim > 1
+  if dim > 0
     X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
     h = reshape((@view Q[:, _h, :]), ntuple(j->(N+1),dim)..., nelem)
@@ -591,7 +705,6 @@ end
 function main()
   MPI.Initialized() || MPI.Init() # only initialize MPI if not initialized
   MPI.finalize_atexit()
-#  MPI.Init()
 
   mpicomm = MPI.COMM_WORLD
   mpirank = MPI.Comm_rank(mpicomm)
@@ -605,15 +718,15 @@ function main()
   warping2D(x...) = (x[1], x[2], zero(x[1]))
 
   #Input Parameters
-    N=4
-    Ne=10
+    N=1
+    Ne=100
     iplot=10
-    dim=2
+    dim=1
     gravity=10.0
     δnl=1
     advection=false
     icase=100
-    time_final=0.2
+    time_final=0.32
 
     #For Advection only
     if advection
@@ -624,7 +737,7 @@ function main()
   #Initial Conditions
   function ic(icase,dim,x...)
       if icase == 1 #advection
-          r = sqrt( (x[1]-0.5)^2 + (x[2]-0.5)^2 )
+          r = sqrt( (x[1]-0.5)^2 + (x[dim]-0.5)^2 )
           h = 0.5 * exp(-100.0 * r^2)
           b = 1.0
           H = h + b
@@ -632,7 +745,7 @@ function main()
           V = H*(0.0)
           h, b, U, V
       elseif icase == 10 #shallow water with Periodic BCs
-          r = sqrt( (x[1]-0.5)^2 + (x[2]-0.5)^2 )
+          r = sqrt( (x[1]-0.5)^2 + (x[dim]-0.5)^2 )
           h = 0.5 * exp(-100.0 * r^2)
           b=1.0
           H = h + b
@@ -640,7 +753,7 @@ function main()
           V = H*(0.0)
           h, b, U, V
       elseif icase == 100 #shallow water with NFBC
-          r = sqrt( (x[1]-0.5)^2 + (x[2]-0.5)^2 )
+          r = sqrt( (x[1]-0.5)^2 + (x[dim]-0.5)^2 )
           h = 0.5 * exp(-100.0 * r^2)
           b=1.0
           H = h + b
@@ -651,12 +764,15 @@ function main()
   end
 
     #call swe
-    if dim == 2
+    if dim == 1
+        mpirank == 0 && println("Running 1d...")
+        swe(mpicomm, ic, Val(N), (Ne,), time_final, iplot, icase, gravity, δnl, advection; meshwarp=warping1D)
+        mpirank == 0 && println()
+    elseif dim == 2
         mpirank == 0 && println("Running 2d...")
         swe(mpicomm, ic, Val(N), (Ne, Ne), time_final, iplot, icase, gravity, δnl, advection; meshwarp=warping2D)
         mpirank == 0 && println()
     end
-#  MPI.Finalize()
 end
 # }}}
 
