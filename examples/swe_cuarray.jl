@@ -40,8 +40,7 @@ const _nx, _ny, _sMJ, _vMJI = 1:_nsgeo
 # }}}
 
 # {{{ cfl
-function cfl(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm, gravity,
-             δnl) where {dim, N}
+function cfl(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm, gravity, δnl) where {dim, N}
   DFloat = eltype(Q)
   Np = (N+1)^dim
   (~, ~, nelem) = size(Q)
@@ -118,11 +117,10 @@ end
 # }}}
 
 # {{{ CPU Kernels
-# {{{ Volume RHS
-function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems, gravity,
-                    δnl) where N
-  Nq = N + 1
+# {{{ Volume RHS for 2D
+function volumerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems, gravity, δnl) where N
   DFloat = eltype(Q)
+  Nq = N + 1
   dim=2
   nelem = size(Q)[end]
 
@@ -130,169 +128,143 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems, gravity,
   rhs = reshape(rhs, Nq, Nq, _nstate, nelem)
   vgeo = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
 
-  #Allocate local flux arrays
-  fluxh=Array{DFloat,3}(undef,dim,Nq,Nq)
-  fluxU=Array{DFloat,3}(undef,dim,Nq,Nq)
-  fluxV=Array{DFloat,3}(undef,dim,Nq,Nq)
+  #Allocate Arrays
+  s_F = Array{DFloat}(undef, Nq, Nq, _nstate-1)
+  s_G = Array{DFloat}(undef, Nq, Nq, _nstate-1)
 
-  @inbounds for e = 1:nelem
+  @inbounds for e in elems
+      for j = 1:Nq, i = 1:Nq
+          MJ = vgeo[i, j, _MJ, e]
+          ξx, ξy = vgeo[i,j,_ξx,e], vgeo[i,j,_ξy,e]
+          ηx, ηy = vgeo[i,j,_ηx,e], vgeo[i,j,_ηy,e]
+          U, V = Q[i, j, _U, e], Q[i, j, _V, e]
+          h, b = Q[i, j, _h, e], Q[i, j, _b, e]
 
-    #Metric Terms
-    Jac=vgeo[:,:,_MJ,e]
-    ξx=vgeo[:,:,_ξx,e]
-    ξy=vgeo[:,:,_ξy,e]
-    ηx=vgeo[:,:,_ηx,e]
-    ηy=vgeo[:,:,_ηy,e]
+          #Get primitive variables and fluxes
+          H=h + b
+          u=U/H
+          v=V/H
 
-    #Get primitive variables and fluxes
-    h=Q[:,:,_h,e]
-    b=Q[:,:,_b,e]
-    H=h + b
-    u=Q[:,:,_U,e] ./ H
-    v=Q[:,:,_V,e] ./ H
+          fluxh_x = U
+          fluxh_y = V
+          fluxU_x = (H * u * u + 0.5 * gravity * h^2) * δnl + gravity * h * b
+          fluxU_y = (H * u * v) * δnl
+          fluxV_x = (H * v * u) * δnl
+          fluxV_y = (H * v * v + 0.5 * gravity * h^2) * δnl + gravity * h * b
 
-    #Compute Fluxes
-    fluxh[1,:,:]=Q[:,:,_U,e]
-    fluxh[2,:,:]=Q[:,:,_V,e]
-    fluxU[1,:,:]=(H .* u .* u + 0.5 .* gravity .* h.^2) .* δnl +
-                 gravity .* h .* b
-    fluxU[2,:,:]=H .* u .* v .* δnl
-    fluxV[1,:,:]=H .* v .* u .* δnl
-    fluxV[2,:,:]=(H .* v .* v + 0.5 .* gravity .* h.^2) .* δnl +
-                 gravity .* h .* b
+          s_F[i, j, _h] = MJ * (ξx * fluxh_x + ξy * fluxh_y)
+          s_F[i, j, _U] = MJ * (ξx * fluxU_x + ξy * fluxU_y)
+          s_F[i, j, _V] = MJ * (ξx * fluxV_x + ξy * fluxV_y)
 
-    # loop of ξ-grid lines
-    for j = 1:Nq, i = 1:Nq, k = 1:Nq
-      rhs[i,j,_h,e] += D[k, i] * Jac[k,j] * (ξx[k,j] * fluxh[1,k,j] +
-                                             ξy[k,j] * fluxh[2,k,j])
-      rhs[i,j,_U,e] += D[k, i] * Jac[k,j] * (ξx[k,j] * fluxU[1,k,j] +
-                                             ξy[k,j] * fluxU[2,k,j])
-      rhs[i,j,_V,e] += D[k, i] * Jac[k,j] * (ξx[k,j] * fluxV[1,k,j] +
-                                             ξy[k,j] * fluxV[2,k,j])
-    end
-    # loop of η-grid lines
-    for i = 1:Nq, j = 1:Nq, k = 1:Nq
-      rhs[i,j,_h,e] += D[k, j] * Jac[i,k] * (ηx[i,k] * fluxh[1,i,k] +
-                                             ηy[i,k] * fluxh[2,i,k])
-      rhs[i,j,_U,e] += D[k, j] * Jac[i,k] * (ηx[i,k] * fluxU[1,i,k] +
-                                             ηy[i,k] * fluxU[2,i,k])
-      rhs[i,j,_V,e] += D[k, j] * Jac[i,k] * (ηx[i,k] * fluxV[1,i,k] +
-                                             ηy[i,k] * fluxV[2,i,k])
-    end
+          s_G[i, j, _h] = MJ * (ηx * fluxh_x + ηy * fluxh_y)
+          s_G[i, j, _U] = MJ * (ηx * fluxU_x + ηy * fluxU_y)
+          s_G[i, j, _V] = MJ * (ηx * fluxV_x + ηy * fluxV_y)
+      end
+
+      # loop of ξ-grid lines
+      for s = 1:_nstate-1, j = 1:Nq, i = 1:Nq, n = 1:Nq
+          rhs[i, j, s, e] += D[n, i] * s_F[n, j, s]
+      end
+      # loop of η-grid lines
+      for s = 1:_nstate-1, j = 1:Nq, i = 1:Nq, n = 1:Nq
+          rhs[i, j, s, e] += D[n, j] * s_G[i, n, s]
+      end
   end
 end
 
-
 # }}}
 
-# {{{ Face RHS
-function facerhs!(::Val{2}, ::Val{N}, rhs, Q, sgeo, elems, boundary, vmapM,
-                  vmapP, gravity, δnl) where N
+# Flux RHS for 2D
+function fluxrhs!(::Val{2}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy, gravity, δnl) where N
+    DFloat = eltype(Q)
+    Np = (N+1)^2
+    Nfp = N+1
+    nface = 4
 
-  DFloat = eltype(Q)
-  Np = (N+1)^2
-  Nfp = N+1
-  nface = 4
-  (~, ~, nelem) = size(Q)
-  dim=2
+    @inbounds for e in elems
+        for f = 1:nface
+            for n = 1:Nfp
+                nxM, nyM, sMJ = sgeo[_nx, n, f, e], sgeo[_ny, n, f, e], sgeo[_sMJ, n, f, e]
+                idM, idP = vmapM[n, f, e], vmapP[n, f, e]
 
-  #Allocate local flux arrays
-  fluxhM=Array{DFloat,1}(undef,dim)
-  fluxUM=Array{DFloat,1}(undef,dim)
-  fluxVM=Array{DFloat,1}(undef,dim)
-  fluxhP=Array{DFloat,1}(undef,dim)
-  fluxUP=Array{DFloat,1}(undef,dim)
-  fluxVP=Array{DFloat,1}(undef,dim)
+                eM, eP = e, ((idP - 1) ÷ Np) + 1
+                vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
 
-  @inbounds for e = 1:nelem
-    for f = 1:nface
+                hM = Q[vidM, _h, eM]
+                bM = Q[vidM, _b, eM]
+                UM = Q[vidM, _U, eM]
+                VM = Q[vidM, _V, eM]
 
-      #Check Boundary Condition
-      bc=boundary[f,e]
+                bc = elemtobndy[f, e]
+                hP = bP = UP = VP = zero(eltype(Q))
+                if bc == 0
+                    hP = Q[vidP, _h, eP]
+                    bP = Q[vidP, _b, eM]
+                    UP = Q[vidP, _U, eP]
+                    VP = Q[vidP, _V, eP]
+                elseif bc == 1
+                    UnM = nxM * UM + nyM * VM
+                    UP = UM - 2 * UnM * nxM
+                    VP = VM - 2 * UnM * nyM
+                    hP = hM
+                    bP = bM
+                else
+                    error("Invalid boundary conditions $bc on face $f of element $e")
+                end
+                HM=hM + bM
+                uM = UM / HM
+                vM = VM / HM
+                HP=hP + bP
+                uP = UP / HP
+                vP = VP / HP
 
-      for n = 1:Nfp
-        (nxM, nyM, sMJ, ~) = sgeo[:, n, f, e]
-        idM, idP = vmapM[n, f, e], vmapP[n, f, e]
+                #Left Fluxes
+                fluxhM_x = UM
+                fluxhM_y = VM
+                fluxUM_x = (HM * uM * uM + 0.5 * gravity * hM^2) * δnl +
+                gravity * hM * bM
+                fluxUM_y = HM * uM * vM * δnl
+                fluxVM_x = HM * vM * uM * δnl
+                fluxVM_y = (HM * vM * vM + 0.5 * gravity * hM^2) * δnl +
+                gravity * hM * bM
 
-        eM, eP = e, ((idP - 1) ÷ Np) + 1
-        vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
+                #Right Fluxes
+                fluxhP_x = UP
+                fluxhP_y = VP
+                fluxUP_x = (HP * uP * uP + 0.5 * gravity * hP^2) * δnl +
+                gravity * hP * bP
+                fluxUP_y = HP * uP * vP * δnl
+                fluxVP_x = HP * vP * uP * δnl
+                fluxVP_y = (HP * vP * vP + 0.5 * gravity * hP^2) * δnl +
+                gravity * hP * bP
 
-        #Compute Quantities on Left side
-        hM = Q[vidM, _h, eM]
-        bM = Q[vidM, _b, eM]
-        HM = hM + bM
-        UM = Q[vidM, _U, eM]
-        VM = Q[vidM, _V, eM]
-        uM = UM / HM
-        vM = VM / HM
+                #Compute wave speed
+                λM=( abs(nxM * uM + nyM * vM) + sqrt(gravity*HM) ) * δnl +
+                ( sqrt(gravity*bM) ) * (1.0-δnl)
+                λP=( abs(nxM * uP + nyM * vP) + sqrt(gravity*HP) ) * δnl +
+                ( sqrt(gravity*bP) ) * (1.0-δnl)
+                λ = max( λM, λP )
 
-        #Left Fluxes
-        fluxhM[1] = UM
-        fluxhM[2] = VM
-        fluxUM[1] = (HM * uM * uM + 0.5 * gravity * hM^2) * δnl +
-                    gravity * hM * bM
-        fluxUM[2] = HM * uM * vM * δnl
-        fluxVM[1] = HM * vM * uM * δnl
-        fluxVM[2] = (HM * vM * vM + 0.5 * gravity * hM^2) * δnl +
-                    gravity * hM * bM
+                #Compute Numerical Flux and Update
+                fluxhS = (nxM * (fluxhM_x + fluxhP_x) + nyM * (fluxhM_y + fluxhP_y) +
+                          - λ * (hP - hM)) / 2
+                fluxUS = (nxM * (fluxUM_x + fluxUP_x) + nyM * (fluxUM_y + fluxUP_y) +
+                          - λ * (UP - UM)) / 2
+                fluxVS = (nxM * (fluxVM_x + fluxVP_x) + nyM * (fluxVM_y + fluxVP_y) +
+                          - λ * (VP - VM)) / 2
 
-        #Compute Quantities on Right side
-        hP = Q[vidP, _h, eP]
-        bP = Q[vidP, _b, eP]
-        HP = hP + bP
-        UP = Q[vidP, _U, eP]
-        VP = Q[vidP, _V, eP]
-
-        if bc == 0 #no boundary or periodic
-          #do nothing
-        elseif bc == 1 #No-flux
-          Unormal=nxM * UM + nyM * VM
-          UP = UM - 2 * Unormal * nxM
-          VP = VM - 2 * Unormal * nyM
-          hP = hM
-          HP = HM
+                #Update RHS
+                rhs[vidM, _h, eM] -= sMJ * fluxhS
+                rhs[vidM, _U, eM] -= sMJ * fluxUS
+                rhs[vidM, _V, eM] -= sMJ * fluxVS
+            end
         end
-        uP = UP / HP
-        vP = VP / HP
-
-        #Right Fluxes
-        fluxhP[1] = UP
-        fluxhP[2] = VP
-        fluxUP[1] = (HP * uP * uP + 0.5 * gravity * hP^2) * δnl +
-                    gravity * hP * bP
-        fluxUP[2] = HP * uP * vP * δnl
-        fluxVP[1] = HP * vP * uP * δnl
-        fluxVP[2] = (HP * vP * vP + 0.5 * gravity * hP^2) * δnl +
-                    gravity * hP * bP
-
-        #Compute wave speed
-        λM=( abs(nxM * uM + nyM * vM) + sqrt(gravity*HM) ) * δnl +
-           ( sqrt(gravity*bM) ) * (1.0-δnl)
-        λP=( abs(nxM * uP + nyM * vP) + sqrt(gravity*HP) ) * δnl +
-           ( sqrt(gravity*bP) ) * (1.0-δnl)
-        λ = max( λM, λP )
-
-        #Compute Numerical Flux and Update
-        fluxh_star = (nxM * (fluxhM[1] + fluxhP[1]) +
-                      nyM * (fluxhM[2] + fluxhP[2]) - λ * (hP - hM)) / 2
-        fluxU_star = (nxM * (fluxUM[1] + fluxUP[1]) +
-                      nyM * (fluxUM[2] + fluxUP[2]) - λ * (UP - UM)) / 2
-        fluxV_star = (nxM * (fluxVM[1] + fluxVP[1]) +
-                      nyM * (fluxVM[2] + fluxVP[2]) - λ * (VP - VM)) / 2
-
-        #Update RH
-        rhs[vidM, _h, eM] -= sMJ * fluxh_star
-        rhs[vidM, _U, eM] -= sMJ * fluxU_star
-        rhs[vidM, _V, eM] -= sMJ * fluxV_star
-      end
     end
-  end
 end
 # }}}
 
 # {{{ Update solution
-function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, elems, rka, rkb,
-                         dt, advection) where {dim, N}
+function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, elems, rka, rkb, dt, advection) where {dim, N}
 
     DFloat = eltype(Q)
     Nq=(N+1)^dim
@@ -324,38 +296,202 @@ function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, elems, rka, rkb,
         end
     end
 end
-
-# }}}
 # }}}
 
-# {{{ GPU kernles
+# {{{ GPU kernels
+# {{{ Volume RHS for 2D
+@hascuda function knl_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem, gravity, δnl) where N
+    DFloat = eltype(D)
+    Nq = N + 1
 
-# {{{ Volume RHS
-@hascuda function knl_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D,
-                                 nelem) where N
-  nothing
+    #Point Thread to DOF and Block to element
+    (i, j, k) = threadIdx()
+    e = blockIdx().x
+
+    #Allocate Arrays
+    s_D = @cuStaticSharedMem(eltype(D), (Nq, Nq))
+    s_F = @cuStaticSharedMem(eltype(Q), (Nq, Nq, _nstate))
+    s_G = @cuStaticSharedMem(eltype(Q), (Nq, Nq, _nstate))
+
+    rhsU = rhsV = rhsh = zero(eltype(rhs))
+    if i <= Nq && j <= Nq && k == 1 && e <= nelem
+        # Load derivative into shared memory
+        if k == 1
+            s_D[i, j] = D[i, j]
+        end
+
+        # Load values needed into registers
+        MJ = vgeo[i, j, _MJ, e]
+        ξx, ξy = vgeo[i, j, _ξx, e], vgeo[i, j, _ξy, e]
+        ηx, ηy = vgeo[i, j, _ηx, e], vgeo[i, j, _ηy, e]
+        U, V = Q[i, j, _U, e], Q[i, j, _V, e]
+        h, b = Q[i, j, _h, e], Q[i, j, _b, e]
+        rhsh, rhsU, rhsV = rhs[i, j, _h, e], rhs[i, j, _U, e], rhs[i, j, _V, e]
+
+        #Get primitive variables and fluxes
+        H=h + b
+        u=U/H
+        v=V/H
+
+        fluxh_x = U
+        fluxh_y = V
+        fluxU_x = (H * u * u + 0.5 * gravity * h^2) * δnl + gravity * h * b
+        fluxU_y = (H * u * v) * δnl
+        fluxV_x = (H * v * u) * δnl
+        fluxV_y = (H * v * v + 0.5 * gravity * h^2) * δnl + gravity * h * b
+
+        s_F[i, j, _h] = MJ * (ξx * fluxh_x + ξy * fluxh_y)
+        s_F[i, j, _U] = MJ * (ξx * fluxU_x + ξy * fluxU_y)
+        s_F[i, j, _V] = MJ * (ξx * fluxV_x + ξy * fluxV_y)
+
+        s_G[i, j, _h] = MJ * (ηx * fluxh_x + ηy * fluxh_y)
+        s_G[i, j, _U] = MJ * (ηx * fluxU_x + ηy * fluxU_y)
+        s_G[i, j, _V] = MJ * (ηx * fluxV_x + ηy * fluxV_y)
+    end
+
+    sync_threads()
+
+    @inbounds if i <= Nq && j <= Nq && k == 1 && e <= nelem
+        for n = 1:Nq
+
+            #ξ-grid lines
+            Dni = s_D[n, i]
+            rhsh += Dni * s_F[n, j, _h]
+            rhsU += Dni * s_F[n, j, _U]
+            rhsV += Dni * s_F[n, j, _V]
+
+            #η-grid lines
+            Dnj = s_D[n, j]
+            rhsh += Dnj * s_G[i, n, _h]
+            rhsU += Dnj * s_G[i, n, _U]
+            rhsV += Dnj * s_G[i, n, _V]
+        end
+
+        rhs[i, j, _U, e] = rhsU
+        rhs[i, j, _V, e] = rhsV
+        rhs[i, j, _h, e] = rhsh
+    end
+    nothing
 end
 # }}}
 
 # {{{ Face RHS (all dimensions)
-@hascuda function knl_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
-                               vmapP, elemtobndy) where {dim, N}
-  nothing
+@hascuda function knl_fluxrhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM, vmapP, elemtobndy, gravity, δnl) where {dim, N}
+  DFloat = eltype(Q)
+  Np = (N+1)^dim
+  nface = 2*dim
+
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  Nq = N+1
+  half = convert(eltype(Q), 0.5)
+
+  @inbounds if i <= Nq && j <= Nq && k == 1 && e <= nelem
+      n = i + (j-1) * Nq
+      for lf = 1:2:nface
+          for f = lf:lf+1
+              nxM, nyM, sMJ = sgeo[_nx, n, f, e], sgeo[_ny, n, f, e], sgeo[_sMJ, n, f, e]
+              (idM, idP) = (vmapM[n, f, e], vmapP[n, f, e])
+
+              (eM, eP) = (e, ((idP - 1) ÷ Np) + 1)
+              (vidM, vidP) = (((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1)
+
+              hM = Q[vidM, _h, eM]
+              bM = Q[vidM, _b, eM]
+              UM = Q[vidM, _U, eM]
+              VM = Q[vidM, _V, eM]
+
+              bc = elemtobndy[f, e]
+              hP = bP = UP = VP = zero(eltype(Q))
+              if bc == 0
+                  hP = Q[vidP, _h, eP]
+                  bP = Q[vidP, _b, eM]
+                  UP = Q[vidP, _U, eP]
+                  VP = Q[vidP, _V, eP]
+              elseif bc == 1
+                  UnM = nxM * UM + nyM * VM
+                  UP = UM - 2 * UnM * nxM
+                  VP = VM - 2 * UnM * nyM
+                  hP = hM
+                  bP = bM
+#              else
+#                  error("Invalid boundary conditions $bc on face $f of element $e")
+              end
+              HM=hM + bM
+              uM = UM / HM
+              vM = VM / HM
+              HP=hP + bP
+              uP = UP / HP
+              vP = VP / HP
+
+              #Left Fluxes
+              fluxhM_x = UM
+              fluxhM_y = VM
+              fluxUM_x = (HM * uM * uM + 0.5 * gravity * hM * hM) * δnl +
+              gravity * hM * bM
+              fluxUM_y = HM * uM * vM * δnl
+              fluxVM_x = HM * vM * uM * δnl
+              fluxVM_y = (HM * vM * vM + 0.5 * gravity * hM * hM) * δnl +
+              gravity * hM * bM
+
+              #Right Fluxes
+              fluxhP_x = UP
+              fluxhP_y = VP
+              fluxUP_x = (HP * uP * uP + 0.5 * gravity * hP * hP) * δnl +
+              gravity * hP * bP
+              fluxUP_y = HP * uP * vP * δnl
+              fluxVP_x = HP * vP * uP * δnl
+              fluxVP_y = (HP * vP * vP + 0.5 * gravity * hP * hP) * δnl +
+              gravity * hP * bP
+
+              #Compute wave speed
+              λM=( abs(nxM * uM + nyM * vM) + CUDAnative.sqrt(gravity*HM) ) * δnl +
+              ( CUDAnative.sqrt(gravity*bM) ) * (1.0-δnl)
+              λP=( abs(nxM * uP + nyM * vP) + CUDAnative.sqrt(gravity*HP) ) * δnl +
+              ( CUDAnative.sqrt(gravity*bP) ) * (1.0-δnl)
+              λ = max( λM, λP )
+
+              #Compute Numerical Flux and Update
+              fluxhS = (nxM * (fluxhM_x + fluxhP_x) + nyM * (fluxhM_y + fluxhP_y) +
+                        - λ * (hP - hM)) / 2
+              fluxUS = (nxM * (fluxUM_x + fluxUP_x) + nyM * (fluxUM_y + fluxUP_y) +
+                        - λ * (UP - UM)) / 2
+              fluxVS = (nxM * (fluxVM_x + fluxVP_x) + nyM * (fluxVM_y + fluxVP_y) +
+                        - λ * (VP - VM)) / 2
+
+              #Update RHS
+              rhs[vidM, _h, eM] -= sMJ * fluxhS
+              rhs[vidM, _U, eM] -= sMJ * fluxUS
+              rhs[vidM, _V, eM] -= sMJ * fluxVS
+          end
+          sync_threads()
+      end
+  end
+    nothing
 end
 # }}}
 
 # {{{ Update solution (for all dimensions)
-@hascuda function knl_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem,
-                                      rka, rkb, dt, advection) where {dim, N}
+@hascuda function knl_updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, nelem, rka, rkb, dt, advection) where {dim, N}
+  (i, j, k) = threadIdx()
+  e = blockIdx().x
+
+  Nq = N+1
+  @inbounds if i <= Nq && j <= Nq && k <= Nq && e <= nelem
+    n = i + (j-1) * Nq + (k-1) * Nq * Nq
+    MJI = vgeo[n, _MJI, e]
+    for s = 1:_nstate-1
+      Q[n, s, e] += rkb * dt * rhs[n, s, e] * MJI
+      rhs[n, s, e] *= rka
+    end
+  end
   nothing
 end
 # }}}
 
-# }}}
-
 # {{{ Fill sendQ on device with Q (for all dimensions)
-@hascuda function knl_fillsendQ!(::Val{dim}, ::Val{N}, sendQ, Q,
-                        sendelems) where {N, dim}
+@hascuda function knl_fillsendQ!(::Val{dim}, ::Val{N}, sendQ, Q, sendelems) where {N, dim}
   Nq = N + 1
   (i, j, k) = threadIdx()
   e = blockIdx().x
@@ -372,8 +508,7 @@ end
 # }}}
 
 # {{{ Fill Q on device with recvQ (for all dimensions)
-@hascuda function knl_transferrecvQ!(::Val{dim}, ::Val{N}, Q, recvQ, nelem,
-                            nrealelem) where {N, dim}
+@hascuda function knl_transferrecvQ!(::Val{dim}, ::Val{N}, Q, recvQ, nelem, nrealelem) where {N, dim}
   Nq = N + 1
   (i, j, k) = threadIdx()
   e = blockIdx().x
@@ -422,30 +557,22 @@ end
 # }}}
 
 # {{{ GPU kernel wrappers
-@hascuda function volumerhs!(::Val{dim}, ::Val{N}, d_rhsC::CuArray, d_QC,
-                             d_vgeoC, d_D, elems, gravity, δnl) where {dim, N}
+@hascuda function volumerhs!(::Val{dim}, ::Val{N}, d_rhsC::CuArray, d_QC, d_vgeoC, d_D, elems, gravity, δnl) where {dim, N}
   nelem = length(elems)
   @cuda(threads=ntuple(j->N+1, dim), blocks=nelem,
-        knl_volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, nelem,
-                       gravity, δnl))
+        knl_volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, nelem, gravity, δnl))
 end
 
-@hascuda function facerhs!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_sgeo,
-                           elems, d_vmapM, d_vmapP, d_elemtobndy, gravity,
-                           δnl) where {dim, N}
+@hascuda function fluxrhs!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_sgeo, elems, d_vmapM, d_vmapP, d_elemtobndy, gravity, δnl) where {dim, N}
   nelem = length(elems)
   @cuda(threads=(ntuple(j->N+1, dim-1)..., 1), blocks=nelem,
-        knl_facerhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, nelem, d_vmapM,
-                     d_vmapP, d_elemtobndy, gravity, δnl))
+        knl_fluxrhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, nelem, d_vmapM, d_vmapP, d_elemtobndy, gravity, δnl))
 end
 
-@hascuda function updatesolution!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL,
-                                  d_vgeoL, elems, rka, rkb, dt,
-                                  advection) where {dim, N}
+@hascuda function updatesolution!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_vgeoL, elems, rka, rkb, dt, advection) where {dim, N}
   nelem = length(elems)
   @cuda(threads=ntuple(j->N+1, dim), blocks=nelem,
-        knl_updatesolution!(Val(dim), Val(N), d_rhsL, d_QL, d_vgeoL, nelem, rka,
-                            rkb, dt, advection))
+        knl_updatesolution!(Val(dim), Val(N), d_rhsL, d_QL, d_vgeoL, nelem, rka, rkb, dt, advection))
 end
 # }}}
 
@@ -572,8 +699,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       end
 
       # volume RHS computation
-      volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, mesh.realelems,
-                gravity, δnl)
+      volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, mesh.realelems, gravity, δnl)
 
       # wait on MPI receives
       MPI.Waitall!(recvreq)
@@ -582,8 +708,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       transferrecvQ!(Val(dim), Val(N), d_recvQ, recvQ, d_QL, nrealelem)
 
       # face RHS computation
-      facerhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, mesh.realelems,
-               mesh.elemtobndy, d_vmapM, d_vmapP, gravity, δnl)
+      fluxrhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy, gravity, δnl)
 
       # update solution and scale RHS
       updatesolution!(Val(dim), Val(N), d_rhsL, d_QL, d_vgeoL, mesh.realelems,
@@ -601,7 +726,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       @show (step, nsteps, avg_stage_time)
     end
     # TODO: Fix VTK for 1-D
-    if dim > 1 && plotstep > 0 && step % plotstep == 0
+    if dim > 0 && plotstep > 0 && step % plotstep == 0
       Q .= d_QL
       X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                             nelem), dim)
@@ -632,7 +757,7 @@ function swe(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, gravity, δnl,
   mpisize = MPI.Comm_size(mpicomm)
 
   # Partion the mesh using a Hilbert curve based partitioning
-  mpirank == 0 && println("[CPU] partiting mesh...")
+  mpirank == 0 && println("[CPU] partitioning mesh...")
   mesh = partition(mpicomm, mesh...)
 
   # Connect the mesh in parallel
@@ -692,15 +817,15 @@ function swe(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, gravity, δnl,
 
   # plot the initial condition
   mkpath("viz")
-  if dim > 1
+  if dim > 0
     X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
     h = reshape((@view Q[:, _h, :]), ntuple(j->(N+1),dim)..., nelem)
     b = reshape((@view Q[:, _b, :]), ntuple(j->(N+1),dim)..., nelem)
-    U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h+b)
-    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h+b)
-    writemesh(@sprintf("viz/swe%dD_rank_%04d_step_%05d", dim,
-                       mpirank, 0), X...;
+    U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
+    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
+    writemesh(@sprintf("viz/swe%dD_%s_rank_%04d_step_%05d",
+                       dim, ArrType, mpirank, 0), X...;
               fields=(("h", h),("b",b),("U",U),("V",V),),
               realelems=mesh.realelems)
   end
@@ -730,7 +855,6 @@ end
 function main()
   DFloat = Float64
 
-  # MPI.Init()
   MPI.Initialized() ||MPI.Init()
   MPI.finalize_atexit()
 
@@ -745,11 +869,11 @@ function main()
   N=4
   Ne=10
   iplot=10
-  gravity=10.0
   δnl=1
-  advection=false
-  icase=100
-  time_final=DFloat(0.2)
+  icase=10
+  time_final=DFloat(0.32)
+  dim=2
+  hardware="cpu"
 
   #Initial Conditions
   ic = (x...) -> (0.0, 0.0, 0.0, 0.0)
@@ -766,6 +890,7 @@ function main()
     ic = ic_1
     periodic = (true, true)
     advection = true
+    gravity = 0
   elseif icase == 10 #shallow water with Periodic BCs
     function ic10(x...)
       r = sqrt( (x[1]-0.5)^2 + (x[2]-0.5)^2 )
@@ -779,6 +904,7 @@ function main()
     ic = ic10
     periodic = (true, true)
     advection = false
+    gravity = 10
   elseif icase == 100 #shallow water with NFBC
     function ic100(x...)
       r = sqrt( (x[1]-0.5)^2 + (x[2]-0.5)^2 )
@@ -792,25 +918,26 @@ function main()
     ic = ic100
     periodic = (false, false)
     advection = false
+    gravity = 10
   end
 
   mesh = brickmesh((range(DFloat(0); length=Ne+1, stop=1),
                     range(DFloat(0); length=Ne+1, stop=1)),
                    periodic; part=mpirank+1, numparts=mpisize)
 
-  mpirank == 0 && println("Running (CPU)...")
-  swe(Val(2), Val(N), mpicomm, ic, mesh, time_final, gravity, δnl, advection;
-      ArrType=Array, tout = 10, plotstep = iplot)
-  mpirank == 0 && println()
-
-  @hascuda begin
-    mpirank == 0 && println("Running (GPU)...")
-    swe(Val(2), Val(N), mpicomm, ic, mesh, time_final, gravity, δnl, advection;
-        ArrType=CuArray, tout = 10, plotstep = iplot)
-    mpirank == 0 && println()
+  if hardware == "cpu"
+      mpirank == 0 && println("Running (CPU)...")
+      swe(Val(2), Val(N), mpicomm, ic, mesh, time_final, gravity, δnl, advection;
+          ArrType=Array, tout = 10, plotstep = iplot)
+      mpirank == 0 && println()
+  elseif hardware == "gpu"
+      @hascuda begin
+          mpirank == 0 && println("Running (GPU)...")
+          swe(Val(2), Val(N), mpicomm, ic, mesh, time_final, gravity, δnl, advection;
+              ArrType=CuArray, tout = 10, plotstep = iplot)
+          mpirank == 0 && println()
+      end
   end
-
-  # MPI.Finalize()
   nothing
 end
 # }}}
