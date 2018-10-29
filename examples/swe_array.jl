@@ -10,16 +10,10 @@ const _U, _V, _h, _b = 1:_nstate
 const stateid = (U = _U, V = _V, h = _h, b = _b)
 
 const _nvgeo = 8
-const _ξx, _ηx, _ξy, _ηy, _MJ, _MJI,
-       _x, _y, = 1:_nvgeo
-const vgeoid = (ξx = _ξx, ηx = _ηx,
-                ξy = _ξy, ηy = _ηy,
-                MJ = _MJ, MJI = _MJI,
-                x = _x,   y = _y)
+const _ξx, _ηx, _ξy, _ηy, _MJ, _MJI, _x, _y, = 1:_nvgeo
 
 const _nsgeo = 4
 const _nx, _ny, _sMJ, _vMJI = 1:_nsgeo
-const sgeoid = (nx = _nx, ny = _ny, sMJ = _sMJ, vMJI = _vMJI)
 # }}}
 
 # {{{ cfl
@@ -98,25 +92,7 @@ function computegeometry(::Val{dim}, mesh, D, ξ, ω, meshwarp, vmapM, icase) wh
 end
 # }}}
 
-#=
-# {{{ 1-D
-# Volume RHS for 1-D
-function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems, gravity, δnl) where N
-  Nq = N + 1
-
-  @inbounds for e in elems
-    for i in 1:Nq
-      for n in 1:Nq
-        rhs[i, _h, e] += D[n, i] * (vgeo[n, _MJ, e] * vgeo[n, _ξx, e] *
-                                    Q[n, _U, e] * Q[n, _h, e])
-      end
-    end
-  end
-end
-=#
-
-# {{{ 1-D
-# Volume RHS for 1-D
+# {{{ Volume RHS for 1D
 function volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, elems, gravity, δnl) where N
     Nq = N + 1
     DFloat = eltype(Q)
@@ -154,9 +130,9 @@ function volumerhs!(::Val{1}, ::Val{N}, rhs, Q, vgeo, D, elems, gravity, δnl) w
         end
     end
 end
+# }}}
 
-# {{{ 2-D
-# Volume RHS for 2-D
+# {{{ Volume RHS for 2D
 function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems, gravity, δnl) where N
     Nq = N + 1
     DFloat = eltype(Q)
@@ -210,41 +186,9 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, elems, gravity, δnl) w
         end
     end
 end
-
-#=
-# Face RHS for 1-D
-function fluxrhs!(::Val{1}, ::Val{N}, rhs, Q, sgeo, elems, vmapM,
-                  vmapP) where N
-  Np = N+1
-  nface = 2
-
-  @inbounds for e in elems
-    for f = 1:nface
-      (nxM, ~, sMJ, ~) = sgeo[:, 1, f, e]
-      idM, idP = vmapM[1, f, e], vmapP[1, f, e]
-
-      eM, eP = e, ((idP - 1) ÷ Np) + 1
-      vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
-
-      hM = Q[vidM, _h, eM]
-      UM = Q[vidM, _U, eM]
-      FxM = hM * UM
-
-      hP = Q[vidP, _h, eP]
-      UP = Q[vidP, _U, eP]
-      FxP = hP * UP
-
-      λ = max(abs(nxM * UM), abs(nxM * UP))
-
-      F = (nxM * (FxM + FxP) + λ * (hM - hP)) / 2
-      rhs[vidM, _h, eM] -= sMJ * F
-    end
-  end
-end
 # }}}
-=#
 
-# Face RHS for 1-D
+# {{{ Face RHS for 1D
 function fluxrhs!(::Val{1}, ::Val{N}, rhs, Q, sgeo, elems, boundary, vmapM, vmapP, gravity, δnl) where N
 
     DFloat = eltype(Q)
@@ -316,7 +260,7 @@ function fluxrhs!(::Val{1}, ::Val{N}, rhs, Q, sgeo, elems, boundary, vmapM, vmap
 end
 # }}}
 
-# Face RHS for 2-D
+# {{{ Face RHS for 2D
 function fluxrhs!(::Val{2}, ::Val{N}, rhs, Q, sgeo, elems, boundary, vmapM, vmapP, gravity, δnl) where N
 
     DFloat = eltype(Q)
@@ -580,8 +524,8 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                                   nelem), dim)
             h = reshape((@view Q[:, _h, :]), ntuple(j->(N+1),dim)..., nelem)
             b = reshape((@view Q[:, _b, :]), ntuple(j->(N+1),dim)..., nelem)
-            U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h+b)
-            V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h+b)
+            U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
+            V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
             writemesh(@sprintf("viz/swe%dD_rank_%04d_step_%05d", dim,
                                mpirank, step), X...; fields=(("h", h),("b",b),("U",U),("V",V),), realelems=mesh.realelems)
         end
@@ -653,8 +597,8 @@ function swe(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend, iplot, icase
                           nelem), dim)
     h = reshape((@view Q[:, _h, :]), ntuple(j->(N+1),dim)..., nelem)
     b = reshape((@view Q[:, _b, :]), ntuple(j->(N+1),dim)..., nelem)
-    U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h+b)
-    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h+b)
+    U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
+    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
     writemesh(@sprintf("viz/swe%dD_rank_%04d_step_%05d", dim,
                        mpirank, 0), X...; fields=(("h", h),("b",b),("U",U),("V",V),), realelems=mesh.realelems)
   end
@@ -682,8 +626,8 @@ function swe(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend, iplot, icase
                           nelem), dim)
     h = reshape((@view Q[:, _h, :]), ntuple(j->(N+1),dim)..., nelem)
     b = reshape((@view Q[:, _b, :]), ntuple(j->(N+1),dim)..., nelem)
-    U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h+b)
-    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h+b)
+    U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
+    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
     writemesh(@sprintf("viz/swe%dD_rank_%04d_step_%05d", dim,
                        mpirank, nsteps), X...; fields=(("h", h),("b",b),("U",U),("V",V),), realelems=mesh.realelems)
   end
@@ -718,14 +662,14 @@ function main()
   warping2D(x...) = (x[1], x[2], zero(x[1]))
 
   #Input Parameters
-    N=1
-    Ne=100
+    N=4
+    Ne=10
     iplot=10
-    dim=1
+    dim=2
     gravity=10.0
     δnl=1
     advection=false
-    icase=100
+    icase=10
     time_final=0.32
 
     #For Advection only
