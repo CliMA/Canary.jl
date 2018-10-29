@@ -1542,7 +1542,7 @@ err = MPI.Allreduce(err, MPI.SUM, mpicomm)
 mpirank == 0 &amp;&amp; @show sqrt(err)
 
 nothing</code></pre><pre><code class="language-none">sqrt(eng) = 1.7677669528573736
-sqrt(err) = 2.565534459000735e-5</code></pre></div><h2><a class="nav-anchor" id="advection-plain-program-1" href="#advection-plain-program-1">Plain Program</a></h2><p>Below follows a version of the program without any comments. The file is also available here: <a href="../advection.jl">advection.jl</a></p><pre><code class="language-julia">N = 4 #polynomial order
+sqrt(err) = 2.565534459000701e-5</code></pre></div><h2><a class="nav-anchor" id="advection-plain-program-1" href="#advection-plain-program-1">Plain Program</a></h2><p>Below follows a version of the program without any comments. The file is also available here: <a href="../advection.jl">advection.jl</a></p><pre><code class="language-julia">N = 4 #polynomial order
 #brickN = (10) #1D brickmesh
 #brickN = (10, 10) #2D brickmesh
 brickN = (10, 10, 10) #3D brickmesh
