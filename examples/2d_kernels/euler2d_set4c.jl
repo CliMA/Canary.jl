@@ -136,7 +136,7 @@ end
 
 # {{{ CPU Kernels
 # {{{ 2-D
-# Volume RHS for 2-D
+# Volume RHS for 2D
 function volumerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
   DFloat = eltype(Q)
   γ::DFloat       = _γ
@@ -156,6 +156,7 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
 
   s_F = Array{DFloat}(undef, Nq, Nq, _nstate)
   s_G = Array{DFloat}(undef, Nq, Nq, _nstate)
+  P_matrix = Array{DFloat}(undef, Nq, Nq)
 
   @inbounds for e in elems
     for j = 1:Nq, i = 1:Nq
@@ -165,19 +166,20 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
 
       U, V = Q[i, j, _U, e], Q[i, j, _V, e]
       ρ, E = Q[i, j, _ρ, e], Q[i, j, _E, e]
-
-      P = p0 * (R_gas * E / p0)^(c_p / c_v)
+      T=E/(ρ*c_v)
+      H=ρ*c_p*T
+      P=ρ*R_gas*T
+      P_matrix[i,j]=P
 
       ρinv = 1 / ρ
       fluxρ_x = U
       fluxU_x = ρinv * U * U + P
       fluxV_x = ρinv * V * U
-      fluxE_x = ρinv * U * E
-
+      fluxE_x = ρinv * U * H
       fluxρ_y = V
       fluxU_y = ρinv * U * V
       fluxV_y = ρinv * V * V + P
-      fluxE_y = ρinv * V * E
+      fluxE_y = ρinv * V * H
 
       s_F[i, j, _ρ] = MJ * (ξx * fluxρ_x + ξy * fluxρ_y)
       s_F[i, j, _U] = MJ * (ξx * fluxU_x + ξy * fluxU_y)
@@ -193,6 +195,24 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
       rhs[i, j, _V, e] -= MJ * ρ * gravity
     end
 
+    # u*Grad P source term
+    for j=1:Nq, i=1:Nq
+      MJ = vgeo[i, j, _MJ, e]
+      ξx, ξy = vgeo[i,j,_ξx,e], vgeo[i,j,_ξy,e]
+      ηx, ηy = vgeo[i,j,_ηx,e], vgeo[i,j,_ηy,e]
+
+      p_e=0
+      p_n=0
+      for k=1:Nq
+          p_e += D[i,k]*P_matrix[k,j]
+          p_n += D[j,k]*P_matrix[i,k]
+      end
+      dpdx=p_e*ξx + p_n*ηx
+      dpdy=p_e*ξy + p_n*ηy
+      ρ, U, V = Q[i, j, _ρ, e], Q[i, j, _U, e], Q[i, j, _V, e]
+      rhs[i,j,_E,e] += (MJ/ρ)*(U*dpdx + V*dpdy)
+    end
+
     # loop of ξ-grid lines
     for s = 1:_nstate, j = 1:Nq, i = 1:Nq, k = 1:Nq
       rhs[i, j, s, e] += D[k, i] * s_F[k, j, s]
@@ -205,7 +225,7 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
 end
 
 # Face RHS for 2-D
-function facerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, sgeo, elems, vmapM,
+function facerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM,
                   vmapP, elemtobndy) where N
   DFloat = eltype(Q)
   γ::DFloat       = _γ
@@ -234,19 +254,24 @@ function facerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, sgeo, elems, vmapM,
         EM = Q[vidM, _E, eM]
 
         bc = elemtobndy[f, e]
-        PM = p0 * (R_gas * EM / p0)^(c_p / c_v)
+        TM=EM/(ρM*c_v)
+        HM=ρM*c_p*TM
+        PM=ρM*R_gas*TM
         if bc == 0
           ρP = Q[vidP, _ρ, eP]
           UP = Q[vidP, _U, eP]
           VP = Q[vidP, _V, eP]
           EP = Q[vidP, _E, eP]
-          PP = p0 * (R_gas * EP / p0)^(c_p / c_v)
+          TP=EP/(ρP*c_v)
+          HP=ρP*c_p*TP
+          PP=ρP*R_gas*TP
         elseif bc == 1
           UnM = nxM * UM + nyM * VM
           UP = UM - 2 * UnM * nxM
           VP = VM - 2 * UnM * nyM
           ρP = ρM
           EP = EM
+          HP = HM
           PP = PM
         else
           error("Invalid boundary conditions $bc on face $f of element $e")
@@ -256,23 +281,23 @@ function facerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, sgeo, elems, vmapM,
         fluxρM_x = UM
         fluxUM_x = ρMinv * UM * UM + PM
         fluxVM_x = ρMinv * VM * UM
-        fluxEM_x = ρMinv * UM * EM
+        fluxEM_x = ρMinv * UM * HM
 
         fluxρM_y = VM
         fluxUM_y = ρMinv * UM * VM
         fluxVM_y = ρMinv * VM * VM + PM
-        fluxEM_y = ρMinv * VM * EM
+        fluxEM_y = ρMinv * VM * HM
 
         ρPinv = 1 / ρP
         fluxρP_x = UP
         fluxUP_x = ρPinv * UP * UP + PP
         fluxVP_x = ρPinv * VP * UP
-        fluxEP_x = ρPinv * UP * EP
+        fluxEP_x = ρPinv * UP * HP
 
         fluxρP_y = VP
         fluxUP_y = ρPinv * UP * VP
         fluxVP_y = ρPinv * VP * VP + PP
-        fluxEP_y = ρPinv * VP * EP
+        fluxEP_y = ρPinv * VP * HP
 
         λM = ρMinv * abs(nxM * UM + nyM * VM) + sqrt(ρMinv * γ * PM)
         λP = ρPinv * abs(nxM * UP + nyM * VP) + sqrt(ρPinv * γ * PP)
@@ -314,7 +339,7 @@ end
 
 # {{{ improved GPU kernles
 
-# {{{ Volume RHS for 2-D
+# {{{ Volume RHS for 2D
 @hascuda function knl_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
   DFloat = eltype(D)
   γ::DFloat       = _γ
@@ -344,23 +369,24 @@ end
     MJ = vgeo[i, j, _MJ, e]
     ξx, ξy = vgeo[i, j, _ξx, e], vgeo[i, j, _ξy, e]
     ηx, ηy = vgeo[i, j, _ηx, e], vgeo[i, j, _ηy, e]
+    y = vgeo[i, j, _y, e]
     U, V = Q[i, j, _U, e], Q[i, j, _V, e]
     ρ, E = Q[i, j, _ρ, e], Q[i, j, _E, e]
     rhsU, rhsV = rhs[i, j, _U, e], rhs[i, j, _V, e]
     rhsρ, rhsE = rhs[i, j, _ρ, e], rhs[i, j, _E, e]
 
-    P = p0 * CUDAnative.pow(R_gas * E / p0, c_p / c_v)
+    P = (R_gas/c_v)*(E - (U*U + V*V)/(2*ρ) - ρ*gravity*y)
 
     ρinv = 1 / ρ
     fluxρ_x = U
     fluxU_x = ρinv * U * U + P
     fluxV_x = ρinv * V * U
-    fluxE_x = ρinv * U * E
+    fluxE_x = ρinv * U * (E+P)
 
     fluxρ_y = V
     fluxU_y = ρinv * U * V
     fluxV_y = ρinv * V * V + P
-    fluxE_y = ρinv * V * E
+    fluxE_y = ρinv * V * (E+P)
 
     s_F[i, j, _ρ] = MJ * (ξx * fluxρ_x + ξy * fluxρ_y)
     s_F[i, j, _U] = MJ * (ξx * fluxU_x + ξy * fluxU_y)
@@ -407,8 +433,7 @@ end
 # }}}
 
 # {{{ Face RHS (all dimensions)
-@hascuda function knl_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
-                               vmapP, elemtobndy) where {dim, N}
+@hascuda function knl_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, vgeo, nelem, vmapM,                                vmapP, elemtobndy) where {dim, N}
   DFloat = eltype(Q)
   γ::DFloat       = _γ
   p0::DFloat      = _p0
@@ -441,16 +466,18 @@ end
         UM = Q[vidM, _U, eM]
         VM = Q[vidM, _V, eM]
         EM = Q[vidM, _E, eM]
+        yM = vgeo[vidM, _y, eM]
 
         bc = elemtobndy[f, e]
-        PM = p0 * CUDAnative.pow(R_gas * EM / p0, c_p / c_v)
+        PM = (R_gas/c_v)*(EM - (UM*UM + VM*VM)/(2*ρM) - ρM*gravity*yM)
         ρP = UP = VP = EP = PP = zero(eltype(Q))
         if bc == 0
           ρP = Q[vidP, _ρ, eP]
           UP = Q[vidP, _U, eP]
           VP = Q[vidP, _V, eP]
           EP = Q[vidP, _E, eP]
-          PP = p0 * CUDAnative.pow(R_gas * EP / p0, c_p / c_v)
+          yP = vgeo[vidP, _y, eP]
+          PP = (R_gas/c_v)*(EP - (UP*UP + VP*VP)/(2*ρP) - ρP*gravity*yP)
         elseif bc == 1
           UnM = nxM * UM + nyM * VM
           UP = UM - 2 * UnM * nxM
@@ -464,23 +491,23 @@ end
         fluxρM_x = UM
         fluxUM_x = ρMinv * UM * UM + PM
         fluxVM_x = ρMinv * VM * UM
-        fluxEM_x = ρMinv * UM * EM
+        fluxEM_x = ρMinv * UM * (EM+PM)
 
         fluxρM_y = VM
         fluxUM_y = ρMinv * UM * VM
         fluxVM_y = ρMinv * VM * VM + PM
-        fluxEM_y = ρMinv * VM * EM
+        fluxEM_y = ρMinv * VM * (EM+PM)
 
         ρPinv = 1 / ρP
         fluxρP_x = UP
         fluxUP_x = ρPinv * UP * UP + PP
         fluxVP_x = ρPinv * VP * UP
-        fluxEP_x = ρPinv * UP * EP
+        fluxEP_x = ρPinv * UP * (EP+PP)
 
         fluxρP_y = VP
         fluxUP_y = ρPinv * UP * VP
         fluxVP_y = ρPinv * VP * VP + PP
-        fluxEP_y = ρPinv * VP * EP
+        fluxEP_y = ρPinv * VP * (EP+PP)
 
         λM = ρMinv * abs(nxM * UM + nyM * VM) + CUDAnative.sqrt(ρMinv * γ * PM)
         λP = ρPinv * abs(nxM * UP + nyM * VP) + CUDAnative.sqrt(ρPinv * γ * PP)
@@ -603,10 +630,10 @@ end
 end
 
 @hascuda function facerhs!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_sgeo,
-                           elems, d_vmapM, d_vmapP, d_elemtobndy) where {dim, N}
+                           d_vgeoL, elems, d_vmapM, d_vmapP, d_elemtobndy) where {dim, N}
   nelem = length(elems)
   @cuda(threads=(ntuple(j->N+1, dim-1)..., 1), blocks=nelem,
-        knl_facerhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, nelem, d_vmapM,
+        knl_facerhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, d_vgeoL, nelem, d_vmapM,
                      d_vmapP, d_elemtobndy))
 end
 
@@ -640,6 +667,13 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                       dt, nsteps, tout, vmapM, vmapP, mpicomm, iplot;
                       ArrType=ArrType, plotstep=0) where {dim, N}
   DFloat = eltype(Q)
+  γ::DFloat       = _γ
+  p0::DFloat      = _p0
+  R_gas::DFloat   = _R_gas
+  c_p::DFloat     = _c_p
+  c_v::DFloat     = _c_v
+  gravity::DFloat = _gravity
+
   mpirank = MPI.Comm_rank(mpicomm)
 
   # Fourth-order, low-storage, Runge–Kutta scheme of Carpenter and Kennedy
@@ -731,7 +765,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       transferrecvQ!(Val(dim), Val(N), d_recvQ, recvQ, d_QL, nrealelem)
 
       # face RHS computation
-      facerhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, mesh.realelems, d_vmapM,
+      facerhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, d_vgeoL, mesh.realelems, d_vmapM,
                d_vmapP, d_elemtobndy)
 
       # update solution and scale RHS
@@ -752,7 +786,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       #    if dim > 1 && plotstep > 0 && step % plotstep == 0
     if dim > 1 && mod(step,iplot) == 0
       Q .= d_QL
-      convert_set2c_to_set2nc(Val(dim), Val(N), vgeo, Q)
+      convert_set4c_to_set2nc(Val(dim), Val(N), vgeo, Q)
       X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                             nelem), dim)
       ρ = reshape((@view Q[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
@@ -760,7 +794,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
       E = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
       E = E .- 300.0
-      writemesh(@sprintf("viz/euler%dD_set2c_%s_rank_%04d_step_%05d",
+      writemesh(@sprintf("viz/euler%dD_set4c_%s_rank_%04d_step_%05d",
                          dim, ArrType, mpirank, step), X...;
                 fields=(("ρ", ρ), ("U", U), ("V", V), ("E", E)),
                 realelems=mesh.realelems)
@@ -774,100 +808,6 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
   rhs .= d_rhsL
 end
 # }}}
-
-# {{{ convert_variables
-function convert_set2nc_to_set2c(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
-  DFloat = eltype(Q)
-  γ::DFloat       = _γ
-  p0::DFloat      = _p0
-  R_gas::DFloat   = _R_gas
-  c_p::DFloat     = _c_p
-  c_v::DFloat     = _c_v
-  gravity::DFloat = _gravity
-
-  Np = (N+1)^dim
-  (~, ~, nelem) = size(Q)
-
-  @inbounds for e = 1:nelem, n = 1:Np
-    ρ, u, v, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
-    Q[n, _U, e] = ρ*u
-    Q[n, _V, e] = ρ*v
-    Q[n, _E, e] = ρ*E
-  end
-end
-
-function convert_set2c_to_set2nc(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
-  DFloat = eltype(Q)
-  γ::DFloat       = _γ
-  p0::DFloat      = _p0
-  R_gas::DFloat   = _R_gas
-  c_p::DFloat     = _c_p
-  c_v::DFloat     = _c_v
-  gravity::DFloat = _gravity
-
-  Np = (N+1)^dim
-  (~, ~, nelem) = size(Q)
-
-  @inbounds for e = 1:nelem, n = 1:Np
-    ρ, U, V, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
-    u=U/ρ
-    v=V/ρ
-    E=E/ρ
-    Q[n, _U, e] = u
-    Q[n, _V, e] = v
-    Q[n, _E, e] = E
-  end
-end
-
-function convert_set2nc_to_set3c(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
-  DFloat = eltype(Q)
-  γ::DFloat       = _γ
-  p0::DFloat      = _p0
-  R_gas::DFloat   = _R_gas
-  c_p::DFloat     = _c_p
-  c_v::DFloat     = _c_v
-  gravity::DFloat = _gravity
-
-  Np = (N+1)^dim
-  (~, ~, nelem) = size(Q)
-
-  @inbounds for e = 1:nelem, n = 1:Np
-    ρ, u, v, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
-    y = vgeo[n, _y, e]
-    P = p0 * (ρ * R_gas * E / p0)^(c_p / c_v)
-    T = P/(ρ*R_gas)
-    E = c_v*T + 0.5*(u^2 + v^2) + gravity*y
-    Q[n, _U, e] = ρ*u
-    Q[n, _V, e] = ρ*v
-    Q[n, _E, e] = ρ*E
-  end
-end
-
-function convert_set3c_to_set2nc(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
-  DFloat = eltype(Q)
-  γ::DFloat       = _γ
-  p0::DFloat      = _p0
-  R_gas::DFloat   = _R_gas
-  c_p::DFloat     = _c_p
-  c_v::DFloat     = _c_v
-  gravity::DFloat = _gravity
-
-  Np = (N+1)^dim
-  (~, ~, nelem) = size(Q)
-
-  @inbounds for e = 1:nelem, n = 1:Np
-    ρ, U, V, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
-    y = vgeo[n, _y, e]
-    u=U/ρ
-    v=V/ρ
-    E=E/ρ
-    P = (R_gas/c_v)*ρ*(E - 0.5*(u^2 + v^2) - gravity*y)
-    E=p0/(ρ * R_gas)*( P/p0 )^(c_v/c_p)
-    Q[n, _U, e] = u
-    Q[n, _V, e] = v
-    Q[n, _E, e] = E
-  end
-end
 
 function convert_set2nc_to_set4c(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
   DFloat = eltype(Q)
@@ -892,6 +832,7 @@ function convert_set2nc_to_set4c(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
     Q[n, _E, e] = ρ*E
   end
 end
+# }}}
 
 function convert_set4c_to_set2nc(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
   DFloat = eltype(Q)
@@ -970,8 +911,6 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
   # Convert to proper variables
   mpirank == 0 && println("[CPU] converting variables (CPU)...")
   convert_set2nc_to_set4c(Val(dim), Val(N), vgeo, Q)
-  convert_set4c_to_set2nc(Val(dim), Val(N), vgeo, Q)
-  convert_set2nc_to_set2c(Val(dim), Val(N), vgeo, Q)
 
   # Compute time step
   mpirank == 0 && println("[CPU] computing dt (CPU)...")
@@ -987,15 +926,13 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
   stats = zeros(DFloat, 2)
   mpirank == 0 && println("[CPU] computing initial energy...")
   Q_temp=copy(Q)
-  convert_set2c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
+  convert_set4c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
   stats[1] = L2energysquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems)
 
   # plot the initial condition
   mkpath("viz")
   # TODO: Fix VTK for 1-D
   if dim > 1
-#    Q_temp=copy(Q)
-#    convert_set2c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
     X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
     ρ = reshape((@view Q_temp[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
@@ -1003,7 +940,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
     V = reshape((@view Q_temp[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
     E = reshape((@view Q_temp[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
     E = E .- 300.0
-    writemesh(@sprintf("viz/euler%dD_set2c_%s_rank_%04d_step_%05d",
+    writemesh(@sprintf("viz/euler%dD_set4c_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, 0), X...;
               fields=(("ρ", ρ), ("U", U), ("V", V), ("E", E)),
               realelems=mesh.realelems)
@@ -1016,7 +953,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
   # TODO: Fix VTK for 1-D
   if dim > 1
     Q_temp=copy(Q)
-    convert_set2c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
+    convert_set4c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
     X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
     ρ = reshape((@view Q_temp[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
@@ -1024,7 +961,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
     V = reshape((@view Q_temp[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
     E = reshape((@view Q_temp[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
     E = E .- 300.0
-    writemesh(@sprintf("viz/euler%dD_set2c_%s_rank_%04d_step_%05d",
+    writemesh(@sprintf("viz/euler%dD_set4c_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, nsteps), X...;
               fields=(("ρ", ρ), ("U", U), ("V", V), ("E", E)),
               realelems=mesh.realelems)
@@ -1103,13 +1040,13 @@ function main()
 
   if hardware == "cpu"
      mpirank == 0 && println("Running 2d (CPU)...")
-     euler(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot;
+     euler(Val(2), Val(N), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot;
         ArrType=Array, tout = 10)
      mpirank == 0 && println()
   elseif hardware == "gpu"
      @hascuda begin
        mpirank == 0 && println("Running 2d (GPU)...")
-       euler(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot;
+       euler(Val(2), Val(N), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot;
           ArrType=CuArray, tout = 10)
        mpirank == 0 && println()
      end

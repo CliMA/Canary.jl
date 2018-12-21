@@ -632,7 +632,7 @@ function L2energysquared(::Val{dim}, ::Val{N}, Q, vgeo, elems) where {dim, N}
   energy = zero(DFloat)
 
   @inbounds for e = elems, q = 1:nstate, i = 1:Np
-    energy += vgeo[i, _MJ, e] * Q[i, q, e]
+    energy += vgeo[i, _MJ, e] * Q[i, q, e]^2
   end
 
   energy
@@ -771,7 +771,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
       E = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
       E = E .- 300.0
-      writemesh(@sprintf("viz/euler%dD_%s_rank_%04d_step_%05d",
+      writemesh(@sprintf("viz/euler%dD_set3c_%s_rank_%04d_step_%05d",
                          dim, ArrType, mpirank, step), X...;
                 fields=(("ρ", ρ), ("U", U), ("V", V), ("E", E)),
                 realelems=mesh.realelems)
@@ -925,14 +925,16 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
   # Do time stepping
   stats = zeros(DFloat, 2)
   mpirank == 0 && println("[CPU] computing initial energy...")
-  stats[1] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
+  Q_temp=copy(Q)
+  convert_set3c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
+  stats[1] = L2energysquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems)
 
   # plot the initial condition
   mkpath("viz")
   # TODO: Fix VTK for 1-D
-  Q_temp=copy(Q)
-  convert_set3c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
   if dim > 1
+#    Q_temp=copy(Q)
+#    convert_set3c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
     X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
     ρ = reshape((@view Q_temp[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
@@ -940,7 +942,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
     V = reshape((@view Q_temp[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
     E = reshape((@view Q_temp[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
     E = E .- 300.0
-    writemesh(@sprintf("viz/euler%dD_%s_rank_%04d_step_%05d",
+    writemesh(@sprintf("viz/euler%dD_set3c_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, 0), X...;
               fields=(("ρ", ρ), ("U", U), ("V", V), ("E", E)),
               realelems=mesh.realelems)
@@ -951,9 +953,9 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
                vmapM, vmapP, mpicomm, iplot; ArrType=ArrType, plotstep=plotstep)
 
   # TODO: Fix VTK for 1-D
-  Q_temp=copy(Q)
-  convert_set3c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
   if dim > 1
+    Q_temp=copy(Q)
+    convert_set3c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
     X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
     ρ = reshape((@view Q_temp[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
@@ -961,14 +963,14 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
     V = reshape((@view Q_temp[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
     E = reshape((@view Q_temp[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
     E = E .- 300.0
-    writemesh(@sprintf("viz/euler%dD_%s_rank_%04d_step_%05d",
+    writemesh(@sprintf("viz/euler%dD_set3c_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, nsteps), X...;
               fields=(("ρ", ρ), ("U", U), ("V", V), ("E", E)),
               realelems=mesh.realelems)
   end
 
   mpirank == 0 && println("[CPU] computing final energy...")
-  stats[2] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
+  stats[2] = L2energysquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems)
 
   stats = sqrt.(MPI.allreduce(stats, MPI.SUM, mpicomm))
 
@@ -1026,12 +1028,12 @@ function main()
     ρ, U, V, E
   end
 
-  time_final = DFloat(300.0)
+  time_final = DFloat(100.0)
   iplot=100
   Ne = 10
   N  = 4
   dim = 2
-  hardware="gpu"
+  hardware="cpu"
 
   mesh2D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
                       range(DFloat(0); length=Ne+1, stop=1000)),
@@ -1054,5 +1056,4 @@ function main()
   nothing
 end
 # }}}
-
 main()

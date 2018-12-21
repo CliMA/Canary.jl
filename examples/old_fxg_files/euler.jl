@@ -1235,6 +1235,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend;
   # Compute time step
   mpirank == 0 && println("[CPU] computing dt (CPU)...")
   base_dt = cfl(Val(dim), Val(N), vgeo, Q, mpicomm) / N^√2
+  base_dt = 0.02
   mpirank == 0 && @show base_dt
 
   nsteps = ceil(Int64, tend / base_dt)
@@ -1342,7 +1343,7 @@ function main()
     ρ, U, V, W, E
   end
 
-  tend = DFloat(0.1)
+  tend = DFloat(20.0)
   Ne = 10
   N  = 4
 

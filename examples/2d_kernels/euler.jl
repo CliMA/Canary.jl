@@ -793,10 +793,10 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
       W = reshape((@view Q[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
       E = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-      Temp = E ./ ρ .- 300.0
+      E = E ./ ρ .- 300.0
       writemesh(@sprintf("viz/euler%dD_%s_rank_%04d_step_%05d",
                          dim, ArrType, mpirank, step), X...;
-                fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", Temp)),
+                fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)),
                 realelems=mesh.realelems)
     end
   end
@@ -883,10 +883,10 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
     V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
     W = reshape((@view Q[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
     E = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-    Temp = E ./ ρ .- 300.0
+    E = E ./ ρ .- 300.0
     writemesh(@sprintf("viz/euler%dD_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, 0), X...;
-              fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", Temp)),
+              fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)),
               realelems=mesh.realelems)
   end
 
@@ -903,10 +903,10 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
     V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
     W = reshape((@view Q[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
     E = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-    Temp = E ./ ρ .- 300.0
+    E = E ./ ρ .- 300.0
     writemesh(@sprintf("viz/euler%dD_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, nsteps), X...;
-              fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", Temp)),
+              fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)),
               realelems=mesh.realelems)
   end
 
@@ -970,7 +970,7 @@ function main()
     ρ, U, V, W, E
   end
 
-  time_final = DFloat(100.0)
+  time_final = DFloat(20.0)
   iplot=100
   Ne = 10
   N  = 4
