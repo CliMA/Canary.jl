@@ -1032,6 +1032,7 @@ function main()
   N  = 4
   dim = 2
   hardware="cpu"
+  @show (N,Ne,iplot,icase,time_final,hardware)
 
   mesh2D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
                       range(DFloat(0); length=Ne+1, stop=1000)),

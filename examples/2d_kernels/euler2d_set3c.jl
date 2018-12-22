@@ -204,7 +204,7 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
   end
 end
 
-# Face RHS for 2-D
+# Face RHS for 2D
 function facerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM,
                   vmapP, elemtobndy) where N
   DFloat = eltype(Q)
@@ -1034,6 +1034,7 @@ function main()
   N  = 4
   dim = 2
   hardware="cpu"
+  @show (N,Ne,iplot,icase,time_final,hardware)
 
   mesh2D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
                       range(DFloat(0); length=Ne+1, stop=1000)),
