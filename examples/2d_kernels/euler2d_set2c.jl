@@ -992,7 +992,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
 
   # plot the initial condition
   mkpath("viz")
-  # TODO: Fix VTK for 1-D
+  # TODO: Fix VTK for 1D
   if dim > 1
     X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
@@ -1007,11 +1007,12 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
               realelems=mesh.realelems)
   end
 
+  #Call Time-stepping Routine
   mpirank == 0 && println("[DEV] starting time stepper...")
   lowstorageRK(Val(dim), Val(N), mesh, vgeo, sgeo, Q, rhs, D, dt, nsteps, tout,
                vmapM, vmapP, mpicomm, iplot; ArrType=ArrType, plotstep=plotstep)
 
-  # TODO: Fix VTK for 1-D
+  # TODO: Fix VTK for 1D
   if dim > 1
     Q_temp=copy(Q)
     convert_set2c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
@@ -1093,7 +1094,7 @@ function main()
   N  = 4
   dim = 2
   hardware="cpu"
-  @show (N,Ne,iplot,icase,time_final,hardware)
+  @show (N,Ne,iplot,time_final,hardware)
 
   mesh2D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
                       range(DFloat(0); length=Ne+1, stop=1000)),

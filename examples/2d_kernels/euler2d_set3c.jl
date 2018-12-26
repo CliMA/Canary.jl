@@ -1028,13 +1028,13 @@ function main()
     ρ, U, V, E
   end
 
-  time_final = DFloat(100.0)
+  time_final = DFloat(20.0)
   iplot=100
   Ne = 10
   N  = 4
   dim = 2
   hardware="cpu"
-  @show (N,Ne,iplot,icase,time_final,hardware)
+  @show (N,Ne,iplot,time_final,hardware)
 
   mesh2D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
                       range(DFloat(0); length=Ne+1, stop=1000)),
