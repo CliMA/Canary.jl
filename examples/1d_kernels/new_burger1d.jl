@@ -459,7 +459,7 @@ end
 # }}}
 
 # {{{ Send Data
-function SendData(::Val{dim}, ::Val{N}, mesh, sendreq, recvreq, sendQ,
+function senddata(::Val{dim}, ::Val{N}, mesh, sendreq, recvreq, sendQ,
                    recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
                    ArrType=ArrType) where {dim, N}
   DFloat = eltype(d_QL)
@@ -479,7 +479,7 @@ function SendData(::Val{dim}, ::Val{N}, mesh, sendreq, recvreq, sendQ,
   # wait on (prior) MPI sends
   MPI.Waitall!(sendreq)
 
-  # pack data in send buffer
+  # pack data from d_QL into send buffer
   fillsendQ!(Val(dim), Val(N), sendQ, d_sendQ, d_QL, d_sendelems)
 
   # post MPI sends
@@ -491,7 +491,7 @@ end
 # }}}
 
 # {{{ Receive Data
-function ReceiveData(::Val{dim}, ::Val{N}, mesh, recvreq,
+function receivedata!(::Val{dim}, ::Val{N}, mesh, recvreq,
          recvQ, d_recvQ, d_QL) where {dim, N}
   DFloat = eltype(d_QL)
   nrealelem = length(mesh.realelems)
@@ -499,7 +499,7 @@ function ReceiveData(::Val{dim}, ::Val{N}, mesh, recvreq,
   # wait on MPI receives
   MPI.Waitall!(recvreq)
 
-  # copy data to state vectors
+  # copy data to state vector d_QL
   transferrecvQ!(Val(dim), Val(N), d_recvQ, recvQ, d_QL, nrealelem)
 
 end
@@ -575,7 +575,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
         for s = 1:length(RKA)
 
           # Send Data
-          SendData(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
+          senddata(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
                    recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
                    ArrType=ArrType)
 
@@ -583,7 +583,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
           volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, mesh.realelems)
 
           # Receive Data
-          ReceiveData(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_QL)
+          receivedata!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_QL)
 
           # face RHS computation
           fluxrhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
@@ -609,7 +609,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
             X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                                 nelem), dim)
             U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
-            writemesh(@sprintf("viz/burger%dD_%s_rank_%04d_step_%05d",
+            writemesh(@sprintf("viz/new_burger%dD_%s_rank_%04d_step_%05d",
                       dim, ArrType, mpirank, step), X...;
                       fields=(("h", U),("U",U)),realelems=mesh.realelems)
         end
@@ -685,7 +685,7 @@ function burger(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend;
   X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                         nelem), dim)
   U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
-  writemesh(@sprintf("viz/burger%dD_%s_rank_%04d_step_%05d",
+  writemesh(@sprintf("viz/new_burger%dD_%s_rank_%04d_step_%05d",
             dim, ArrType, mpirank, 0), X...;
             fields=(("h", U),("U",U)),realelems=mesh.realelems)
 
@@ -699,7 +699,7 @@ function burger(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend;
   X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
   U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
-  writemesh(@sprintf("viz/burger%dD_%s_rank_%04d_step_%05d",
+  writemesh(@sprintf("viz/new_burger%dD_%s_rank_%04d_step_%05d",
             dim, ArrType, mpirank, nsteps), X...;
             fields=(("h", U),("U",U)),realelems=mesh.realelems)
 
