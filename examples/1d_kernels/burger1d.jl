@@ -56,7 +56,7 @@ function cfl(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
       loc_dt = 0.5*dx/wave_speed/N
       dt[1] = min(dt[1], loc_dt)
   end
-  MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
+  dt_min=MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
 
   #Compute Courant
   @inbounds for e = 1:nelem, n = 1:Np
@@ -67,9 +67,9 @@ function cfl(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
       loc_Courant = wave_speed*dt[1]/dx*N
       Courant[1] = max(Courant[1], loc_Courant)
   end
-  MPI.Allreduce(Courant[1], MPI.MAX, mpicomm)
+  Courant_max=MPI.Allreduce(Courant[1], MPI.MAX, mpicomm)
 
-  (dt[1], Courant[1])
+  (dt_min, Courant_max)
 end
 # }}}
 
@@ -705,18 +705,18 @@ function main()
   #Input Parameters
   N=1
   Ne=80
-  iplot=10
-  time_final=DFloat(0.1)
+  iplot=1
+  time_final=DFloat(0.5)
   hardware="cpu"
   @show (N,Ne,iplot,time_final,hardware)
 
   #Initial Conditions
   function ic(x...)
-    U = sin( 0.5*π*x[1] ) + 0.01
+    U = sin( π*x[1] ) + 0.01
   end
   periodic = (true, )
 
-  mesh = brickmesh((range(DFloat(0); length=Ne+1, stop=2),), periodic; part=mpirank+1, numparts=mpisize)
+  mesh = brickmesh((range(DFloat(0); length=Ne+1, stop=2),), periodic; part=mpirank+1, numparts=mpisize) #code breaks
 
   if hardware == "cpu"
       mpirank == 0 && println("Running (CPU)...")
