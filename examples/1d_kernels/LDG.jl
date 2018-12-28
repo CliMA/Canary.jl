@@ -1,5 +1,5 @@
 #--------------------------------Markdown Language Header-----------------------
-# # 1D Burgers Equation
+# # 1D Diffusion Equation Example
 #
 #
 #-
@@ -7,35 +7,25 @@
 #-
 # ## Introduction
 #
-# This example shows how to solve the 1D Burgers Equation using vanilla DG with LDG.
+# This example shows how to construct a 2nd derivative with DG using LDG.
 #
 # ## Continuous Governing Equations
-# We solve the equation:
+# We discretize the operator:
 #
 # ```math
-#  \frac{\partial q}{\partial t} + \frac{\partial }{\partial x} \left( \frac{1}{2} q^2 \right) = \frac{\partial }{\partial x} \left( \nu  \frac{\partial q }{\partial x} \right) \; \; (1)
+# \frac{\partial^2 q}{\partial x^2}  \; \; (1)
 # ```
-#-
-# ## Discontinous Galerkin Method
-# To solve Eq. (1) we use the discontinuous Galerkin method with Lagrange polynomials based on Lobatto points. Multiplying Eq. (1) by a test function $\psi$ and integrating within each element $\Omega_e$ such that $\Omega = \bigcup_{e=1}^{N_e} \Omega_e$ we get
-#
+# in the following two-step process. First we discretize
 # ```math
-# \int_{\Omega_e} \psi \frac{\partial {q}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Omega_e} \psi  \frac{\partial {f}^{(e)}_N}{\partial x}  d\Omega_e =  \int_{\Omega_e} \psi   \frac{\partial }{\partial x} \left( \nu  \frac{\partial q^{(e)}_N }{\partial x} \right) d\Omega_e \; \; (2)
+# Q = \frac{\partial q}{\partial x}  \; \; (2)
 # ```
-# where ${q}^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) {q}_i(t)$ is the finite dimensional expansion with basis functions $\psi(\mathbf{x})$, where ${f}=\left( \frac{1}{2} q^2 \right)$
-# Integrating Eq. (2) by parts yields
-#
+# followed by
 # ```math
-# \int_{\Omega_e} \psi \frac{\partial {q}^{(e)}_N}{\partial t} d\Omega_e +
-# \int_{\Gamma_e} \psi \mathbf{n} \cdot {f}^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \nabla \psi \cdot {f}^{(e)}_N d\Omega_e
-# = \int_{\Gamma_e} \psi \mathbf{n} \cdot \mathbf{Q}^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \nabla \psi \cdot \mathbf{Q}^{(e)}_N d\Omega_e \; \; (3)
+# \frac{\partial Q}{\partial x} =  \frac{\partial^2 q}{\partial x^2}  \; \; (3)
 # ```
-# where the second term on the left denotes the flux integral term (computed in "function fluxrhs") and the third term on the left denotes the volume integral term (computed in "function volumerhs").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the Rusanov flux.
-# Note that $\mathbf{Q}$ is constructed from the LDG method, which we now describe.
-#
 #-
 # ## Local Discontinous Galerkin (LDG) Method
-# The LDG method allows us to approximate $Q$ as follows
+# Discretizing Eq. (2) we get
 # ```math
 # \int_{\Omega_e} \Psi \cdot \mathbf{Q}^{(e)}_N d\Omega_e = \int_{\Omega_e} \Psi \cdot \nabla q^{(e)}_N d\Omega_e \; \; (4)
 # ```
@@ -374,7 +364,7 @@ function update_gradQ!(::Val{dim}, ::Val{N}, Q, rhs, vgeo, elems) where {dim, N}
     (~, ~, nelem) = size(Q)
 
     @inbounds for e = elems, s = 1:_nstate, i = 1:Nq
-        Q[i, s, e] = rhs[i, s, e] * vgeo[i, _MJI, e]
+        Q[i, s, e] = rhs[i, s, e] * vgeo[i, _MJI, e] / π
     end
 
 end
@@ -740,85 +730,46 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
   d_gradQC = reshape(d_gradQL, Qshape)
   d_rhs_gradQC = reshape(d_rhs_gradQL, Qshape)
 
-  start_time = t1 = time_ns()
-  for step = 1:nsteps
-        for s = 1:length(RKA)
+  # Send Data
+  senddata(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
+           recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
+           ArrType=ArrType)
 
-          #---------------1st Order Operators--------------------------#
-          # Send Data
-          senddata(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
-                   recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
-                   ArrType=ArrType)
+  # Receive Data
+  receivedata!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_QL)
 
-          # volume RHS computation
-          volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, mesh.realelems)
+  # volume Q computation
+  volumeQ!(Val(dim), Val(N), d_rhs_gradQC, d_QC, d_vgeoC, d_D, mesh.realelems)
 
-          # Receive Data
-          receivedata!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_QL)
+  # face Q computation
+  fluxQ!(Val(dim), Val(N), d_rhs_gradQL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
 
-          # face RHS computation
-          fluxrhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
+  # Construct grad Q
+  update_gradQ!(Val(dim), Val(N), d_gradQL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
 
-          #---------------2nd Order Operators--------------------------#
-          if (visc > 0)
-              # volume Q computation
-              volumeQ!(Val(dim), Val(N), d_rhs_gradQC, d_QC, d_vgeoC, d_D, mesh.realelems)
+  # Send Data
+  senddata(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
+           recvQ, d_sendelems, d_sendQ, d_recvQ, d_gradQL,
+           mpicomm;ArrType=ArrType)
 
-              # face Q computation
-              fluxQ!(Val(dim), Val(N), d_rhs_gradQL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
+  # volume grad Q computation
+  volumeQ!(Val(dim), Val(N), d_rhs_gradQC, d_gradQC, d_vgeoC, d_D, mesh.realelems)
 
-              # Construct grad Q
-              update_gradQ!(Val(dim), Val(N), d_gradQL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
+  # Receive Data
+  receivedata!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_gradQL)
 
-              # Send Data
-              senddata(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
-                       recvQ, d_sendelems, d_sendQ, d_recvQ, d_gradQL,
-                       mpicomm;ArrType=ArrType)
+  # face grad Q computation
+  fluxQ!(Val(dim), Val(N), d_rhs_gradQL, d_gradQL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
 
-              # volume grad Q computation
-              volumeQ!(Val(dim), Val(N), d_rhs_gradQC, d_gradQC, d_vgeoC, d_D, mesh.realelems)
-
-              # Receive Data
-              receivedata!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_gradQL)
-
-              # face grad Q computation
-              fluxQ!(Val(dim), Val(N), d_rhs_gradQL, d_gradQL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
-          end
-
-          # update solution and scale RHS
-          updatesolution!(Val(dim), Val(N), d_rhsL, d_rhs_gradQL, d_QL, d_vgeoL, mesh.realelems,
-                          RKA[s%length(RKA)+1], RKB[s], dt, visc)
-        end
-
-        if step == 1
-          @hascuda synchronize()
-          start_time = time_ns()
-        end
-        if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
-          @hascuda synchronize()
-          t1 = time_ns()
-          avg_stage_time = (time_ns() - start_time) * 1e-9 /
-                           ((step-1) * length(RKA))
-          @show (step, nsteps, avg_stage_time)
-        end
-        if plotstep > 0 && step % plotstep == 0
-            Q .= d_QL
-            X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
-                                nelem), dim)
-            U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
-            writemesh(@sprintf("viz/burger%dD_%s_rank_%04d_step_%05d",
-                      dim, ArrType, mpirank, step), X...;
-                      fields=(("h", U),("U",U)),realelems=mesh.realelems)
-        end
-  end
-
+  # Construct grad Q
+  update_gradQ!(Val(dim), Val(N), d_QL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
   Q .= d_QL
   rhs .= d_rhsL
 end
 # }}}
 
-# {{{ BURGER driver
-function burger(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, visc;
+# {{{ LDG driver
+function LDG(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, visc;
              meshwarp=(x...)->identity(x), tout = 60, ArrType=Array,
              plotstep=0) where {dim, N}
   DFloat = typeof(tend)
@@ -858,9 +809,9 @@ function burger(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, visc;
   mpirank == 0 && println("[CPU] computing initial conditions (CPU)...")
   @inbounds for e = 1:nelem, i = 1:(N+1)^dim
     x = vgeo[i, _x, e]
-    U = ic(x)
+    (U, Uexact) = ic(x)
     Q[i, _U, e] = U
-    Qexact[i, _U, e] = U
+    Qexact[i, _U, e] = Uexact
   end
 
   # Compute time step
@@ -883,7 +834,7 @@ function burger(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, visc;
   X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                         nelem), dim)
   U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
-  writemesh(@sprintf("viz/burger%dD_%s_rank_%04d_step_%05d",
+  writemesh(@sprintf("viz/LDG%dD_%s_rank_%04d_step_%05d",
             dim, ArrType, mpirank, 0), X...;
             fields=(("h", U),("U",U)),realelems=mesh.realelems)
 
@@ -897,7 +848,7 @@ function burger(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, visc;
   X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
   U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
-  writemesh(@sprintf("viz/burger%dD_%s_rank_%04d_step_%05d",
+  writemesh(@sprintf("viz/LDG%dD_%s_rank_%04d_step_%05d",
             dim, ArrType, mpirank, nsteps), X...;
             fields=(("h", U),("U",U)),realelems=mesh.realelems)
 
@@ -933,7 +884,7 @@ function main()
 
   #Input Parameters
   N=4
-  Ne=20
+  Ne=10
   visc=0.01
   iplot=10
   time_final=DFloat(1.0)
@@ -942,7 +893,9 @@ function main()
 
   #Initial Conditions
   function ic(x...)
-    U = sin( π*x[1] ) + 0.01
+      U = sin( π*x[1] )
+      Uexact = - sin( π*x[1] ) #2nd derivative
+      (U, Uexact)
   end
   periodic = (true, )
 
@@ -950,13 +903,13 @@ function main()
 
   if hardware == "cpu"
       mpirank == 0 && println("Running (CPU)...")
-      burger(Val(1), Val(N), mpicomm, ic, mesh, time_final, visc;
+      LDG(Val(1), Val(N), mpicomm, ic, mesh, time_final, visc;
           ArrType=Array, tout = 10, plotstep = iplot)
       mpirank == 0 && println()
   elseif hardware == "gpu"
       @hascuda begin
           mpirank == 0 && println("Running (GPU)...")
-          burger(Val(1), Val(N), mpicomm, ic, mesh, time_final, visc;
+          LDG(Val(1), Val(N), mpicomm, ic, mesh, time_final, visc;
               ArrType=CuArray, tout = 10, plotstep = iplot)
           mpirank == 0 && println()
       end
