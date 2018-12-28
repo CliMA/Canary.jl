@@ -53,7 +53,7 @@ function cfl(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
       ξx = vgeo[n, _ξx, e]
       dx=1.0/(2*ξx)
       wave_speed = abs(U)
-      loc_dt = 0.5*dx/wave_speed/N
+      loc_dt = 0.25*dx/wave_speed/N
       dt[1] = min(dt[1], loc_dt)
   end
   dt_min=MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
@@ -146,7 +146,6 @@ function volumerhs!(::Val{1}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
       end
   end
 end
-
 # }}}
 
 # Flux RHS for 1D
@@ -199,16 +198,113 @@ function fluxrhs!(::Val{1}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP,
 end
 # }}}
 
+# {{{ Volume Q
+function volumeQ!(::Val{1}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
+  DFloat = eltype(Q)
+  Nq = N + 1
+  nelem = size(Q)[end]
+
+  Q = reshape(Q, Nq, _nstate, nelem)
+  rhs = reshape(rhs, Nq, _nstate, nelem)
+  vgeo = reshape(vgeo, Nq, _nvgeo, nelem)
+
+  #Initialize RHS vector
+  fill!( rhs, zero(rhs[1]))
+
+  #Allocate Arrays
+  s_F = Array{DFloat}(undef, Nq, _nstate)
+
+  @inbounds for e in elems
+      for i = 1:Nq
+          MJ, ξx = vgeo[i,_MJ,e], vgeo[i,_ξx,e]
+          U = Q[i, _U, e]
+
+          #Get primitive variables
+          U=U
+
+          #Compute fluxes
+          fluxU_x = U
+          s_F[i, _U] = MJ * (ξx * fluxU_x)
+      end
+
+      # loop of ξ-grid lines
+      for s = 1:_nstate, i = 1:Nq, k = 1:Nq
+          rhs[i, s, e] -= D[k, i] * s_F[k, s]
+      end
+  end
+end
+# }}}
+
+# Flux Q
+function fluxQ!(::Val{1}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy) where N
+    DFloat = eltype(Q)
+    Np = (N+1)
+    Nfp = 1
+    nface = 2
+
+    @inbounds for e in elems
+        for f = 1:nface
+            for n = 1:Nfp
+                nxM, sMJ = sgeo[_nx, n, f, e], sgeo[_sMJ, n, f, e]
+                idM, idP = vmapM[n, f, e], vmapP[n, f, e]
+
+                eM, eP = e, ((idP - 1) ÷ Np) + 1
+                vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
+
+                UM = Q[vidM, _U, eM]
+                bc = elemtobndy[f, e]
+                UP = zero(eltype(Q))
+                if bc == 0
+                    UP = Q[vidP, _U, eP]
+                elseif bc == 1
+                    UnM = nxM * UM
+                    UP = UM - 2 * UnM * nxM
+                else
+                    error("Invalid boundary conditions $bc on face $f of element $e")
+                end
+
+                #Left Fluxes
+                fluxUM_x = UM
+
+                #Right Fluxes
+                fluxUP_x = UP
+
+                #Compute Numerical/Rusanov Flux
+                fluxUS = 0.5* (nxM * (fluxUM_x + fluxUP_x))
+
+                #Update RHS
+                rhs[vidM, _U, eM] += sMJ * fluxUS
+            end
+        end
+    end
+end
+# }}}
+
 # {{{ Update solution
-function updatesolution!(::Val{dim}, ::Val{N}, rhs, Q, vgeo, elems, rka, rkb, dt) where {dim, N}
+function updatesolution!(::Val{dim}, ::Val{N}, rhs, rhs_gradQ, Q, vgeo, elems, rka, rkb, dt, visc) where {dim, N}
 
     DFloat = eltype(Q)
     Nq=(N+1)^dim
     (~, ~, nelem) = size(Q)
 
     @inbounds for e = elems, s = 1:_nstate, i = 1:Nq
+        rhs[i, s, e] += visc*rhs_gradQ[i,s,e]
         Q[i, s, e] += rkb * dt * rhs[i, s, e] * vgeo[i, _MJI, e]
         rhs[i, s, e] *= rka
+    end
+
+end
+# }}}
+
+# {{{ Update grad Q solution
+function update_gradQ!(::Val{dim}, ::Val{N}, Q, rhs, vgeo, elems) where {dim, N}
+
+    DFloat = eltype(Q)
+    Nq=(N+1)^dim
+    (~, ~, nelem) = size(Q)
+
+    @inbounds for e = elems, s = 1:_nstate, i = 1:Nq
+        Q[i, s, e] = rhs[i, s, e] * vgeo[i, _MJI, e]
     end
 
 end
@@ -458,9 +554,56 @@ function L2energysquared(::Val{dim}, ::Val{N}, Q, vgeo, elems) where {dim, N}
 end
 # }}}
 
+# {{{ Send Data
+function senddata(::Val{dim}, ::Val{N}, mesh, sendreq, recvreq, sendQ,
+                   recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
+                   ArrType=ArrType) where {dim, N}
+  DFloat = eltype(d_QL)
+  mpirank = MPI.Comm_rank(mpicomm)
+
+  # Create send and recv request array
+  nnabr = length(mesh.nabrtorank)
+  d_sendelems = ArrType(mesh.sendelems)
+  nrealelem = length(mesh.realelems)
+
+  # post MPI receives
+  for n = 1:nnabr
+      recvreq[n] = MPI.Irecv!((@view recvQ[:, :, mesh.nabrtorecv[n]]),
+                   mesh.nabrtorank[n], 777, mpicomm)
+  end
+
+  # wait on (prior) MPI sends
+  MPI.Waitall!(sendreq)
+
+  # pack data from d_QL into send buffer
+  fillsendQ!(Val(dim), Val(N), sendQ, d_sendQ, d_QL, d_sendelems)
+
+  # post MPI sends
+  for n = 1:nnabr
+      sendreq[n] = MPI.Isend((@view sendQ[:, :, mesh.nabrtosend[n]]),
+                   mesh.nabrtorank[n], 777, mpicomm)
+  end
+end
+# }}}
+
+# {{{ Receive Data
+function receivedata!(::Val{dim}, ::Val{N}, mesh, recvreq,
+         recvQ, d_recvQ, d_QL) where {dim, N}
+  DFloat = eltype(d_QL)
+  nrealelem = length(mesh.realelems)
+
+  # wait on MPI receives
+  MPI.Waitall!(recvreq)
+
+  # copy data to state vector d_QL
+  transferrecvQ!(Val(dim), Val(N), d_recvQ, recvQ, d_QL, nrealelem)
+
+end
+# }}}
+
 # {{{ RK loop
 function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
-                      dt, nsteps, tout, vmapM, vmapP, mpicomm;
+                      dt, nsteps, tout, vmapM, vmapP, mpicomm, visc;
                       ArrType=ArrType, plotstep=0) where {dim, N}
   DFloat = eltype(Q)
   mpirank = MPI.Comm_rank(mpicomm)
@@ -515,6 +658,8 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
   d_sendelems, d_elemtobndy = ArrType(mesh.sendelems), ArrType(mesh.elemtobndy)
   d_sendQ, d_recvQ = ArrType(sendQ), ArrType(recvQ)
   d_D = ArrType(D)
+  d_gradQL = ArrType(Q)
+  d_rhs_gradQL = ArrType(rhs)
 
   Qshape    = (fill(N+1, dim)..., size(Q, 2), size(Q, 3))
   vgeoshape = (fill(N+1, dim)..., _nvgeo, size(Q, 3))
@@ -522,44 +667,57 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
   d_QC = reshape(d_QL, Qshape)
   d_rhsC = reshape(d_rhsL, Qshape...)
   d_vgeoC = reshape(d_vgeoL, vgeoshape)
+  d_gradQC = reshape(d_gradQL, Qshape)
+  d_rhs_gradQC = reshape(d_rhs_gradQL, Qshape)
 
   start_time = t1 = time_ns()
   for step = 1:nsteps
         for s = 1:length(RKA)
 
-          # post MPI receives
-          for n = 1:nnabr
-            recvreq[n] = MPI.Irecv!((@view recvQ[:, :, mesh.nabrtorecv[n]]),
-                                    mesh.nabrtorank[n], 777, mpicomm)
-          end
-
-          # wait on (prior) MPI sends
-          MPI.Waitall!(sendreq)
-
-          # pack data in send buffer
-          fillsendQ!(Val(dim), Val(N), sendQ, d_sendQ, d_QL, d_sendelems)
-
-          # post MPI sends
-          for n = 1:nnabr
-            sendreq[n] = MPI.Isend((@view sendQ[:, :, mesh.nabrtosend[n]]),
-                                   mesh.nabrtorank[n], 777, mpicomm)
-          end
+          #---------------1st Order Operators--------------------------#
+          # Send Data
+          senddata(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
+                   recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
+                   ArrType=ArrType)
 
           # volume RHS computation
           volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, mesh.realelems)
 
-          # wait on MPI receives
-          MPI.Waitall!(recvreq)
-
-          # copy data to state vectors
-          transferrecvQ!(Val(dim), Val(N), d_recvQ, recvQ, d_QL, nrealelem)
+          # Receive Data
+          receivedata!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_QL)
 
           # face RHS computation
           fluxrhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
 
+          #---------------2nd Order Operators--------------------------#
+          if (visc > 0)
+              # volume Q computation
+              volumeQ!(Val(dim), Val(N), d_rhs_gradQC, d_QC, d_vgeoC, d_D, mesh.realelems)
+
+              # face Q computation
+              fluxQ!(Val(dim), Val(N), d_rhs_gradQL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
+
+              # Construct grad Q
+              update_gradQ!(Val(dim), Val(N), d_gradQL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
+
+              # Send Data
+              senddata(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
+                       recvQ, d_sendelems, d_sendQ, d_recvQ, d_gradQL,
+                       mpicomm;ArrType=ArrType)
+
+              # volume grad Q computation
+              volumeQ!(Val(dim), Val(N), d_rhs_gradQC, d_gradQC, d_vgeoC, d_D, mesh.realelems)
+
+              # Receive Data
+              receivedata!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_gradQL)
+
+              # face grad Q computation
+              fluxQ!(Val(dim), Val(N), d_rhs_gradQL, d_gradQL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
+          end
+
           # update solution and scale RHS
-          updatesolution!(Val(dim), Val(N), d_rhsL, d_QL, d_vgeoL, mesh.realelems,
-                          RKA[s%length(RKA)+1], RKB[s], dt)
+          updatesolution!(Val(dim), Val(N), d_rhsL, d_rhs_gradQL, d_QL, d_vgeoL, mesh.realelems,
+                          RKA[s%length(RKA)+1], RKB[s], dt, visc)
         end
 
         if step == 1
@@ -590,7 +748,7 @@ end
 # }}}
 
 # {{{ BURGER driver
-function burger(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend;
+function burger(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, visc;
              meshwarp=(x...)->identity(x), tout = 60, ArrType=Array,
              plotstep=0) where {dim, N}
   DFloat = typeof(tend)
@@ -638,6 +796,7 @@ function burger(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend;
   # Compute time step
   mpirank == 0 && println("[CPU] computing dt (CPU)...")
   (base_dt,Courant) = cfl(Val(dim), Val(N), vgeo, Q, mpicomm)
+  base_dt=0.001  #FXG debug
   mpirank == 0 && @show (base_dt,Courant)
 
   nsteps = ceil(Int64, tend / base_dt)
@@ -661,7 +820,7 @@ function burger(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend;
   #Call Time-stepping Routine
   mpirank == 0 && println("[DEV] starting time stepper...")
   lowstorageRK(Val(dim), Val(N), mesh, vgeo, sgeo, Q, rhs, D, dt, nsteps, tout,
-               vmapM, vmapP, mpicomm;
+               vmapM, vmapP, mpicomm, visc;
                ArrType=ArrType, plotstep=plotstep)
 
   # plot final solution
@@ -703,12 +862,13 @@ function main()
   @hascuda device!(mpirank % length(devices()))
 
   #Input Parameters
-  N=1
-  Ne=80
-  iplot=1
-  time_final=DFloat(0.5)
+  N=4
+  Ne=20
+  visc=0.01
+  iplot=10
+  time_final=DFloat(1.0)
   hardware="cpu"
-  @show (N,Ne,iplot,time_final,hardware)
+  @show (N,Ne,visc,iplot,time_final,hardware)
 
   #Initial Conditions
   function ic(x...)
@@ -716,17 +876,17 @@ function main()
   end
   periodic = (true, )
 
-  mesh = brickmesh((range(DFloat(0); length=Ne+1, stop=2),), periodic; part=mpirank+1, numparts=mpisize) #code breaks
+  mesh = brickmesh((range(DFloat(0); length=Ne+1, stop=2),), periodic; part=mpirank+1, numparts=mpisize)
 
   if hardware == "cpu"
       mpirank == 0 && println("Running (CPU)...")
-      burger(Val(1), Val(N), mpicomm, ic, mesh, time_final;
+      burger(Val(1), Val(N), mpicomm, ic, mesh, time_final, visc;
           ArrType=Array, tout = 10, plotstep = iplot)
       mpirank == 0 && println()
   elseif hardware == "gpu"
       @hascuda begin
           mpirank == 0 && println("Running (GPU)...")
-          burger(Val(1), Val(N), mpicomm, ic, mesh, time_final;
+          burger(Val(1), Val(N), mpicomm, ic, mesh, time_final, visc;
               ArrType=CuArray, tout = 10, plotstep = iplot)
           mpirank == 0 && println()
       end
