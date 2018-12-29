@@ -109,8 +109,8 @@ const _nsgeo = 3
 const _nx, _sMJ, _vMJI = 1:_nsgeo
 # }}}
 
-# {{{ cfl
-function cfl(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
+# {{{ courant
+function courantnumber(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
   DFloat = eltype(Q)
   Np = (N+1)^dim
   (~, ~, nelem) = size(Q)
@@ -123,7 +123,7 @@ function cfl(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
       ξx = vgeo[n, _ξx, e]
       dx=1.0/(2*ξx)
       wave_speed = abs(U)
-      loc_dt = 0.25*dx/wave_speed/N
+      loc_dt = 0.5*dx/wave_speed/N
       dt[1] = min(dt[1], loc_dt)
   end
   dt_min=MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
@@ -616,8 +616,8 @@ function L2energysquared(::Val{dim}, ::Val{N}, Q, vgeo, elems) where {dim, N}
 
   energy = zero(DFloat)
 
-  @inbounds for e = elems, q = 1:nstate, i = 1:Np
-    energy += vgeo[i, _MJ, e] * Q[i, q, e]^2
+  @inbounds for e = elems, i = 1:Np
+    energy += vgeo[i, _MJ, e] * Q[i, _U, e]^2
   end
 
   energy
@@ -865,8 +865,7 @@ function burger(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, visc;
 
   # Compute time step
   mpirank == 0 && println("[CPU] computing dt (CPU)...")
-  (base_dt,Courant) = cfl(Val(dim), Val(N), vgeo, Q, mpicomm)
-  base_dt=0.001  #FXG debug
+  (base_dt,Courant) = courantnumber(Val(dim), Val(N), vgeo, Q, mpicomm)
   mpirank == 0 && @show (base_dt,Courant)
 
   nsteps = ceil(Int64, tend / base_dt)
