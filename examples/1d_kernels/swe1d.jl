@@ -117,7 +117,7 @@ function courantnumber(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm, gravity, δnl, ad
         u=U/H
         dx=1.0/(2*ξx)
         wave_speed = ( abs(u) + δ_wave*sqrt(gravity*H)*δnl + gravity*b*(1-δnl) )
-        loc_Courant = wave_speed*dt[1]/dx*N
+        loc_Courant = wave_speed*dt_min/dx*N
         Courant[1] = max(Courant[1], loc_Courant)
     end
     Courant_max=MPI.Allreduce(Courant[1], MPI.MAX, mpicomm)
@@ -297,10 +297,10 @@ function volumeQ!(::Val{1}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
             u=U/H
 
             #Compute fluxes
-            fluxh_x = h
-            fluxU_x = U
-            s_F[i, _h] = MJ * (ξx * fluxh_x)
-            s_F[i, _U] = MJ * (ξx * fluxU_x)
+            fluxh = h
+            fluxU = U
+            s_F[i, _h] = MJ * (ξx * fluxh)
+            s_F[i, _U] = MJ * (ξx * fluxU)
         end
 
         # loop of ξ-grid lines
@@ -351,20 +351,20 @@ function fluxQ!(::Val{1}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, e
                 uP = UP / HP
 
                 #Left Fluxes
-                fluxhM_x = hM
-                fluxUM_x = UM
+                fluxhM = hM
+                fluxUM = UM
 
                 #Right Fluxes
-                fluxhP_x = hP
-                fluxUP_x = UP
+                fluxhP = hP
+                fluxUP = UP
 
                 #Compute Numerical/Rusanov Flux
-                fluxhS = 0.5* (nxM * (fluxhM_x + fluxhP_x))
-                fluxUS = 0.5* (nxM * (fluxUM_x + fluxUP_x))
+                fluxhS = 0.5*(fluxhM + fluxhP)
+                fluxUS = 0.5*(fluxUM + fluxUP)
 
                 #Update RHS
-                rhs[vidM, _h, eM] += sMJ * fluxhS
-                rhs[vidM, _U, eM] += sMJ * fluxUS
+                rhs[vidM, _h, eM] += sMJ * nxM * fluxhS
+                rhs[vidM, _U, eM] += sMJ * nxM * fluxUS
             end
         end
     end
@@ -792,6 +792,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
     d_gradQL = ArrType(Q)
     d_rhs_gradQL = ArrType(rhs)
 
+    #Template Reshape Arrays
     Qshape    = (fill(N+1, dim)..., size(Q, 2), size(Q, 3))
     vgeoshape = (fill(N+1, dim)..., _nvgeo, size(Q, 3))
 
@@ -847,6 +848,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                 fluxQ!(Val(dim), Val(N), d_rhs_gradQL, d_gradQL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
             end
 
+            #---------------Update Solution--------------------------#
             # update solution and scale RHS
             updatesolution!(Val(dim), Val(N), d_rhsL, d_QL, d_rhs_gradQL, d_vgeoL, mesh.realelems,
                             RKA[s%length(RKA)+1], RKB[s], dt, advection, visc)

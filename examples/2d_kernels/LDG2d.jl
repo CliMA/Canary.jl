@@ -61,7 +61,7 @@ function courantnumber(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm, gravity, δnl, ad
         dx=sqrt( (1.0/(2*ξx))^2 + (1.0/(2*ηy))^2 )
         vel=sqrt( u^2 + v^2 )
         wave_speed = (vel + δ_wave*sqrt(gravity*H)*δnl + gravity*b*(1-δnl))
-        loc_dt = 0.5*dx/wave_speed/N
+        loc_dt = 1.0*dx/wave_speed/N
         dt[1] = min(dt[1], loc_dt)
     end
     dt_min=MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
@@ -128,7 +128,7 @@ end
 # }}}
 
 # {{{ CPU Kernels
-# {{{ Volume RHS
+# {{{ Volume RHS for 2D
 function volumerhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems, gravity, δnl) where {dim, N}
     DFloat = eltype(Q)
     Nq = N + 1
@@ -185,7 +185,7 @@ end
 
 # }}}
 
-# Flux RHS
+# Flux RHS for 2D
 function fluxrhs!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy, gravity, δnl) where {dim, N}
     DFloat = eltype(Q)
     Np = (N+1)^dim
@@ -333,6 +333,61 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
 end
 # }}}
 
+# {{{ Volume div(grad(Q))
+function volume_div!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where {dim, N}
+    DFloat = eltype(Q)
+    Nq = N + 1
+    nelem = size(Q)[end]
+
+    Q = reshape(Q, Nq, Nq, _nstate, dim, nelem)
+    rhs = reshape(rhs, Nq, Nq, _nstate, dim, nelem)
+    vgeo = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
+
+    #Initialize RHS vector
+    fill!( rhs, zero(rhs[1]))
+
+    #Allocate Arrays
+    s_F = Array{DFloat}(undef, Nq, Nq, _nstate-1)
+    s_G = Array{DFloat}(undef, Nq, Nq, _nstate-1)
+
+    @inbounds for e in elems
+        for j = 1:Nq, i = 1:Nq
+            MJ = vgeo[i, j, _MJ, e]
+            ξx, ξy = vgeo[i,j,_ξx,e], vgeo[i,j,_ξy,e]
+            ηx, ηy = vgeo[i,j,_ηx,e], vgeo[i,j,_ηy,e]
+            hx, hy = Q[i, j, _h, 1, e], Q[i, j, _h, 2, e]
+            Ux, Uy = Q[i, j, _U, 1, e], Q[i, j, _U, 2, e]
+            Vx, Vy = Q[i, j, _V, 1, e], Q[i, j, _V, 2, e]
+
+            #Compute fluxes
+            fluxh_x = hx
+            fluxh_y = hy
+            fluxU_x = Ux
+            fluxU_y = Uy
+            fluxV_x = Vx
+            fluxV_y = Vy
+
+            s_F[i, j, _h] = MJ * (ξx * fluxh_x + ξy * fluxh_y)
+            s_F[i, j, _U] = MJ * (ξx * fluxU_x + ξy * fluxU_y)
+            s_F[i, j, _V] = MJ * (ξx * fluxV_x + ξy * fluxV_y)
+
+            s_G[i, j, _h] = MJ * (ηx * fluxh_x + ηy * fluxh_y)
+            s_G[i, j, _U] = MJ * (ηx * fluxU_x + ηy * fluxU_y)
+            s_G[i, j, _V] = MJ * (ηx * fluxV_x + ηy * fluxV_y)
+        end
+
+        # loop of ξ-grid lines
+        for s = 1:_nstate-1, j = 1:Nq, i = 1:Nq, n = 1:Nq
+            rhs[i, j, s, 1, e] -= D[n, i] * s_F[n, j, s]
+        end
+        # loop of η-grid lines
+        for s = 1:_nstate-1, j = 1:Nq, i = 1:Nq, n = 1:Nq
+            rhs[i, j, s, 1, e] -= D[n, j] * s_G[i, n, s]
+        end
+    end
+end
+# }}}
+
 # Flux grad(Q)
 function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy) where {dim, N}
     Np = (N+1)^dim
@@ -404,62 +459,7 @@ function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vm
 end
 # }}}
 
-# {{{ Volume div(grad(Q))
-function volume_div!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where {dim, N}
-    DFloat = eltype(Q)
-    Nq = N + 1
-    nelem = size(Q)[end]
-
-    Q = reshape(Q, Nq, Nq, _nstate, dim, nelem)
-    rhs = reshape(rhs, Nq, Nq, _nstate, dim, nelem)
-    vgeo = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
-
-    #Initialize RHS vector
-    fill!( rhs, zero(rhs[1]))
-
-    #Allocate Arrays
-    s_F = Array{DFloat}(undef, Nq, Nq, _nstate-1)
-    s_G = Array{DFloat}(undef, Nq, Nq, _nstate-1)
-
-    @inbounds for e in elems
-        for j = 1:Nq, i = 1:Nq
-            MJ = vgeo[i, j, _MJ, e]
-            ξx, ξy = vgeo[i,j,_ξx,e], vgeo[i,j,_ξy,e]
-            ηx, ηy = vgeo[i,j,_ηx,e], vgeo[i,j,_ηy,e]
-            hx, hy = Q[i, j, _h, 1, e], Q[i, j, _h, 2, e]
-            Ux, Uy = Q[i, j, _U, 1, e], Q[i, j, _U, 2, e]
-            Vx, Vy = Q[i, j, _V, 1, e], Q[i, j, _V, 2, e]
-
-            #Compute fluxes
-            fluxh_x = hx
-            fluxh_y = hy
-            fluxU_x = Ux
-            fluxU_y = Uy
-            fluxV_x = Vx
-            fluxV_y = Vy
-
-            s_F[i, j, _h] = MJ * (ξx * fluxh_x + ξy * fluxh_y)
-            s_F[i, j, _U] = MJ * (ξx * fluxU_x + ξy * fluxU_y)
-            s_F[i, j, _V] = MJ * (ξx * fluxV_x + ξy * fluxV_y)
-
-            s_G[i, j, _h] = MJ * (ηx * fluxh_x + ηy * fluxh_y)
-            s_G[i, j, _U] = MJ * (ηx * fluxU_x + ηy * fluxU_y)
-            s_G[i, j, _V] = MJ * (ηx * fluxV_x + ηy * fluxV_y)
-        end
-
-        # loop of ξ-grid lines
-        for s = 1:_nstate-1, j = 1:Nq, i = 1:Nq, n = 1:Nq
-            rhs[i, j, s, 1, e] -= D[n, i] * s_F[n, j, s]
-        end
-        # loop of η-grid lines
-        for s = 1:_nstate-1, j = 1:Nq, i = 1:Nq, n = 1:Nq
-            rhs[i, j, s, 1, e] -= D[n, j] * s_G[i, n, s]
-        end
-    end
-end
-# }}}
-
-# Flux div(grad(Q))
+# Flux div( grad(Q) )
 function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy) where {dim, N}
     Np = (N+1)^dim
     Nfp = (N+1)^(dim-1)
@@ -599,6 +599,7 @@ end
 # {{{ GPU kernels
 # {{{ Volume RHS for 2D
 @hascuda function knl_volumerhs!(::Val{2}, ::Val{N}, rhs, Q, vgeo, D, nelem, gravity, δnl) where N
+
     DFloat = eltype(D)
     Nq = N + 1
 
@@ -878,14 +879,11 @@ end
 function L2errorsquared(::Val{dim}, ::Val{N}, Q, vgeo, elems, Qex, t) where {dim, N}
     DFloat = eltype(Q)
     Np = (N+1)^dim
-    (~, nstate, nelem) = size(Q)
-
     err = zero(DFloat)
 
     @inbounds for e = elems, i = 1:Np
         X = ntuple(j -> vgeo[i, _x-1+j, e] - Q[i, _U-1+j, e]*t, Val(dim))
         diff = Q[i, _h, e] - Qex[i, _h, e]
-
         err += vgeo[i, _MJ, e] * diff^2
     end
 
@@ -982,7 +980,6 @@ function receivedata_Q!(::Val{dim}, ::Val{N}, mesh, recvreq, recvQ,
     MPI.Waitall!(recvreq)
 
     # copy data to state vector d_QL
-    #transferrecvQ!(Val(dim), Val(N), d_recvQ, recvQ, d_QL, nrealelem)
     d_QL[:, :, nrealelem+1:end] .= recvQ[:, :, :]
 
 end
@@ -997,7 +994,6 @@ function receivedata_gradQ!(::Val{dim}, ::Val{N}, mesh, recvreq, recvQ,
     MPI.Waitall!(recvreq)
 
     # copy data to state vector d_QL
-    #transferrecvQ!(Val(dim), Val(N), d_recvQ, recvQ, d_QL, nrealelem)
     d_QL[:, :, :, nrealelem+1:end] .= recvQ[:, :, :, :]
 end
 # }}}
@@ -1081,92 +1077,48 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
     d_gradQC = reshape(d_gradQL, gradQshape)
     d_rhs_gradQC = reshape(d_rhs_gradQL, gradQshape...)
 
-    # Begin Time Loop
-    start_time = t1 = time_ns()
-    for step = 1:nsteps
-        for s = 1:length(RKA)
+    # Send Data Q
+    senddata_Q(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
+             recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
+             ArrType=ArrType)
 
-            #---------------1st Order Operators--------------------------#
-            # Send Data Q
-            senddata_Q(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
-                       recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
-                       ArrType=ArrType)
+    # Receive Data Q
+    receivedata_Q!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_QL)
 
-            # volume RHS computation
-            volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, mesh.realelems, gravity, δnl)
+    # volume grad Q computation
+    volume_grad!(Val(dim), Val(N), d_rhs_gradQC, d_QC, d_vgeoC, d_D, mesh.realelems)
 
-            # Receive Data Q
-            receivedata_Q!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_QL)
+    # face grad Q computation
+    flux_grad!(Val(dim), Val(N), d_rhs_gradQL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
 
-            # face RHS computation
-            fluxrhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy, gravity, δnl)
+    # Construct grad Q
+    update_gradQ!(Val(dim), Val(N), d_gradQL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
 
-            #---------------2nd Order Operators--------------------------#
-            if (visc > 0)
-                # volume grad Q computation
-                volume_grad!(Val(dim), Val(N), d_rhs_gradQC, d_QC, d_vgeoC, d_D, mesh.realelems)
+    # Send Data grad(Q)
+    senddata_gradQ(Val(dim), Val(N), mesh, sendreq, recvreq, sendgradQ,
+                   recvgradQ, d_sendelems, d_sendgradQ, d_recvgradQ,
+                   d_gradQL, mpicomm;ArrType=ArrType)
 
-                # face grad Q computation
-                flux_grad!(Val(dim), Val(N), d_rhs_gradQL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
+    # volume div (grad Q) computation
+    volume_div!(Val(dim), Val(N), d_rhs_gradQC, d_gradQC, d_vgeoC, d_D, mesh.realelems)
 
-                # Construct grad Q
-                update_gradQ!(Val(dim), Val(N), d_gradQL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
+    # Receive Data grad(Q)
+    receivedata_gradQ!(Val(dim), Val(N), mesh, recvreq, recvgradQ, d_recvgradQ, d_gradQL)
 
-                # Send Data grad(Q)
-                senddata_gradQ(Val(dim), Val(N), mesh, sendreq, recvreq, sendgradQ,
-                               recvgradQ, d_sendelems, d_sendgradQ, d_recvgradQ,
-                               d_gradQL, mpicomm;ArrType=ArrType)
+    # face div (grad Q) computation
+    flux_div!(Val(dim), Val(N), d_rhs_gradQL, d_gradQL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
 
-                # volume div (grad Q) computation
-                volume_div!(Val(dim), Val(N), d_rhs_gradQC, d_gradQC, d_vgeoC, d_D, mesh.realelems)
+    # Construct grad Q
+    update_divgradQ!(Val(dim), Val(N), d_QL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
 
-                # Receive Data grad(Q)
-                receivedata_gradQ!(Val(dim), Val(N), mesh, recvreq, recvgradQ, d_recvgradQ, d_gradQL)
-
-                # face div (grad Q) computation
-                flux_div!(Val(dim), Val(N), d_rhs_gradQL, d_gradQL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
-            end
-
-            #---------------Update Solution--------------------------#
-            # update solution and scale RHS
-            updatesolution!(Val(dim), Val(N), d_rhsL, d_rhs_gradQL, d_QL, d_vgeoL, mesh.realelems,
-                            RKA[s%length(RKA)+1], RKB[s], dt, advection, visc)
-        end
-        if step == 1
-            @hascuda synchronize()
-            start_time = time_ns()
-        end
-        if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
-            @hascuda synchronize()
-            t1 = time_ns()
-            avg_stage_time = (time_ns() - start_time) * 1e-9 /
-            ((step-1) * length(RKA))
-            @show (step, nsteps, avg_stage_time)
-        end
-        # Write VTK file
-        if plotstep > 0 && step % plotstep == 0
-            Q .= d_QL
-            X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
-                                  nelem), dim)
-            h = reshape((@view Q[:, _h, :]), ntuple(j->(N+1),dim)..., nelem)
-            b = reshape((@view Q[:, _b, :]), ntuple(j->(N+1),dim)..., nelem)
-            U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
-            V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
-
-            writemesh(@sprintf("viz/swe%dD_%s_rank_%04d_step_%05d",
-                               dim, ArrType, mpirank, step), X...;
-                      fields=(("h", h),("b",b),("U",U),("V",V),),
-                      realelems=mesh.realelems)
-        end
-    end
-
-Q .= d_QL
-rhs .= d_rhsL
+    Q .= d_QL
+#    Q[:, :, :] .= d_rhs_gradQL[:, :, 1, :]
+    rhs .= d_rhsL
 end
 # }}}
 
-# {{{ SWE driver
-function swe(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, gravity, δnl,
+# {{{ LDG driver
+function LDG(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, gravity, δnl,
              advection, visc; meshwarp=(x...)->identity(x), tout = 60, ArrType=Array,
              plotstep=0) where {dim, N}
     DFloat = typeof(tend)
@@ -1206,20 +1158,22 @@ function swe(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, gravity, δnl,
     mpirank == 0 && println("[CPU] computing initial conditions (CPU)...")
     @inbounds for e = 1:nelem, i = 1:(N+1)^dim
         x, y = vgeo[i, _x, e], vgeo[i, _y, e]
-        h, b, U, V = ic(x, y)
+        h, hexact = ic(x, y)
         Q[i, _h, e] = h
-        Q[i, _b, e] = b
-        Q[i, _U, e] = U
-        Q[i, _V, e] = V
-        Qexact[i, _h, e] = h
-        Qexact[i, _b, e] = b
-        Qexact[i, _U, e] = U
-        Qexact[i, _V, e] = V
+        Q[i, _b, e] = h
+        Q[i, _U, e] = h
+        Q[i, _V, e] = h
+        Qexact[i, _h, e] = hexact
+        Qexact[i, _b, e] = hexact
+        Qexact[i, _U, e] = hexact
+        Qexact[i, _V, e] = hexact
     end
 
     # Compute time step
     mpirank == 0 && println("[CPU] computing dt (CPU)...")
-    (base_dt, Courant) = courantnumber(Val(dim), Val(N), vgeo, Q, mpicomm, gravity, δnl, advection)
+    #(base_dt, Courant) = courantnumber(Val(dim), Val(N), vgeo, Q, mpicomm, gravity, δnl, advection)
+    base_dt=0.01
+    Courant=1.0
     mpirank == 0 && @show (base_dt,Courant)
 
     nsteps = ceil(Int64, tend / base_dt)
@@ -1237,9 +1191,9 @@ function swe(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, gravity, δnl,
                           nelem), dim)
     h = reshape((@view Q[:, _h, :]), ntuple(j->(N+1),dim)..., nelem)
     b = reshape((@view Q[:, _b, :]), ntuple(j->(N+1),dim)..., nelem)
-    U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
-    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
-    writemesh(@sprintf("viz/swe%dD_%s_rank_%04d_step_%05d",
+    U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
+    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
+    writemesh(@sprintf("viz/LDG%dD_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, 0), X...;
               fields=(("h", h),("b",b),("U",U),("V",V),),
               realelems=mesh.realelems)
@@ -1255,9 +1209,9 @@ function swe(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, gravity, δnl,
                           nelem), dim)
     h = reshape((@view Q[:, _h, :]), ntuple(j->(N+1),dim)..., nelem)
     b = reshape((@view Q[:, _b, :]), ntuple(j->(N+1),dim)..., nelem)
-    U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
-    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem) ./ (h.+b)
-    writemesh(@sprintf("viz/swe%dD_%s_rank_%04d_step_%05d",
+    U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
+    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
+    writemesh(@sprintf("viz/LDG%dD_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, nsteps), X...;
               fields=(("h", h),("b",b),("U",U),("V",V),),
               realelems=mesh.realelems)
@@ -1297,8 +1251,8 @@ function main()
     Ne=10
     visc=0.01
     iplot=10
-    δnl=1
-    icase=20
+    δnl=0
+    icase=10
     time_final=DFloat(0.32)
     hardware="cpu"
     @show (N,Ne,iplot,δnl,icase,time_final,hardware)
@@ -1323,31 +1277,15 @@ function main()
         function ic10(x...)
             r = sqrt( (x[1]-0.5)^2 + (x[2]-0.5)^2 )
             h = 0.5 * exp(-100.0 * r^2)
-            b=1.0
-            H = h + b
-            U = H*(0.0)
-            V = H*(0.0)
-            h, b, U, V
+            h = sin( π*x[1] )*sin( π*x[2] )
+            h_x = cos( π*x[1] )*sin( π*x[2] )
+            h_y = sin( π*x[1] )*cos( π*x[2] )
+            h_xx = -sin( π*x[1] )*sin( π*x[2] )
+            h_yy = -sin( π*x[1] )*sin( π*x[2] )
+            hexact=0.5*( h_xx + h_yy )
+            h, hexact
         end
         ic = ic10
-        periodic = (true, true)
-        advection = false
-        gravity = 10
-    elseif icase == 20 #shallow water with Periodic BCs
-        function ic20(x...)
-            r = sqrt( (x[1]-0.5)^2 + (x[2]-0.5)^2 )
-            rc=0.25
-            h=0
-            if (r<=rc)
-                h = 0.25
-            end
-            b=1.0
-            H = h + b
-            U = H*(0.0)
-            V = H*(0.0)
-            h, b, U, V
-        end
-        ic = ic20
         periodic = (true, true)
         advection = false
         gravity = 10
@@ -1367,19 +1305,19 @@ function main()
         gravity = 10
     end
 
-    mesh = brickmesh((range(DFloat(0); length=Ne+1, stop=1),
-                      range(DFloat(0); length=Ne+1, stop=1)),
+    mesh = brickmesh((range(DFloat(0); length=Ne+1, stop=2),
+                      range(DFloat(0); length=Ne+1, stop=2)),
                      periodic; part=mpirank+1, numparts=mpisize)
 
     if hardware == "cpu"
         mpirank == 0 && println("Running (CPU)...")
-        swe(Val(2), Val(N), mpicomm, ic, mesh, time_final, gravity, δnl, advection, visc;
+        LDG(Val(2), Val(N), mpicomm, ic, mesh, time_final, gravity, δnl, advection, visc;
             ArrType=Array, tout = 10, plotstep = iplot)
         mpirank == 0 && println()
     elseif hardware == "gpu"
         @hascuda begin
             mpirank == 0 && println("Running (GPU)...")
-            swe(Val(2), Val(N), mpicomm, ic, mesh, time_final, gravity, δnl, advection, visc;
+            LDG(Val(2), Val(N), mpicomm, ic, mesh, time_final, gravity, δnl, advection, visc;
                 ArrType=CuArray, tout = 10, plotstep = iplot)
             mpirank == 0 && println()
         end

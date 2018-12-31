@@ -293,8 +293,8 @@ function volumeQ!(::Val{1}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
             U=U
 
             #Compute fluxes
-            fluxU_x = U
-            s_F[i, _U] = MJ * (ξx * fluxU_x)
+            fluxU = U
+            s_F[i, _U] = MJ * (ξx * fluxU)
         end
 
         # loop of ξ-grid lines
@@ -334,16 +334,16 @@ function fluxQ!(::Val{1}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, e
                 end
 
                 #Left Fluxes
-                fluxUM_x = UM
+                fluxUM = UM
 
                 #Right Fluxes
-                fluxUP_x = UP
+                fluxUP = UP
 
                 #Compute Numerical/Rusanov Flux
-                fluxUS = 0.5* (nxM * (fluxUM_x + fluxUP_x))
+                fluxUS = 0.5*(fluxUM + fluxUP)
 
                 #Update RHS
-                rhs[vidM, _U, eM] += sMJ * fluxUS
+                rhs[vidM, _U, eM] += sMJ * nxM * fluxUS
             end
         end
     end
@@ -933,8 +933,8 @@ function main()
     @hascuda device!(mpirank % length(devices()))
 
     #Input Parameters
-    N=4
-    Ne=20
+    N=8
+    Ne=10
     visc=0.01
     iplot=10
     time_final=DFloat(1.0)
