@@ -27,33 +27,26 @@
 # ## Local Discontinous Galerkin (LDG) Method
 # Discretizing Eq. (2) we get
 # ```math
-# \int_{\Omega_e} \Psi \cdot \mathbf{Q}^{(e)}_N d\Omega_e = \int_{\Omega_e} \Psi \cdot \nabla q^{(e)}_N d\Omega_e \; \; (4)
+# \int_{\Omega_e} \psi {Q}^{(e)}_N d\Omega_e = \int_{\Omega_e} \psi \frac{\partial q^{(e)}_N}{\partial x} d\Omega_e \; \; (4)
 # ```
-# where $q^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) q_i$ and  $\mathbf{Q}^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) \mathbf{Q}_i$ are the finite dimensional expansion with basis functions $\psi(\mathbf{x})$ and $\Psi$ is the block diagonal tensor with blocks comprised of $\psi$ as follows
-# ```math
-# \Psi = \left(\begin{array}{cc}
-# \psi & 0 \\
-# 0 &\psi
-# \end{array}
-# \right)
-# ```
+# where $q^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) q_i$ and  ${Q}^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) {Q}_i$ are the finite dimensional expansion with basis functions $\psi(x)$.
 # Integrating Eq. (4) by parts yields
 #
 # ```math
-# \int_{\Omega_e} \Psi \cdit \mathbf{Q}^{(e)}_N d\Omega_e = \int_{\Gamma_e} \left( \mathbf{n} \cdot \Psi \right) q^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \left( \nabla \cdot \Psi \right) q^{(e)}_N d\Omega_e \; \; (5)
+# \int_{\Omega_e} \psi {Q}^{(e)}_N d\Omega_e = \left[ \psi q^{(*,e)}_N \right]_{\Gamma_e} - \int_{\Omega_e} \frac{\partial \psi}{\partial x} q^{(e)}_N d\Omega_e \; \; (5)
 # ```
 #
-# where the first term on the right denotes the flux integral term (computed in "function fluxQ") and the second term on the rightdenotes the volume integral term (computed in "function volumeQ").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the average flux. In matrix form, Eq. (5) becomes
+# where the first term on the right denotes the flux integral term (computed in "function fluxQ") and the second term on the right denotes the volume integral term (computed in "function volumeQ").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the average flux. In matrix form, Eq. (5) becomes
 # ```math
-# M^{(e)}_{i,j} Q^{(e)}_j = \mathbf{F}_{i,j} q^{(*,e)}_j - \widetilde{\mathbf{D}}^{(e)} q^{(e)}_j \; \; (6)
+# M^{(e)}_{i,j} Q^{(e)}_j = {F}_{i,j} q^{(*,e)}_j - \widetilde{{D}}^{(e)} q^{(e)}_j \; \; (6)
 # ```
 #
 # Next, integrating Eq. (3) by parts gives a similar form to Eq. (6) as follows
 # ```math
-# M^{(e)}_{i,j} \frac{\partial^2 q^{(e)}_j}{\partial x^2} = \mathbf{F}_{i,j} Q^{(*,e)}_j - \widetilde{\mathbf{D}}^{(e)} Q^{(e)}_j \; \; (7)
+# M^{(e)}_{i,j} \frac{\partial^2 q^{(e)}_j}{\partial x^2} = {F}_{i,j} Q^{(*,e)}_j - \widetilde{{D}}^{(e)} Q^{(e)}_j \; \; (7)
 # ```
 #
-# Since we use the average flux for both $q$ and $Q$, we can reuse the same functions to construct $\mathbf{F}$ and $\widetilde{\mathbf{D}}$.
+# Since we use the average flux for both $q$ and $Q$, we can reuse the same functions to construct ${F}$ and $\widetilde{{D}}$ in both Eqs.\ (6) and (7).  However, this will not be the case in multiple dimensions since Eq.\ (6) represents a gradient operator while Eq.\ (7) represents a divergence operator.
 #-
 # ## Commented Program
 #

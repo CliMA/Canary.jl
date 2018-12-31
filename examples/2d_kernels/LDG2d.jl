@@ -1,3 +1,63 @@
+#--------------------------------Markdown Language Header-----------------------
+# # 1D Diffusion Equation Example
+#
+#
+#-
+#
+#-
+# ## Introduction
+#
+# This example shows how to construct a 2nd derivative with DG using LDG.
+#
+# ## Continuous Governing Equations
+# We discretize the operator:
+#
+# ```math
+# \nabla^2 q(x,y) \; \; (1)
+# ```
+# in the following two-step process. First we discretize
+# ```math
+# \mathbf{Q}(x,y) = \nabla q(x,y) \; \; (2)
+# ```
+# followed by
+# ```math
+# \nabla \cdot \mathbf{Q} (x,y) =  \nabla^2 q(x,y) \; \; (3)
+# ```
+#-
+# ## Local Discontinous Galerkin (LDG) Method
+# Discretizing Eq.\ (2) we get
+# ```math
+# \int_{\Omega_e} \mathbf{\Psi} \cdot \mathbf{Q}^{(e)}_N d\Omega_e = \int_{\Omega_e} \mathbf{\Psi} \cdot \nabla q^{(e)}_N d\Omega_e \; \; (4)
+# ```
+# where $q^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) q_i$ and  $\mathbf{Q}^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) \mathbf{Q}_i$ are the finite dimensional expansion with basis functions $\psi(\mathbf{x})$ and $\mathbf{\Psi}$ is the block diagonal tensor with blocks comprised of $\psi$ as follows
+# ```math
+# \mathbf{\Psi} = \left(\begin{array}{cc}
+# \psi & 0 \\
+# 0 &\psi
+# \end{array}
+# \right)
+# ```
+# Integrating Eq.\ (4) by parts yields
+#
+# ```math
+# \int_{\Omega_e} \mathbf{\Psi} \cdot \mathbf{Q}^{(e)}_N d\Omega_e = \int_{\Gamma_e} \left( \mathbf{n} \cdot \mathbf{\Psi} \right) q^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \left( \nabla \cdot \mathbf{\Psi} \right) q^{(e)}_N d\Omega_e \; \; (5)
+# ```
+#
+# Equation (5) represents the approximation of the gradient operator on the variable $q$ where the first term on the right denotes the flux integral term (computed in "function flux_grad") and the second term on the right denotes the volume integral term (computed in "function volume_grad").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the average flux. In matrix form, Eq.\ (5) becomes
+# ```math
+# M^{(e)}_{i,j} \mathbf{Q}^{(e)}_j = \mathbf{F}_{i,j} q^{(*,e)}_j - \widetilde{\mathbf{D}}^{(e)} q^{(e)}_j \; \; (6)
+# ```
+#
+# Next, integrating Eq.\ (3) by parts gives a similar form to Eq.\ (6) as follows
+# ```math
+# M^{(e)}_{i,j} \left( \nabla^2 q^{(e)} \right)_j = \mathbf{F}_{i,j}^T \mathbf{Q}^{(*,e)}_j - \widetilde{\mathbf{D}}^{(e)}^T \mathbf{Q}^{(e)}_j \; \; (7)
+# ```
+#
+# Equation (7) represents the approximation of the divergence operator on the vector $\mathbf{Q}$ where the first term on the right denotes the flux integral (computed in "function volume_dv") and the second term on the right denotes the volume integral term (computed in "function volume_div").
+#-
+# ## Commented Program
+#
+#--------------------------------Markdown Language Header-----------------------
 include(joinpath(@__DIR__,"vtk.jl"))
 using MPI
 using Canary
@@ -1112,7 +1172,6 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
     update_divgradQ!(Val(dim), Val(N), d_QL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
 
     Q .= d_QL
-#    Q[:, :, :] .= d_rhs_gradQL[:, :, 1, :]
     rhs .= d_rhsL
 end
 # }}}

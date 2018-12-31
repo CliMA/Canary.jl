@@ -1,3 +1,60 @@
+#--------------------------------Markdown Language Header-----------------------
+# # 2D Shallow Water Equations
+#
+#
+#-
+#
+#-
+# ## Introduction
+#
+# This example shows how to solve the 2D shallow water equations using vanilla DG.
+#
+# ## Continuous Governing Equations
+# We solve the following equation:
+#
+# ```math
+# \frac{\partial h_s}{\partial t} + \nabla \cdot \mathbf{U} = \nu \nabla^2 h_s \; \; (1.1)
+# ```
+# ```math
+# \frac{\partial \mathbf{U}}{\partial t} + \nabla \cdot \left( \frac{\mathbf{U} \otimes \mathbf{U}}{h} + g (h^2 - h^2_b) \mathbf{I}_2 \right) + h_s \nabla h_b = \nu \nabla^2 \mathbf{U} \; \; (1.2)
+# ```
+# where $\mathbf{u}=(u)$ and $\mathbf{U}=h \mathbf{u}$, with $h=h_s(\mathbf{x},t) + h_b(\mathbf{x})$ being the total water column with $h_s$ and $h_b$ being the height of the water surface and depth of the bathymetry (which we assume to be constant for simplicity), respectively, measured from a zero mean sea-level.  In addition, $\nu$ is the artificial viscosity parameter. We employ periodic or no-flux boundary conditions.
+#
+#-
+# ## Discontinous Galerkin Method
+# To solve Eq.\ (1) we use the discontinuous Galerkin method with basis functions comprised of Lagrange polynomials based on Lobatto points. Multiplying Eq.\ (1) by a test function $\psi$ and integrating within each element $\Omega_e$ such that $\Omega = \bigcup_{e=1}^{N_e} \Omega_e$ we get
+#
+# ```math
+# \int_{\Omega_e} \psi \frac{\partial \mathbf{q}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Omega_e} \psi \nabla \cdot \mathbf{f}^{(e)}_N d\Omega_e =  \int_{\Omega_e} \psi S\left( q^{(e)}_N} \right) d\Omega_e \; \; (2)
+# ```
+# where $\mathbf{q}^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) \mathbf{q}_i(t)$ is the finite dimensional expansion with basis functions $\psi(\mathbf{x})$, where $\mathbf{q}=\left( h, \mathbf{U}^T \right)^T$ and
+# ```math
+# \mathbf{f}=\left( \mathbf{U}, \frac{\mathbf{U} \otimes \mathbf{U}}{h} + g (h^2 - h^2_b) \mathbf{I}_2 \right).
+# ```
+# Integrating Eq.\ (2) by parts yields
+#
+# ```math
+# \int_{\Omega_e} \psi \frac{\partial \mathbf{q}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Gamma_e} \psi \mathbf{n} \cdot \mathbf{f}^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \nabla \psi \cdot \mathbf{f}^{(e)}_N d\Omega_e = \int_{\Omega_e} \psi S\left( q^{(e)}_N} \right) d\Omega_e \; \; (3)
+# ```
+#
+# where the second term on the left denotes the flux integral term (computed in "function fluxrhs") and the third term denotes the volume integral term (computed in "function volumerhs").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the Rusanov flux.
+#
+#-
+# ## Local Discontinous Galerkin Method
+# To approximate the second order terms on the right hand side of Eq.\ (1) we use the local discontinuous Galerkin (LDG) method, which we described in LDG2d.jl. We will highlight the main steps below for completeness. The operator $\nabla^2$ is approximated by the following two-step process: first we approximate the gradient of $q$ as follows
+# ```math
+# \mathbf{Q}(x,y) = \nabla q(x,y) \; \; (2)
+# ```
+# where $\mathbf{Q}$ is an auxiliary vector function, followed by
+# ```math
+# \nabla \cdot \mathbf{Q} (x,y) =  \nabla^2 q(x,y) \; \; (3)
+# ```
+# which represents the Laplacian of $q$.
+#
+#-
+# ## Commented Program
+#
+#--------------------------------Markdown Language Header-----------------------
 include(joinpath(@__DIR__,"vtk.jl"))
 using MPI
 using Canary
@@ -541,8 +598,8 @@ function update_gradQ!(::Val{dim}, ::Val{N}, Q, rhs, vgeo, elems) where {dim, N}
     Nq=(N+1)^dim
 
     @inbounds for e = elems, s = 1:_nstate-1, i = 1:Nq
-        Q[i, s, 1, e] = rhs[i, s, 1, e] * vgeo[i, _MJI, e] / π
-        Q[i, s, 2, e] = rhs[i, s, 2, e] * vgeo[i, _MJI, e] / π
+        Q[i, s, 1, e] = rhs[i, s, 1, e] * vgeo[i, _MJI, e]
+        Q[i, s, 2, e] = rhs[i, s, 2, e] * vgeo[i, _MJI, e]
     end
 
 end
@@ -554,7 +611,7 @@ function update_divgradQ!(::Val{dim}, ::Val{N}, Q, rhs, vgeo, elems) where {dim,
     Nq=(N+1)^dim
 
     @inbounds for e = elems, s = 1:_nstate-1, i = 1:Nq
-        Q[i, s, e] = rhs[i, s, 1, e] * vgeo[i, _MJI, e] / (2*π)
+        Q[i, s, e] = rhs[i, s, 1, e] * vgeo[i, _MJI, e]
     end
 
 end
@@ -1048,6 +1105,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
     # Create send and recv buffer
     sendQ = zeros(DFloat, (N+1)^dim, size(Q,2), length(mesh.sendelems))
     recvQ = zeros(DFloat, (N+1)^dim, size(Q,2), length(mesh.ghostelems))
+    # Create send and recv LDG buffer
     sendgradQ = zeros(DFloat, (N+1)^dim, size(Q,2), dim, length(mesh.sendelems))
     recvgradQ = zeros(DFloat, (N+1)^dim, size(Q,2), dim, length(mesh.ghostelems))
 
@@ -1078,6 +1136,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
     d_QC = reshape(d_QL, Qshape)
     d_rhsC = reshape(d_rhsL, Qshape...)
     d_vgeoC = reshape(d_vgeoL, vgeoshape)
+    #Reshape Device LDG Arrays
     d_gradQC = reshape(d_gradQL, gradQshape)
     d_rhs_gradQC = reshape(d_rhs_gradQL, gradQshape...)
 
@@ -1159,7 +1218,6 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                       realelems=mesh.realelems)
         end
     end
-
 Q .= d_QL
 rhs .= d_rhsL
 end
@@ -1282,7 +1340,7 @@ end
 function main()
     DFloat = Float64
 
-    MPI.Initialized() ||MPI.Init()
+    MPI.Initialized() || MPI.Init()
     MPI.finalize_atexit()
 
     mpicomm = MPI.COMM_WORLD
@@ -1301,7 +1359,9 @@ function main()
     icase=20
     time_final=DFloat(0.32)
     hardware="cpu"
-    @show (N,Ne,iplot,δnl,icase,time_final,hardware)
+    if mpirank == 0
+        @show (N,Ne,visc,iplot,δnl,icase,time_final,hardware,mpisize)
+    end
 
     #Initial Conditions
     ic = (x...) -> (0.0, 0.0, 0.0, 0.0)
