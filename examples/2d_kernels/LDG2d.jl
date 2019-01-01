@@ -1,5 +1,5 @@
 #--------------------------------Markdown Language Header-----------------------
-# # 1D Diffusion Equation Example
+# # 2D Diffusion Equation Example
 #
 #
 #-
@@ -250,7 +250,7 @@ function fluxrhs!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmap
     DFloat = eltype(Q)
     Np = (N+1)^dim
     Nfp = (N+1)^(dim-1)
-    nface = 2^dim
+    nface = 2*dim
 
     @inbounds for e in elems
         for f = 1:nface
@@ -452,7 +452,7 @@ end
 function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy) where {dim, N}
     Np = (N+1)^dim
     Nfp = (N+1)^(dim-1)
-    nface = 2^dim
+    nface = 2*dim
 
     @inbounds for e in elems
         for f = 1:nface
@@ -523,7 +523,7 @@ end
 function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy) where {dim, N}
     Np = (N+1)^dim
     Nfp = (N+1)^(dim-1)
-    nface = 2^dim
+    nface = 2*dim
 
     @inbounds for e in elems
         for f = 1:nface
@@ -1171,8 +1171,8 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
     # Construct grad Q
     update_divgradQ!(Val(dim), Val(N), d_QL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
 
-    Q .= d_QL
-    rhs .= d_rhsL
+    Q[:,:,:]=d_gradQL[:,:,1,:] #1st derivatives
+#    Q .= d_QL #2nd derivatives
 end
 # }}}
 
@@ -1342,6 +1342,7 @@ function main()
             h_xx = -sin( π*x[1] )*sin( π*x[2] )
             h_yy = -sin( π*x[1] )*sin( π*x[2] )
             hexact=0.5*( h_xx + h_yy )
+            hexact=h_x
             h, hexact
         end
         ic = ic10

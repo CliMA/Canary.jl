@@ -1,5 +1,5 @@
 #--------------------------------Markdown Language Header-----------------------
-# # 3D Euler Equations Based on Total Energy
+# # 3D Diffusion Equation Example
 #
 #
 #-
@@ -7,58 +7,54 @@
 #-
 # ## Introduction
 #
-# This example shows how to solve the 3D Euler equations using vanilla DG.
+# This example shows how to construct a 2nd derivative with DG using LDG.
 #
 # ## Continuous Governing Equations
-# We solve the following equation:
+# We discretize the operator:
 #
 # ```math
-# \frac{\partial \rho}{\partial t} + \nabla \cdot \mathbf{U} = \nu \nabla^2 \rho \; \; (1.1)
+# \nabla^2 q(x,y,z) \; \; (1)
 # ```
+# in the following two-step process. First we discretize
 # ```math
-# \frac{\partial \mathbf{U}}{\partial t} + \nabla \cdot \left( \frac{\mathbf{U} \otimes \mathbf{U}}{\rho} + P \mathbf{I}_2 \right) + \rho g \hat{\mathbf{k}}= \nu \nabla^2 \mathbf{U} \; \; (1.2)
+# \mathbf{Q}(x,y,z) = \nabla q(x,y,z) \; \; (2)
 # ```
+# followed by
 # ```math
-# \frac{\partial E}{\partial t} + \nabla \cdot \left( \frac{\mathbf{U} \left(E+P \right)}{\rho} \right = \nu \nabla^2 E \; \; (1.3)
+# \nabla \cdot \mathbf{Q} (x,y,z) =  \nabla^2 q(x,y,z) \; \; (3)
 # ```
-# where $\mathbf{u}=(u,v,w)$ is the velocity, $\mathbf{U}=\rho \mathbf{u}$, is the momentum, with $\rho$ being the total density and $E=(\gamma-1) \rho \left( c_v T + \frac{1}{2} \mathbf{u} \cdot \mathbf{u} + g z \right)$ is the total energy (internal $+$ kinetic $+$ potential).
-# In addition, $\nu$ is the artificial viscosity parameter. We employ periodic boundary conditions in the x-y directions and no-flux boundary conditions in the z-direction.
-#
 #-
-# ## Discontinous Galerkin Method
-# To solve Eq.\ (1) we use the discontinuous Galerkin method with basis functions comprised of Lagrange polynomials based on Lobatto points. Multiplying Eq.\ (1) by a test function $\psi$ and integrating within each element $\Omega_e$ such that $\Omega = \bigcup_{e=1}^{N_e} \Omega_e$ we get
+# ## Local Discontinous Galerkin (LDG) Method
+# Discretizing Eq.\ (2) we get
+# ```math
+# \int_{\Omega_e} \mathbf{\Psi} \cdot \mathbf{Q}^{(e)}_N d\Omega_e = \int_{\Omega_e} \mathbf{\Psi} \cdot \nabla q^{(e)}_N d\Omega_e \; \; (4)
+# ```
+# where $q^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) q_i$ and  $\mathbf{Q}^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) \mathbf{Q}_i$ are the finite dimensional expansion with basis functions $\psi(\mathbf{x})$ and $\mathbf{\Psi}$ is the block diagonal tensor with blocks comprised of $\psi$ as follows
+# ```math
+# \mathbf{\Psi} = \left(\begin{array}{ccc}
+# \psi & 0 & 0 \\
+# 0 & \psi & 0 \\
+# 0 & 0 & \psi
+# \end{array}
+# \right)
+# ```
+# Integrating Eq.\ (4) by parts yields
 #
 # ```math
-# \int_{\Omega_e} \psi \frac{\partial \mathbf{q}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Omega_e} \psi \nabla \cdot \mathbf{F}^{(e)}_N d\Omega_e =  \int_{\Omega_e} \psi S\left( q^{(e)}_N} \right) d\Omega_e \; \; (2)
-# ```
-# where $\mathbf{q}^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) \mathbf{q}_i(t)$ is the finite dimensional expansion with basis functions $\psi(\mathbf{x})$, where $\mathbf{q}=\left( \rho, \mathbf{U}^T, E \right)^T$,
-# ```math
-# \mathbf{F}=\left( \mathbf{U}, \frac{\mathbf{U} \otimes \mathbf{U}}{\rho} + P \mathbf{I}_2,   \frac{\mathbf{U} \left(E+P \right)}{\rho} \right).
-# ```
-# and
-# ```math
-#  S\left( q^{(e)}_N} \right)  = \nu \left( \nabla^2 \rho, \nabla^2 \mathbf{U}, \nabla^2 E \right).
-# ```
-# Integrating Eq.\ (2) by parts yields
-#
-# ```math
-# \int_{\Omega_e} \psi \frac{\partial \mathbf{q}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Gamma_e} \psi \mathbf{n} \cdot \mathbf{F}^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \nabla \psi \cdot \mathbf{F}^{(e)}_N d\Omega_e = \int_{\Omega_e} \psi S\left( q^{(e)}_N} \right) d\Omega_e \; \; (3)
+# \int_{\Omega_e} \mathbf{\Psi} \cdot \mathbf{Q}^{(e)}_N d\Omega_e = \int_{\Gamma_e} \left( \mathbf{n} \cdot \mathbf{\Psi} \right) q^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \left( \nabla \cdot \mathbf{\Psi} \right) q^{(e)}_N d\Omega_e \; \; (5)
 # ```
 #
-# where the second term on the left denotes the flux integral term (computed in "function fluxrhs") and the third term denotes the volume integral term (computed in "function volumerhs").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the Rusanov flux.
-#
-#-
-# ## Local Discontinous Galerkin Method
-# To approximate the second order terms on the right hand side of Eq.\ (1) we use the local discontinuous Galerkin (LDG) method, which we described in \texttt{LDG3d.jl}. We will highlight the main steps below for completeness. The operator $\nabla^2$ is approximated by the following two-step process: first we approximate the gradient of $q$ as follows
+# Equation (5) represents the approximation of the gradient operator on the variable $q$ where the first term on the right denotes the flux integral term (computed in "function flux_grad") and the second term on the right denotes the volume integral term (computed in "function volume_grad").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the average flux. In matrix form, Eq.\ (5) becomes
 # ```math
-# \mathbf{Q}(x,y,z) = \nabla \vc{q}(x,y,z) \; \; (2)
+# M^{(e)}_{i,j} \mathbf{Q}^{(e)}_j = \mathbf{F}_{i,j} q^{(*,e)}_j - \widetilde{\mathbf{D}}^{(e)} q^{(e)}_j \; \; (6)
 # ```
-# where $\mathbf{Q}$ is an auxiliary vector function, followed by
-# ```math
-# \nabla \cdot \mathbf{Q} (x,y,z) =  \nabla^2 \vc{q}(x,y,z) \; \; (3)
-# ```
-# which represents the Laplacian of $\vc{q}$.
 #
+# Next, integrating Eq.\ (3) by parts gives a similar form to Eq.\ (6) as follows
+# ```math
+# M^{(e)}_{i,j} \left( \nabla^2 q^{(e)} \right)_j = \mathbf{F}_{i,j}^T \mathbf{Q}^{(*,e)}_j - \widetilde{\mathbf{D}}^{(e)}^T \mathbf{Q}^{(e)}_j \; \; (7)
+# ```
+#
+# Equation (7) represents the approximation of the divergence operator on the vector $\mathbf{Q}$ where the first term on the right denotes the flux integral (computed in "function volume_dv") and the second term on the right denotes the volume integral term (computed in "function volume_div").
 #-
 # ## Commented Program
 #
@@ -482,7 +478,6 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
             ξx, ξy, ξz = vgeo[i,j,k,_ξx,e], vgeo[i,j,k,_ξy,e], vgeo[i,j,k,_ξz,e]
             ηx, ηy, ηz = vgeo[i,j,k,_ηx,e], vgeo[i,j,k,_ηy,e], vgeo[i,j,k,_ηz,e]
             ζx, ζy, ζz = vgeo[i,j,k,_ζx,e], vgeo[i,j,k,_ζy,e], vgeo[i,j,k,_ζz,e]
-            z = vgeo[i,j,k,_z,e]
 
             U, V, W = Q[i, j, k, _U, e], Q[i, j, k, _V, e], Q[i, j, k, _W, e]
             ρ, E = Q[i, j, k, _ρ, e], Q[i, j, k, _E, e]
@@ -838,9 +833,9 @@ function update_gradQ!(::Val{dim}, ::Val{N}, Q, rhs, vgeo, elems) where {dim, N}
     Nq=(N+1)^dim
 
     @inbounds for e = elems, s = 1:_nstate, i = 1:Nq
-        Q[i, s, 1, e] = rhs[i, s, 1, e] * vgeo[i, _MJI, e]
-        Q[i, s, 2, e] = rhs[i, s, 2, e] * vgeo[i, _MJI, e]
-        Q[i, s, 3, e] = rhs[i, s, 3, e] * vgeo[i, _MJI, e]
+        Q[i, s, 1, e] = rhs[i, s, 1, e] * vgeo[i, _MJI, e] /π
+        Q[i, s, 2, e] = rhs[i, s, 2, e] * vgeo[i, _MJI, e] /π
+        Q[i, s, 3, e] = rhs[i, s, 3, e] * vgeo[i, _MJI, e] /π
     end
 
 end
@@ -852,7 +847,7 @@ function update_divgradQ!(::Val{dim}, ::Val{N}, Q, rhs, vgeo, elems) where {dim,
     Nq=(N+1)^dim
 
     @inbounds for e = elems, s = 1:_nstate, i = 1:Nq
-        Q[i, s, e] = rhs[i, s, 1, e] * vgeo[i, _MJI, e]
+        Q[i, s, e] = rhs[i, s, 1, e] * vgeo[i, _MJI, e] /(3*π)
     end
 
 end
@@ -1248,16 +1243,30 @@ end
 end
 # }}}
 
+# {{{ L2 Error (for all dimensions)
+function L2errorsquared(::Val{dim}, ::Val{N}, Q, vgeo, elems, Qex, t) where {dim, N}
+    DFloat = eltype(Q)
+    Np = (N+1)^dim
+    err = zero(DFloat)
+
+    @inbounds for e = elems, s=1:_nstate, i = 1:Np
+        diff = Q[i, s, e] - Qex[i, s, e]
+        err += vgeo[i, _MJ, e] * diff^2
+    end
+
+    err
+end
+# }}}
+
 # {{{ L2 Energy (for all dimensions)
 function L2energysquared(::Val{dim}, ::Val{N}, Q, vgeo, elems) where {dim, N}
     DFloat = eltype(Q)
     Np = (N+1)^dim
     (~, nstate, nelem) = size(Q)
-
     energy = zero(DFloat)
 
-    @inbounds for e = elems, q = 1:nstate, i = 1:Np
-        energy += vgeo[i, _MJ, e] * Q[i, q, e]^2
+    @inbounds for e = elems, s=1:_nstate, i = 1:Np
+        energy += vgeo[i, _MJ, e] * Q[i, s, e]^2
     end
 
     energy
@@ -1437,91 +1446,42 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
     d_gradQC = reshape(d_gradQL, gradQshape)
     d_rhs_gradQC = reshape(d_rhs_gradQL, gradQshape...)
 
-    start_time = t1 = time_ns()
-    for step = 1:nsteps
-        for s = 1:length(RKA)
+    # Send Data Q
+    senddata_Q(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
+               recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
+               ArrType=ArrType)
 
-            #---------------1st Order Operators--------------------------#
-            # Send Data Q
-            senddata_Q(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
-                       recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
-                       ArrType=ArrType)
+    # Receive Data Q
+    receivedata_Q!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_QL)
 
-            # volume RHS computation
-            volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, mesh.realelems)
+    # volume grad Q computation
+    volume_grad!(Val(dim), Val(N), d_rhs_gradQC, d_QC, d_vgeoC, d_D, mesh.realelems)
 
-            # Receive Data Q
-            receivedata_Q!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_QL)
+    # flux grad Q computation
+    flux_grad!(Val(dim), Val(N), d_rhs_gradQL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
 
-            # face RHS computation
-            fluxrhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, d_vgeoL, mesh.realelems, d_vmapM,
-                     d_vmapP, d_elemtobndy)
+    # Construct grad Q
+    update_gradQ!(Val(dim), Val(N), d_gradQL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
 
-            #---------------2nd Order Operators--------------------------#
-            if (visc > 0)
-                # volume grad Q computation
-                volume_grad!(Val(dim), Val(N), d_rhs_gradQC, d_QC, d_vgeoC, d_D, mesh.realelems)
+    # Send Data grad(Q)
+    senddata_gradQ(Val(dim), Val(N), mesh, sendreq, recvreq, sendgradQ,
+                   recvgradQ, d_sendelems, d_sendgradQ, d_recvgradQ,
+                   d_gradQL, mpicomm;ArrType=ArrType)
 
-                # flux grad Q computation
-                flux_grad!(Val(dim), Val(N), d_rhs_gradQL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
+    # volume div(grad Q) computation
+    volume_div!(Val(dim), Val(N), d_rhs_gradQC, d_gradQC, d_vgeoC, d_D, mesh.realelems)
 
-                # Construct grad Q
-                update_gradQ!(Val(dim), Val(N), d_gradQL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
+    # Receive Data grad(Q)
+    receivedata_gradQ!(Val(dim), Val(N), mesh, recvreq, recvgradQ, d_recvgradQ, d_gradQL)
 
-                # Send Data grad(Q)
-                senddata_gradQ(Val(dim), Val(N), mesh, sendreq, recvreq, sendgradQ,
-                               recvgradQ, d_sendelems, d_sendgradQ, d_recvgradQ,
-                               d_gradQL, mpicomm;ArrType=ArrType)
+    # flux div(grad Q) computation
+    flux_div!(Val(dim), Val(N), d_rhs_gradQL, d_gradQL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
 
-                # volume div(grad Q) computation
-                volume_div!(Val(dim), Val(N), d_rhs_gradQC, d_gradQC, d_vgeoC, d_D, mesh.realelems)
+    # Construct grad Q
+    update_divgradQ!(Val(dim), Val(N), d_QL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
 
-                # Receive Data grad(Q)
-                receivedata_gradQ!(Val(dim), Val(N), mesh, recvreq, recvgradQ, d_recvgradQ, d_gradQL)
-
-                # flux div(grad Q) computation
-                flux_div!(Val(dim), Val(N), d_rhs_gradQL, d_gradQL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
-            end
-
-            #---------------Update Solution--------------------------#
-            # update solution and scale RHS
-            updatesolution!(Val(dim), Val(N), d_rhsL, d_rhs_gradQL, d_QL, d_vgeoL, mesh.realelems,
-                            RKA[s%length(RKA)+1], RKB[s], dt, visc)
-        end
-        if step == 1
-            @hascuda synchronize()
-            start_time = time_ns()
-        end
-        if mpirank == 0 && (time_ns() - t1)*1e-9 > tout
-            @hascuda synchronize()
-            t1 = time_ns()
-            avg_stage_time = (time_ns() - start_time) * 1e-9 / ((step-1) * length(RKA))
-            @show (step, nsteps, avg_stage_time)
-        end
-        # Write VTK file
-        if mod(step,iplot) == 0
-            Q .= d_QL
-            convert_set3c_to_set2nc(Val(dim), Val(N), vgeo, Q)
-            X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
-                                  nelem), dim)
-            ρ = reshape((@view Q[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
-            U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
-            V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
-            W = reshape((@view Q[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
-            E = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-            E = E .- 300.0
-            writemesh(@sprintf("viz/euler%dD_set3c_%s_rank_%04d_step_%05d",
-                               dim, ArrType, mpirank, step), X...;
-                      fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)),
-                      realelems=mesh.realelems)
-        end
-    end
-if mpirank == 0
-    avg_stage_time = (time_ns() - start_time) * 1e-9 / ((nsteps-1) * length(RKA))
-    @show (nsteps, avg_stage_time)
-end
-Q .= d_QL
-rhs .= d_rhsL
+    #Q[:,:,:]= d_gradQL[:,:,3,:] #1st derivative
+    Q .= d_QL #2nd derivative
 end
 # }}}
 
@@ -1679,8 +1639,8 @@ function convert_set4c_to_set2nc(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
 end
 # }}}
 
-# {{{ euler driver
-function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
+# {{{ LDG driver
+function LDG(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
                meshwarp=(x...)->identity(x),
                tout = 1, ArrType=Array, plotstep=0) where {dim, N}
     DFloat = typeof(tend)
@@ -1713,28 +1673,33 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
     # Storage for the solution, rhs, and error
     mpirank == 0 && println("[CPU] creating fields (CPU)...")
     Q = zeros(DFloat, (N+1)^dim, _nstate, nelem)
+    Qexact = zeros(DFloat, (N+1)^dim, _nstate, nelem)
     rhs = zeros(DFloat, (N+1)^dim, _nstate, nelem)
 
     # setup the initial condition
     mpirank == 0 && println("[CPU] computing initial conditions (CPU)...")
     @inbounds for e = 1:nelem, i = 1:(N+1)^dim
         x, y, z = vgeo[i, _x, e], vgeo[i, _y, e], vgeo[i, _z, e]
-        ρ, U, V, W, E = ic(x, y, z)
-        Q[i, _ρ, e] = ρ
-        Q[i, _U, e] = U
-        Q[i, _V, e] = V
-        Q[i, _W, e] = W
-        Q[i, _E, e] = E
+        h, hexact = ic(x, y, z)
+        Q[i, _ρ, e] = h
+        Q[i, _U, e] = h
+        Q[i, _V, e] = h
+        Q[i, _W, e] = h
+        Q[i, _E, e] = h
+        Qexact[i, _ρ, e] = hexact
+        Qexact[i, _U, e] = hexact
+        Qexact[i, _V, e] = hexact
+        Qexact[i, _W, e] = hexact
+        Qexact[i, _E, e] = hexact
     end
 
     # Convert to proper variables
     mpirank == 0 && println("[CPU] converting variables (CPU)...")
-    convert_set2nc_to_set3c(Val(dim), Val(N), vgeo, Q)
 
     # Compute time step
     mpirank == 0 && println("[CPU] computing dt (CPU)...")
-    (base_dt, Courant) = courantnumber(Val(dim), Val(N), vgeo, Q, mpicomm)
     base_dt=0.02
+    Courant= 1.0
     mpirank == 0 && @show (base_dt, Courant)
 
     nsteps = ceil(Int64, tend / base_dt)
@@ -1742,10 +1707,9 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
     mpirank == 0 && @show (dt, nsteps, dt * nsteps, tend)
 
     # Do time stepping
-    stats = zeros(DFloat, 2)
+    stats = zeros(DFloat, 3)
     mpirank == 0 && println("[CPU] computing initial energy...")
     Q_temp=copy(Q)
-    convert_set3c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
     stats[1] = L2energysquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems)
     @show (sqrt.(stats[1]))
 
@@ -1758,8 +1722,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
     V = reshape((@view Q_temp[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
     W = reshape((@view Q_temp[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
     E = reshape((@view Q_temp[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-    E = E .- 300.0
-    writemesh(@sprintf("viz/euler%dD_set3c_%s_rank_%04d_step_%05d",
+    writemesh(@sprintf("viz/LDG%dD_set3c_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, 0), X...;
               fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)),
               realelems=mesh.realelems)
@@ -1770,7 +1733,6 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
 
     # Write VTK: final solution
     Q_temp=copy(Q)
-    convert_set3c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
     X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
     ρ = reshape((@view Q_temp[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
@@ -1778,14 +1740,14 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
     V = reshape((@view Q_temp[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
     W = reshape((@view Q_temp[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
     E = reshape((@view Q_temp[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-    E = E .- 300.0
-    writemesh(@sprintf("viz/euler%dD_set3c_%s_rank_%04d_step_%05d",
+    writemesh(@sprintf("viz/LDG%dD_set3c_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, nsteps), X...;
               fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)),
               realelems=mesh.realelems)
 
     mpirank == 0 && println("[CPU] computing final energy...")
     stats[2] = L2energysquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems)
+    stats[3] = L2errorsquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems, Qexact,tend)
 
     stats = sqrt.(MPI.allreduce(stats, MPI.SUM, mpicomm))
 
@@ -1823,6 +1785,7 @@ function main()
         c_v::DFloat     = _c_v
         gravity::DFloat = _gravity
 
+        #=
         u0 = 0
         r = sqrt((x[1]-500)^2 + (x[dim]-350)^2 )
         rc = 250.0
@@ -1842,32 +1805,59 @@ function main()
         W = 0.0
         E = θ_k
         ρ, U, V, W, E
+        =#
+
+        #xy-plane
+        h = sin( π*x[1] )*sin( π*x[2] )
+        h_x = cos( π*x[1] )*sin( π*x[2] )
+        h_y = sin( π*x[1] )*cos( π*x[2] )
+        h_xx = -sin( π*x[1] )*sin( π*x[2] )
+        h_yy = -sin( π*x[1] )*sin( π*x[2] )
+
+        #xz-plane
+        h = sin( π*x[1] )*sin( π*x[3] )
+        h_x = cos( π*x[1] )*sin( π*x[3] )
+        h_z = sin( π*x[1] )*cos( π*x[3] )
+        h_xx = -sin( π*x[1] )*sin( π*x[3] )
+        h_zz = -sin( π*x[1] )*sin( π*x[3] )
+
+        #xyz-space
+        h = sin( π*x[1] )*sin( π*x[2] )*sin( π*x[3] )
+        h_x = cos( π*x[1] )*sin( π*x[2] )*sin( π*x[3] )
+        h_y = sin( π*x[1] )*cos( π*x[2] )*sin( π*x[3] )
+        h_z = sin( π*x[1] )*sin( π*x[2] )*cos( π*x[3] )
+        h_xx = -sin( π*x[1] )*sin( π*x[2] )*sin( π*x[3] )
+        h_yy = -sin( π*x[1] )*sin( π*x[2] )*sin( π*x[3] )
+        h_zz = -sin( π*x[1] )*sin( π*x[2] )*sin( π*x[3] )
+
+        hexact=(h_xx + h_yy + h_zz)/3.0
+        h, hexact
     end
 
-    time_final = DFloat(100.0)
+    time_final = DFloat(10.0)
     iplot=100
     Ne = 10
     N  = 4
-    visc = 1.0
+    visc = 0.0
     dim = 3
     hardware="cpu"
     @show (N,Ne,visc,iplot,time_final,hardware,mpisize)
 
-    mesh3D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
-                        range(DFloat(0); length=2, stop=1000),
-                        range(DFloat(0); length=Ne+1, stop=1000)),
-                       (true, true, false),
+    mesh3D = brickmesh((range(DFloat(0); length=Ne+1, stop=2),
+                        range(DFloat(0); length=Ne+1, stop=2),
+                        range(DFloat(0); length=Ne+1, stop=2)),
+                       (true, true, true),
                        part=mpirank+1, numparts=mpisize)
 
     if hardware == "cpu"
         mpirank == 0 && println("Running 3d (CPU)...")
-        euler(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh3D, time_final, iplot, visc;
+        LDG(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh3D, time_final, iplot, visc;
               ArrType=Array, tout = 10)
         mpirank == 0 && println()
     elseif hardware == "gpu"
         @hascuda begin
             mpirank == 0 && println("Running 3d (GPU)...")
-            euler(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh3D, time_final, iplot, visc;
+            LDG(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh3D, time_final, iplot, visc;
                   ArrType=CuArray, tout = 10)
             mpirank == 0 && println()
         end

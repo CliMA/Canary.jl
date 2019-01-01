@@ -247,7 +247,7 @@ function fluxrhs!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmap
     DFloat = eltype(Q)
     Np = (N+1)^dim
     Nfp = (N+1)^(dim-1)
-    nface = 2^dim
+    nface = 2*dim
 
     @inbounds for e in elems
         for f = 1:nface
@@ -394,7 +394,7 @@ end
 function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy) where {dim, N}
     Np = (N+1)^dim
     Nfp = (N+1)^(dim-1)
-    nface = 2^dim
+    nface = 2*dim
 
     @inbounds for e in elems
         for f = 1:nface
@@ -520,7 +520,7 @@ end
 function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy) where {dim, N}
     Np = (N+1)^dim
     Nfp = (N+1)^(dim-1)
-    nface = 2^dim
+    nface = 2*dim
 
     @inbounds for e in elems
         for f = 1:nface
@@ -1353,7 +1353,7 @@ function main()
     #Input Parameters
     N=8
     Ne=10
-    visc=0.01
+    visc=0.001
     iplot=10
     δnl=1
     icase=20

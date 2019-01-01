@@ -151,7 +151,6 @@ function courantnumber(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
     #Compute Courant
     @inbounds for e = 1:nelem, n = 1:Np
         ρ, U, V, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
-        P = p0 * (R_gas * E / p0)^(c_p / c_v)
         ξx, ξy, ηx, ηy = vgeo[n, _ξx, e], vgeo[n, _ξy, e], vgeo[n, _ηx, e], vgeo[n, _ηy, e]
         y = vgeo[n, _y, e]
         P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
@@ -280,8 +279,8 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
 end
 
 # Flux RHS
-function fluxrhs!(::Val{2}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM,
-                  vmapP, elemtobndy) where N
+function fluxrhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM,
+                  vmapP, elemtobndy) where {dim, N}
     DFloat = eltype(Q)
     γ::DFloat       = _γ
     p0::DFloat      = _p0
@@ -290,9 +289,9 @@ function fluxrhs!(::Val{2}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM,
     c_v::DFloat     = _c_v
     gravity::DFloat = _gravity
 
-    Np = (N+1)^2
-    Nfp = N+1
-    nface = 4
+    Np = (N+1)^dim
+    Nfp = N+1^(dim-1)
+    nface = 2*dim
 
     @inbounds for e in elems
         for f = 1:nface
@@ -409,23 +408,15 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
             fluxV = V
             fluxE = E
 
-            s_F[i, j, _ρ, 1] = MJ * (ξx * fluxρ)
-            s_F[i, j, _ρ, 2] = MJ * (ξy * fluxρ)
-            s_F[i, j, _U, 1] = MJ * (ξx * fluxU)
-            s_F[i, j, _U, 2] = MJ * (ξy * fluxU)
-            s_F[i, j, _V, 1] = MJ * (ξx * fluxV)
-            s_F[i, j, _V, 2] = MJ * (ξy * fluxV)
-            s_F[i, j, _E, 1] = MJ * (ξx * fluxE)
-            s_F[i, j, _E, 2] = MJ * (ξy * fluxE)
+            s_F[i, j, _ρ, 1], s_F[i, j, _ρ, 2] = MJ * (ξx * fluxρ), MJ * (ξy * fluxρ)
+            s_F[i, j, _U, 1], s_F[i, j, _U, 2] = MJ * (ξx * fluxU), MJ * (ξy * fluxU)
+            s_F[i, j, _V, 1], s_F[i, j, _V, 2] = MJ * (ξx * fluxV), MJ * (ξy * fluxV)
+            s_F[i, j, _E, 1], s_F[i, j, _E, 2] = MJ * (ξx * fluxE), MJ * (ξy * fluxE)
 
-            s_G[i, j, _ρ, 1] = MJ * (ηx * fluxρ)
-            s_G[i, j, _ρ, 2] = MJ * (ηy * fluxρ)
-            s_G[i, j, _U, 1] = MJ * (ηx * fluxU)
-            s_G[i, j, _U, 2] = MJ * (ηy * fluxU)
-            s_G[i, j, _V, 1] = MJ * (ηx * fluxV)
-            s_G[i, j, _V, 2] = MJ * (ηy * fluxV)
-            s_G[i, j, _E, 1] = MJ * (ηx * fluxE)
-            s_G[i, j, _E, 2] = MJ * (ηy * fluxE)
+            s_G[i, j, _ρ, 1], s_G[i, j, _ρ, 2] = MJ * (ηx * fluxρ), MJ * (ηy * fluxρ)
+            s_G[i, j, _U, 1], s_G[i, j, _U, 2] = MJ * (ηx * fluxU), MJ * (ηy * fluxU)
+            s_G[i, j, _V, 1], s_G[i, j, _V, 2] = MJ * (ηx * fluxV), MJ * (ηy * fluxV)
+            s_G[i, j, _E, 1], s_G[i, j, _E, 2] = MJ * (ηx * fluxE), MJ * (ηy * fluxE)
         end
 
         # loop of ξ-grid lines
@@ -446,7 +437,7 @@ end
 function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy) where {dim, N}
     Np = (N+1)^dim
     Nfp = (N+1)^(dim-1)
-    nface = 2^dim
+    nface = 2*dim
 
     @inbounds for e in elems
         for f = 1:nface
@@ -575,7 +566,7 @@ end
 function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy) where {dim, N}
     Np = (N+1)^dim
     Nfp = (N+1)^(dim-1)
-    nface = 2^dim
+    nface = 2*dim
 
     @inbounds for e in elems
         for f = 1:nface
@@ -792,7 +783,7 @@ end
 # }}}
 
 # {{{ Flux RHS (all dimensions)
-@hascuda function knl_fluxrhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, vgeo, nelem, vmapM,                                vmapP, elemtobndy) where {dim, N}
+@hascuda function knl_fluxrhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, vgeo, nelem, vmapM,vmapP, elemtobndy) where {dim, N}
     DFloat = eltype(Q)
     γ::DFloat       = _γ
     p0::DFloat      = _p0
@@ -1525,11 +1516,11 @@ function main()
         ρ, U, V, E
     end
 
-    time_final = DFloat(300.0)
+    time_final = DFloat(10.0)
     iplot=100
     Ne = 10
     N  = 4
-    visc = 0.0
+    visc = 0.01
     dim = 2
     hardware="cpu"
     if mpirank == 0
