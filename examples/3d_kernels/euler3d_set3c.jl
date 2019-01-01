@@ -1498,22 +1498,20 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
             avg_stage_time = (time_ns() - start_time) * 1e-9 / ((step-1) * length(RKA))
             @show (step, nsteps, avg_stage_time)
         end
+
         # Write VTK file
         if mod(step,iplot) == 0
             Q .= d_QL
             convert_set3c_to_set2nc(Val(dim), Val(N), vgeo, Q)
-            X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
-                                  nelem), dim)
+            X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)..., nelem), dim)
             ρ = reshape((@view Q[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
             U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
             V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
             W = reshape((@view Q[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
             E = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
             E = E .- 300.0
-            writemesh(@sprintf("viz/euler%dD_set3c_%s_rank_%04d_step_%05d",
-                               dim, ArrType, mpirank, step), X...;
-                      fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)),
-                      realelems=mesh.realelems)
+            writemesh(@sprintf("viz/euler%dD_set3c_%s_rank_%04d_step_%05d",dim, ArrType, mpirank, step), X...;
+                      fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)), realelems=mesh.realelems)
         end
     end
 if mpirank == 0
@@ -1734,7 +1732,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
     # Compute time step
     mpirank == 0 && println("[CPU] computing dt (CPU)...")
     (base_dt, Courant) = courantnumber(Val(dim), Val(N), vgeo, Q, mpicomm)
-    base_dt=0.02
+    #base_dt=0.02
     mpirank == 0 && @show (base_dt, Courant)
 
     nsteps = ceil(Int64, tend / base_dt)
