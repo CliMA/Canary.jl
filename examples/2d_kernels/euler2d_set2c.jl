@@ -38,22 +38,21 @@ end
 
 # {{{ constants
 # note the order of the fields below is also assumed in the code.
-const _nstate = 5
-const _U, _V, _W, _ρ, _E = 1:_nstate
-const stateid = (U = _U, V = _V, W = _W, ρ = _ρ, E = _E)
+const _nstate = 4
+const _U, _V, _ρ, _E = 1:_nstate
+const stateid = (U = _U, V = _V, ρ = _ρ, E = _E)
 
-const _nvgeo = 14
-const _ξx, _ηx, _ζx, _ξy, _ηy, _ζy, _ξz, _ηz, _ζz, _MJ, _MJI,
-       _x, _y, _z = 1:_nvgeo
-const vgeoid = (ξx = _ξx, ηx = _ηx, ζx = _ζx,
-                ξy = _ξy, ηy = _ηy, ζy = _ζy,
-                ξz = _ξz, ηz = _ηz, ζz = _ζz,
+const _nvgeo = 8
+const _ξx, _ηx, _ξy, _ηy, _MJ, _MJI,
+       _x, _y, = 1:_nvgeo
+const vgeoid = (ξx = _ξx, ηx = _ηx,
+                ξy = _ξy, ηy = _ηy,
                 MJ = _MJ, MJI = _MJI,
-                 x = _x,   y = _y,   z = _z)
+                 x = _x,   y = _y)
 
-const _nsgeo = 5
-const _nx, _ny, _nz, _sMJ, _vMJI = 1:_nsgeo
-const sgeoid = (nx = _nx, ny = _ny, nz = _nz, sMJ = _sMJ, vMJI = _vMJI)
+const _nsgeo = 4
+const _nx, _ny, _sMJ, _vMJI = 1:_nsgeo
+const sgeoid = (nx = _nx, ny = _ny, sMJ = _sMJ, vMJI = _vMJI)
 
 const _γ = 14  // 10
 const _p0 = 100000
@@ -78,47 +77,16 @@ function cfl(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
 
   dt = [floatmax(DFloat)]
 
-  if dim == 1
-    @inbounds for e = 1:nelem, n = 1:Np
-      ρ, U = Q[n, _ρ, e], Q[n, _U, e]
-      E = Q[n, _E, e]
-      P = p0 * (R_gas * E / p0)^(c_p / c_v)
-      ξx = vgeo[n, _ξx, e]
+  @inbounds for e = 1:nelem, n = 1:Np
+    ρ, U, V = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e]
+    E = Q[n, _E, e]
+    P = p0 * (R_gas * E / p0)^(c_p / c_v)
+    ξx, ξy, ηx, ηy = vgeo[n, _ξx, e], vgeo[n, _ξy, e],
+                     vgeo[n, _ηx, e], vgeo[n, _ηy, e]
 
-      loc_dt = 2ρ / (abs(U * ξx) + ρ * sqrt(γ * P / ρ))
-      dt[1] = min(dt[1], loc_dt)
-    end
-  end
-
-  if dim == 2
-    @inbounds for e = 1:nelem, n = 1:Np
-      ρ, U, V = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e]
-      E = Q[n, _E, e]
-      P = p0 * (R_gas * E / p0)^(c_p / c_v)
-      ξx, ξy, ηx, ηy = vgeo[n, _ξx, e], vgeo[n, _ξy, e],
-                       vgeo[n, _ηx, e], vgeo[n, _ηy, e]
-
-      loc_dt = 2ρ / max(abs(U * ξx + V * ξy) + ρ * sqrt(γ * P / ρ),
-                        abs(U * ηx + V * ηy) + ρ * sqrt(γ * P / ρ))
-      dt[1] = min(dt[1], loc_dt)
-    end
-  end
-
-  if dim == 3
-    @inbounds for e = 1:nelem, n = 1:Np
-      ρ, U, V, W = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _W, e]
-      E = Q[n, _E, e]
-      P = p0 * (R_gas * E / p0)^(c_p / c_v)
-
-      ξx, ξy, ξz = vgeo[n, _ξx, e], vgeo[n, _ξy, e], vgeo[n, _ξz, e]
-      ηx, ηy, ηz = vgeo[n, _ηx, e], vgeo[n, _ηy, e], vgeo[n, _ηz, e]
-      ζx, ζy, ζz = vgeo[n, _ζx, e], vgeo[n, _ζy, e], vgeo[n, _ζz, e]
-
-      loc_dt = 2ρ / max(abs(U * ξx + V * ξy + W * ξz) + ρ * sqrt(γ * P / ρ),
-                        abs(U * ηx + V * ηy + W * ηz) + ρ * sqrt(γ * P / ρ),
-                        abs(U * ζx + V * ζy + W * ζz) + ρ * sqrt(γ * P / ρ))
-      dt[1] = min(dt[1], loc_dt)
-    end
+    loc_dt = 2ρ / max(abs(U * ξx + V * ξy) + ρ * sqrt(γ * P / ρ),
+                      abs(U * ηx + V * ηy) + ρ * sqrt(γ * P / ρ))
+    dt[1] = min(dt[1], loc_dt)
   end
 
   MPI.Allreduce(dt[1], MPI.MIN, mpicomm)
@@ -138,28 +106,21 @@ function computegeometry(::Val{dim}, mesh, D, ξ, ω, meshwarp, vmapM) where dim
   vgeo = zeros(DFloat, Nq^dim, _nvgeo, nelem)
   sgeo = zeros(DFloat, _nsgeo, Nq^(dim-1), nface, nelem)
 
-  (ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz, MJ, MJI, x, y, z) =
+  (ξx, ηx, ξy, ηy, MJ, MJI, x, y) =
       ntuple(j->(@view vgeo[:, j, :]), _nvgeo)
   J = similar(x)
-  (nx, ny, nz, sMJ, vMJI) = ntuple(j->(@view sgeo[ j, :, :, :]), _nsgeo)
+  (nx, ny, sMJ, vMJI) = ntuple(j->(@view sgeo[ j, :, :, :]), _nsgeo)
   sJ = similar(sMJ)
 
   X = ntuple(j->(@view vgeo[:, _x+j-1, :]), dim)
   creategrid!(X..., mesh.elemtocoord, ξ)
 
   @inbounds for j = 1:length(x)
-    (x[j], y[j], z[j]) = meshwarp(x[j], y[j], z[j])
+    (x[j], y[j]) = meshwarp(x[j], y[j])
   end
 
   # Compute the metric terms
-  if dim == 1
-    computemetric!(x, J, ξx, sJ, nx, D)
-  elseif dim == 2
-    computemetric!(x, y, J, ξx, ηx, ξy, ηy, sJ, nx, ny, D)
-  elseif dim == 3
-    computemetric!(x, y, z, J, ξx, ηx, ζx, ξy, ηy, ζy, ξz, ηz, ζz, sJ,
-                   nx, ny, nz, D)
-  end
+  computemetric!(x, y, J, ξx, ηx, ξy, ηy, sJ, nx, ny, D)
 
   M = kron(1, ntuple(j->ω, dim)...)
   MJ .= M .* J
@@ -221,13 +182,11 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
       s_F[i, j, _ρ] = MJ * (ξx * fluxρ_x + ξy * fluxρ_y)
       s_F[i, j, _U] = MJ * (ξx * fluxU_x + ξy * fluxU_y)
       s_F[i, j, _V] = MJ * (ξx * fluxV_x + ξy * fluxV_y)
-      s_F[i, j, _W] = 0
       s_F[i, j, _E] = MJ * (ξx * fluxE_x + ξy * fluxE_y)
 
       s_G[i, j, _ρ] = MJ * (ηx * fluxρ_x + ηy * fluxρ_y)
       s_G[i, j, _U] = MJ * (ηx * fluxU_x + ηy * fluxU_y)
       s_G[i, j, _V] = MJ * (ηx * fluxV_x + ηy * fluxV_y)
-      s_G[i, j, _W] = 0
       s_G[i, j, _E] = MJ * (ηx * fluxE_x + ηy * fluxE_y)
 
       # buoyancy term
@@ -235,12 +194,12 @@ function volumerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
     end
 
     # loop of ξ-grid lines
-    for s = 1:_nstate, j = 1:Nq, i = 1:Nq, n = 1:Nq
-      rhs[i, j, s, e] += D[n, i] * s_F[n, j, s]
+    for s = 1:_nstate, j = 1:Nq, i = 1:Nq, k = 1:Nq
+      rhs[i, j, s, e] += D[k, i] * s_F[k, j, s]
     end
     # loop of η-grid lines
-    for s = 1:_nstate, j = 1:Nq, i = 1:Nq, n = 1:Nq
-      rhs[i, j, s, e] += D[n, j] * s_G[i, n, s]
+    for s = 1:_nstate, j = 1:Nq, i = 1:Nq, k = 1:Nq
+      rhs[i, j, s, e] += D[k, j] * s_G[i, k, s]
     end
   end
 end
@@ -341,215 +300,6 @@ function facerhs!(::Val{2}, ::Val{N}, rhs::Array, Q, sgeo, elems, vmapM,
 end
 # }}}
 
-# {{{ 3-D
-# Volume RHS for 3-D
-function volumerhs!(::Val{3}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
-  DFloat = eltype(Q)
-  γ::DFloat       = _γ
-  p0::DFloat      = _p0
-  R_gas::DFloat   = _R_gas
-  c_p::DFloat     = _c_p
-  c_v::DFloat     = _c_v
-  gravity::DFloat = _gravity
-
-  Nq = N + 1
-
-  nelem = size(Q)[end]
-
-  Q = reshape(Q, Nq, Nq, Nq, _nstate, nelem)
-  rhs = reshape(rhs, Nq, Nq, Nq, _nstate, nelem)
-  vgeo = reshape(vgeo, Nq, Nq, Nq, _nvgeo, nelem)
-
-  s_F = Array{DFloat}(undef, Nq, Nq, Nq, _nstate)
-  s_G = Array{DFloat}(undef, Nq, Nq, Nq, _nstate)
-  s_H = Array{DFloat}(undef, Nq, Nq, Nq, _nstate)
-
-  @inbounds for e in elems
-    for k = 1:Nq, j = 1:Nq, i = 1:Nq
-      MJ = vgeo[i, j, k, _MJ, e]
-      ξx, ξy, ξz = vgeo[i,j,k,_ξx,e], vgeo[i,j,k,_ξy,e], vgeo[i,j,k,_ξz,e]
-      ηx, ηy, ηz = vgeo[i,j,k,_ηx,e], vgeo[i,j,k,_ηy,e], vgeo[i,j,k,_ηz,e]
-      ζx, ζy, ζz = vgeo[i,j,k,_ζx,e], vgeo[i,j,k,_ζy,e], vgeo[i,j,k,_ζz,e]
-
-      U, V, W = Q[i, j, k, _U, e], Q[i, j, k, _V, e], Q[i, j, k, _W, e]
-      ρ, E = Q[i, j, k, _ρ, e], Q[i, j, k, _E, e]
-
-      P = p0 * (R_gas * E / p0)^(c_p / c_v)
-
-      ρinv = 1 / ρ
-      fluxρ_x = U
-      fluxU_x = ρinv * U * U + P
-      fluxV_x = ρinv * V * U
-      fluxW_x = ρinv * W * U
-      fluxE_x = E * ρinv * U
-
-      fluxρ_y = V
-      fluxU_y = ρinv * U * V
-      fluxV_y = ρinv * V * V + P
-      fluxW_y = ρinv * W * V
-      fluxE_y = E * ρinv * V
-
-      fluxρ_z = W
-      fluxU_z = ρinv * U * W
-      fluxV_z = ρinv * V * W
-      fluxW_z = ρinv * W * W + P
-      fluxE_z = E * ρinv * W
-
-      s_F[i, j, k, _ρ] = MJ * (ξx * fluxρ_x + ξy * fluxρ_y + ξz * fluxρ_z)
-      s_F[i, j, k, _U] = MJ * (ξx * fluxU_x + ξy * fluxU_y + ξz * fluxU_z)
-      s_F[i, j, k, _V] = MJ * (ξx * fluxV_x + ξy * fluxV_y + ξz * fluxV_z)
-      s_F[i, j, k, _W] = MJ * (ξx * fluxW_x + ξy * fluxW_y + ξz * fluxW_z)
-      s_F[i, j, k, _E] = MJ * (ξx * fluxE_x + ξy * fluxE_y + ξz * fluxE_z)
-
-      s_G[i, j, k, _ρ] = MJ * (ηx * fluxρ_x + ηy * fluxρ_y + ηz * fluxρ_z)
-      s_G[i, j, k, _U] = MJ * (ηx * fluxU_x + ηy * fluxU_y + ηz * fluxU_z)
-      s_G[i, j, k, _V] = MJ * (ηx * fluxV_x + ηy * fluxV_y + ηz * fluxV_z)
-      s_G[i, j, k, _W] = MJ * (ηx * fluxW_x + ηy * fluxW_y + ηz * fluxW_z)
-      s_G[i, j, k, _E] = MJ * (ηx * fluxE_x + ηy * fluxE_y + ηz * fluxE_z)
-
-      s_H[i, j, k, _ρ] = MJ * (ζx * fluxρ_x + ζy * fluxρ_y + ζz * fluxρ_z)
-      s_H[i, j, k, _U] = MJ * (ζx * fluxU_x + ζy * fluxU_y + ζz * fluxU_z)
-      s_H[i, j, k, _V] = MJ * (ζx * fluxV_x + ζy * fluxV_y + ζz * fluxV_z)
-      s_H[i, j, k, _W] = MJ * (ζx * fluxW_x + ζy * fluxW_y + ζz * fluxW_z)
-      s_H[i, j, k, _E] = MJ * (ζx * fluxE_x + ζy * fluxE_y + ζz * fluxE_z)
-
-      # buoyancy term
-      rhs[i, j, k, _W, e] -= MJ * ρ * gravity
-    end
-
-    # loop of ξ-grid lines
-    for s = 1:_nstate, k = 1:Nq, j = 1:Nq, i = 1:Nq, n = 1:Nq
-      rhs[i, j, k, s, e] += D[n, i] * s_F[n, j, k, s]
-    end
-    # loop of η-grid lines
-    for s = 1:_nstate, k = 1:Nq, j = 1:Nq, i = 1:Nq, n = 1:Nq
-      rhs[i, j, k, s, e] += D[n, j] * s_G[i, n, k, s]
-    end
-    # loop of ζ-grid lines
-    for s = 1:_nstate, k = 1:Nq, j = 1:Nq, i = 1:Nq, n = 1:Nq
-      rhs[i, j, k, s, e] += D[n, k] * s_H[i, j, n, s]
-    end
-  end
-end
-
-# Face RHS for 3-D
-function facerhs!(::Val{3}, ::Val{N}, rhs::Array, Q, sgeo, elems, vmapM,
-                  vmapP, elemtobndy) where N
-  DFloat = eltype(Q)
-  γ::DFloat       = _γ
-  p0::DFloat      = _p0
-  R_gas::DFloat   = _R_gas
-  c_p::DFloat     = _c_p
-  c_v::DFloat     = _c_v
-  gravity::DFloat = _gravity
-
-  Np = (N+1)^3
-  Nfp = (N+1)^2
-  nface = 6
-
-  @inbounds for e in elems
-    for f = 1:nface
-      for n = 1:Nfp
-        (nxM, nyM, nzM, sMJ, ~) = sgeo[:, n, f, e]
-        idM, idP = vmapM[n, f, e], vmapP[n, f, e]
-
-        eM, eP = e, ((idP - 1) ÷ Np) + 1
-        vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
-
-        ρM = Q[vidM, _ρ, eM]
-        UM = Q[vidM, _U, eM]
-        VM = Q[vidM, _V, eM]
-        WM = Q[vidM, _W, eM]
-        EM = Q[vidM, _E, eM]
-
-        bc = elemtobndy[f, e]
-        PM = p0 * (R_gas * EM / p0)^(c_p / c_v)
-        if bc == 0
-          ρP = Q[vidP, _ρ, eP]
-          UP = Q[vidP, _U, eP]
-          VP = Q[vidP, _V, eP]
-          WP = Q[vidP, _W, eP]
-          EP = Q[vidP, _E, eP]
-          PP = p0 * (R_gas * EP / p0)^(c_p / c_v)
-        elseif bc == 1
-          UnM = nxM * UM + nyM * VM + nzM * WM
-          UP = UM - 2 * UnM * nxM
-          VP = VM - 2 * UnM * nyM
-          WP = WM - 2 * UnM * nzM
-          ρP = ρM
-          EP = EM
-          PP = PM
-        else
-          error("Invalid boundary conditions $bc on face $f of element $e")
-        end
-
-        ρMinv = 1 / ρM
-        fluxρM_x = UM
-        fluxUM_x = ρMinv * UM * UM + PM
-        fluxVM_x = ρMinv * VM * UM
-        fluxWM_x = ρMinv * WM * UM
-        fluxEM_x = ρMinv * UM * EM
-
-        fluxρM_y = VM
-        fluxUM_y = ρMinv * UM * VM
-        fluxVM_y = ρMinv * VM * VM + PM
-        fluxWM_y = ρMinv * WM * VM
-        fluxEM_y = ρMinv * VM * EM
-
-        fluxρM_z = WM
-        fluxUM_z = ρMinv * UM * WM
-        fluxVM_z = ρMinv * VM * WM
-        fluxWM_z = ρMinv * WM * WM + PM
-        fluxEM_z = ρMinv * WM * EM
-
-        ρPinv = 1 / ρP
-        fluxρP_x = UP
-        fluxUP_x = ρPinv * UP * UP + PP
-        fluxVP_x = ρPinv * VP * UP
-        fluxWP_x = ρPinv * WP * UP
-        fluxEP_x = ρPinv * UP * EP
-
-        fluxρP_y = VP
-        fluxUP_y = ρPinv * UP * VP
-        fluxVP_y = ρPinv * VP * VP + PP
-        fluxWP_y = ρPinv * WP * VP
-        fluxEP_y = ρPinv * VP * EP
-
-        fluxρP_z = WP
-        fluxUP_z = ρPinv * UP * WP
-        fluxVP_z = ρPinv * VP * WP
-        fluxWP_z = ρPinv * WP * WP + PP
-        fluxEP_z = ρPinv * WP * EP
-
-        λM = ρMinv * abs(nxM * UM + nyM * VM + nzM * WM) + sqrt(ρMinv * γ * PM)
-        λP = ρPinv * abs(nxM * UP + nyM * VP + nzM * WP) + sqrt(ρPinv * γ * PP)
-        λ  =  max(λM, λP)
-
-        #Compute Numerical Flux and Update
-        fluxρS = (nxM * (fluxρM_x + fluxρP_x) + nyM * (fluxρM_y + fluxρP_y) +
-                  nzM * (fluxρM_z + fluxρP_z) - λ * (ρP - ρM)) / 2
-        fluxUS = (nxM * (fluxUM_x + fluxUP_x) + nyM * (fluxUM_y + fluxUP_y) +
-                  nzM * (fluxUM_z + fluxUP_z) - λ * (UP - UM)) / 2
-        fluxVS = (nxM * (fluxVM_x + fluxVP_x) + nyM * (fluxVM_y + fluxVP_y) +
-                  nzM * (fluxVM_z + fluxVP_z) - λ * (VP - VM)) / 2
-        fluxWS = (nxM * (fluxWM_x + fluxWP_x) + nyM * (fluxWM_y + fluxWP_y) +
-                  nzM * (fluxWM_z + fluxWP_z) - λ * (WP - WM)) / 2
-        fluxES = (nxM * (fluxEM_x + fluxEP_x) + nyM * (fluxEM_y + fluxEP_y) +
-                  nzM * (fluxEM_z + fluxEP_z) - λ * (EP - EM)) / 2
-
-
-        #Update RHS
-        rhs[vidM, _ρ, eM] -= sMJ * fluxρS
-        rhs[vidM, _U, eM] -= sMJ * fluxUS
-        rhs[vidM, _V, eM] -= sMJ * fluxVS
-        rhs[vidM, _W, eM] -= sMJ * fluxWS
-        rhs[vidM, _E, eM] -= sMJ * fluxES
-      end
-    end
-  end
-end
-# }}}
-
 # {{{ Update solution (for all dimensions)
 function updatesolution!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, elems, rka,
                          rkb, dt) where {dim, N}
@@ -615,13 +365,11 @@ end
     s_F[i, j, _ρ] = MJ * (ξx * fluxρ_x + ξy * fluxρ_y)
     s_F[i, j, _U] = MJ * (ξx * fluxU_x + ξy * fluxU_y)
     s_F[i, j, _V] = MJ * (ξx * fluxV_x + ξy * fluxV_y)
-    s_F[i, j, _W] = 0
     s_F[i, j, _E] = MJ * (ξx * fluxE_x + ξy * fluxE_y)
 
     s_G[i, j, _ρ] = MJ * (ηx * fluxρ_x + ηy * fluxρ_y)
     s_G[i, j, _U] = MJ * (ηx * fluxU_x + ηy * fluxU_y)
     s_G[i, j, _V] = MJ * (ηx * fluxV_x + ηy * fluxV_y)
-    s_G[i, j, _W] = 0
     s_G[i, j, _E] = MJ * (ηx * fluxE_x + ηy * fluxE_y)
 
     # buoyancy term
@@ -658,130 +406,6 @@ end
 end
 # }}}
 
-# {{{ Volume RHS for 3-D
-@hascuda function knl_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
-  DFloat = eltype(D)
-  γ::DFloat       = _γ
-  p0::DFloat      = _p0
-  R_gas::DFloat   = _R_gas
-  c_p::DFloat     = _c_p
-  c_v::DFloat     = _c_v
-  gravity::DFloat = _gravity
-
-  Nq = N + 1
-
-  (i, j, k) = threadIdx()
-  e = blockIdx().x
-
-  s_D = @cuStaticSharedMem(eltype(D), (Nq, Nq))
-  s_F = @cuStaticSharedMem(eltype(Q), (Nq, Nq, Nq, _nstate))
-  s_G = @cuStaticSharedMem(eltype(Q), (Nq, Nq, Nq, _nstate))
-  s_H = @cuStaticSharedMem(eltype(Q), (Nq, Nq, Nq, _nstate))
-
-  rhsU = rhsV = rhsW = rhsρ = rhsE = zero(eltype(rhs))
-  @inbounds if i <= Nq && j <= Nq && k <= Nq && e <= nelem
-    # Load derivative into shared memory
-    if k == 1
-      s_D[i, j] = D[i, j]
-    end
-
-    # Load values will need into registers
-    MJ = vgeo[i, j, k, _MJ, e]
-    ξx, ξy, ξz = vgeo[i,j,k,_ξx,e], vgeo[i,j,k,_ξy,e], vgeo[i,j,k,_ξz,e]
-    ηx, ηy, ηz = vgeo[i,j,k,_ηx,e], vgeo[i,j,k,_ηy,e], vgeo[i,j,k,_ηz,e]
-    ζx, ζy, ζz = vgeo[i,j,k,_ζx,e], vgeo[i,j,k,_ζy,e], vgeo[i,j,k,_ζz,e]
-
-    U, V, W = Q[i, j, k, _U, e], Q[i, j, k, _V, e], Q[i, j, k, _W, e]
-    ρ, E = Q[i, j, k, _ρ, e], Q[i, j, k, _E, e]
-
-    P = p0 * CUDAnative.pow(R_gas * E / p0, c_p / c_v)
-
-    ρinv = 1 / ρ
-    fluxρ_x = U
-    fluxU_x = ρinv * U * U + P
-    fluxV_x = ρinv * V * U
-    fluxW_x = ρinv * W * U
-    fluxE_x = E * ρinv * U
-
-    fluxρ_y = V
-    fluxU_y = ρinv * U * V
-    fluxV_y = ρinv * V * V + P
-    fluxW_y = ρinv * W * V
-    fluxE_y = E * ρinv * V
-
-    fluxρ_z = W
-    fluxU_z = ρinv * U * W
-    fluxV_z = ρinv * V * W
-    fluxW_z = ρinv * W * W + P
-    fluxE_z = E * ρinv * W
-
-    s_F[i, j, k, _ρ] = MJ * (ξx * fluxρ_x + ξy * fluxρ_y + ξz * fluxρ_z)
-    s_F[i, j, k, _U] = MJ * (ξx * fluxU_x + ξy * fluxU_y + ξz * fluxU_z)
-    s_F[i, j, k, _V] = MJ * (ξx * fluxV_x + ξy * fluxV_y + ξz * fluxV_z)
-    s_F[i, j, k, _W] = MJ * (ξx * fluxW_x + ξy * fluxW_y + ξz * fluxW_z)
-    s_F[i, j, k, _E] = MJ * (ξx * fluxE_x + ξy * fluxE_y + ξz * fluxE_z)
-
-    s_G[i, j, k, _ρ] = MJ * (ηx * fluxρ_x + ηy * fluxρ_y + ηz * fluxρ_z)
-    s_G[i, j, k, _U] = MJ * (ηx * fluxU_x + ηy * fluxU_y + ηz * fluxU_z)
-    s_G[i, j, k, _V] = MJ * (ηx * fluxV_x + ηy * fluxV_y + ηz * fluxV_z)
-    s_G[i, j, k, _W] = MJ * (ηx * fluxW_x + ηy * fluxW_y + ηz * fluxW_z)
-    s_G[i, j, k, _E] = MJ * (ηx * fluxE_x + ηy * fluxE_y + ηz * fluxE_z)
-
-    s_H[i, j, k, _ρ] = MJ * (ζx * fluxρ_x + ζy * fluxρ_y + ζz * fluxρ_z)
-    s_H[i, j, k, _U] = MJ * (ζx * fluxU_x + ζy * fluxU_y + ζz * fluxU_z)
-    s_H[i, j, k, _V] = MJ * (ζx * fluxV_x + ζy * fluxV_y + ζz * fluxV_z)
-    s_H[i, j, k, _W] = MJ * (ζx * fluxW_x + ζy * fluxW_y + ζz * fluxW_z)
-    s_H[i, j, k, _E] = MJ * (ζx * fluxE_x + ζy * fluxE_y + ζz * fluxE_z)
-
-    rhsU, rhsV, rhsW = (rhs[i, j, k, _U, e],
-                        rhs[i, j, k, _V, e],
-                        rhs[i, j, k, _W, e])
-    rhsρ, rhsE = rhs[i, j, k, _ρ, e], rhs[i, j, k, _E, e]
-
-    # buoyancy term
-    rhsW -= MJ * ρ * gravity
-  end
-
-  sync_threads()
-
-  @inbounds if i <= Nq && j <= Nq && k <= Nq && e <= nelem
-    # loop of ξ-grid lines
-    for n = 1:Nq
-      Dni = s_D[n, i]
-      Dnj = s_D[n, j]
-      Dnk = s_D[n, k]
-
-      rhsρ += Dni * s_F[n, j, k, _ρ]
-      rhsρ += Dnj * s_G[i, n, k, _ρ]
-      rhsρ += Dnk * s_H[i, j, n, _ρ]
-
-      rhsU += Dni * s_F[n, j, k, _U]
-      rhsU += Dnj * s_G[i, n, k, _U]
-      rhsU += Dnk * s_H[i, j, n, _U]
-
-      rhsV += Dni * s_F[n, j, k, _V]
-      rhsV += Dnj * s_G[i, n, k, _V]
-      rhsV += Dnk * s_H[i, j, n, _V]
-
-      rhsW += Dni * s_F[n, j, k, _W]
-      rhsW += Dnj * s_G[i, n, k, _W]
-      rhsW += Dnk * s_H[i, j, n, _W]
-
-      rhsE += Dni * s_F[n, j, k, _E]
-      rhsE += Dnj * s_G[i, n, k, _E]
-      rhsE += Dnk * s_H[i, j, n, _E]
-    end
-
-    rhs[i, j, k, _U, e] = rhsU
-    rhs[i, j, k, _V, e] = rhsV
-    rhs[i, j, k, _W, e] = rhsW
-    rhs[i, j, k, _ρ, e] = rhsρ
-    rhs[i, j, k, _E, e] = rhsE
-  end
-  nothing
-end
-# }}}
-
 # {{{ Face RHS (all dimensions)
 @hascuda function knl_facerhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, nelem, vmapM,
                                vmapP, elemtobndy) where {dim, N}
@@ -793,16 +417,8 @@ end
   c_v::DFloat     = _c_v
   gravity::DFloat = _gravity
 
-  if dim == 1
-    Np = (N+1)
-    nface = 2
-  elseif dim == 2
-    Np = (N+1) * (N+1)
-    nface = 4
-  elseif dim == 3
-    Np = (N+1) * (N+1) * (N+1)
-    nface = 6
-  end
+  Np = (N+1) * (N+1)
+  nface = 4
 
   (i, j, k) = threadIdx()
   e = blockIdx().x
@@ -814,8 +430,7 @@ end
     n = i + (j-1) * Nq
     for lf = 1:2:nface
       for f = lf:lf+1
-        (nxM, nyM) = (sgeo[_nx, n, f, e], sgeo[_ny, n, f, e])
-        (nzM, sMJ) = (sgeo[_nz, n, f, e], sgeo[_sMJ, n, f, e])
+        (nxM, nyM, sMJ) = (sgeo[_nx, n, f, e], sgeo[_ny, n, f, e], sgeo[_sMJ, n, f, e])
 
         (idM, idP) = (vmapM[n, f, e], vmapP[n, f, e])
 
@@ -825,24 +440,21 @@ end
         ρM = Q[vidM, _ρ, eM]
         UM = Q[vidM, _U, eM]
         VM = Q[vidM, _V, eM]
-        WM = Q[vidM, _W, eM]
         EM = Q[vidM, _E, eM]
 
         bc = elemtobndy[f, e]
         PM = p0 * CUDAnative.pow(R_gas * EM / p0, c_p / c_v)
-        ρP = UP = VP = WP = EP = PP = zero(eltype(Q))
+        ρP = UP = VP = EP = PP = zero(eltype(Q))
         if bc == 0
           ρP = Q[vidP, _ρ, eP]
           UP = Q[vidP, _U, eP]
           VP = Q[vidP, _V, eP]
-          WP = Q[vidP, _W, eP]
           EP = Q[vidP, _E, eP]
           PP = p0 * CUDAnative.pow(R_gas * EP / p0, c_p / c_v)
         elseif bc == 1
-          UnM = nxM * UM + nyM * VM + nzM * WM
+          UnM = nxM * UM + nyM * VM
           UP = UM - 2 * UnM * nxM
           VP = VM - 2 * UnM * nyM
-          WP = WM - 2 * UnM * nzM
           ρP = ρM
           EP = EM
           PP = PM
@@ -852,61 +464,38 @@ end
         fluxρM_x = UM
         fluxUM_x = ρMinv * UM * UM + PM
         fluxVM_x = ρMinv * VM * UM
-        fluxWM_x = ρMinv * WM * UM
         fluxEM_x = ρMinv * UM * EM
 
         fluxρM_y = VM
         fluxUM_y = ρMinv * UM * VM
         fluxVM_y = ρMinv * VM * VM + PM
-        fluxWM_y = ρMinv * WM * VM
         fluxEM_y = ρMinv * VM * EM
-
-        fluxρM_z = WM
-        fluxUM_z = ρMinv * UM * WM
-        fluxVM_z = ρMinv * VM * WM
-        fluxWM_z = ρMinv * WM * WM + PM
-        fluxEM_z = ρMinv * WM * EM
 
         ρPinv = 1 / ρP
         fluxρP_x = UP
         fluxUP_x = ρPinv * UP * UP + PP
         fluxVP_x = ρPinv * VP * UP
-        fluxWP_x = ρPinv * WP * UP
         fluxEP_x = ρPinv * UP * EP
 
         fluxρP_y = VP
         fluxUP_y = ρPinv * UP * VP
         fluxVP_y = ρPinv * VP * VP + PP
-        fluxWP_y = ρPinv * WP * VP
         fluxEP_y = ρPinv * VP * EP
 
-        fluxρP_z = WP
-        fluxUP_z = ρPinv * UP * WP
-        fluxVP_z = ρPinv * VP * WP
-        fluxWP_z = ρPinv * WP * WP + PP
-        fluxEP_z = ρPinv * WP * EP
-
-        λM = ρMinv * abs(nxM * UM + nyM * VM + nzM * WM) + CUDAnative.sqrt(ρMinv * γ * PM)
-        λP = ρPinv * abs(nxM * UP + nyM * VP + nzM * WP) + CUDAnative.sqrt(ρPinv * γ * PP)
+        λM = ρMinv * abs(nxM * UM + nyM * VM) + CUDAnative.sqrt(ρMinv * γ * PM)
+        λP = ρPinv * abs(nxM * UP + nyM * VP) + CUDAnative.sqrt(ρPinv * γ * PP)
         λ  =  max(λM, λP)
 
         #Compute Numerical Flux and Update
-        fluxρS = (nxM * (fluxρM_x + fluxρP_x) + nyM * (fluxρM_y + fluxρP_y) +
-                  nzM * (fluxρM_z + fluxρP_z) - λ * (ρP - ρM)) / 2
-        fluxUS = (nxM * (fluxUM_x + fluxUP_x) + nyM * (fluxUM_y + fluxUP_y) +
-                  nzM * (fluxUM_z + fluxUP_z) - λ * (UP - UM)) / 2
-        fluxVS = (nxM * (fluxVM_x + fluxVP_x) + nyM * (fluxVM_y + fluxVP_y) +
-                  nzM * (fluxVM_z + fluxVP_z) - λ * (VP - VM)) / 2
-        fluxWS = (nxM * (fluxWM_x + fluxWP_x) + nyM * (fluxWM_y + fluxWP_y) +
-                  nzM * (fluxWM_z + fluxWP_z) - λ * (WP - WM)) / 2
-        fluxES = (nxM * (fluxEM_x + fluxEP_x) + nyM * (fluxEM_y + fluxEP_y) +
-                  nzM * (fluxEM_z + fluxEP_z) - λ * (EP - EM)) / 2
+        fluxρS = (nxM * (fluxρM_x + fluxρP_x) + nyM * (fluxρM_y + fluxρP_y) - λ * (ρP - ρM)) / 2
+        fluxUS = (nxM * (fluxUM_x + fluxUP_x) + nyM * (fluxUM_y + fluxUP_y) - λ * (UP - UM)) / 2
+        fluxVS = (nxM * (fluxVM_x + fluxVP_x) + nyM * (fluxVM_y + fluxVP_y) - λ * (VP - VM)) / 2
+        fluxES = (nxM * (fluxEM_x + fluxEP_x) + nyM * (fluxEM_y + fluxEP_y) - λ * (EP - EM)) / 2
 
         #Update RHS
         rhs[vidM, _ρ, eM] -= sMJ * fluxρS
         rhs[vidM, _U, eM] -= sMJ * fluxUS
         rhs[vidM, _V, eM] -= sMJ * fluxVS
-        rhs[vidM, _W, eM] -= sMJ * fluxWS
         rhs[vidM, _E, eM] -= sMJ * fluxES
       end
       sync_threads()
@@ -1048,7 +637,7 @@ end
 
 # {{{ RK loop
 function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
-                      dt, nsteps, tout, vmapM, vmapP, mpicomm;
+                      dt, nsteps, tout, vmapM, vmapP, mpicomm, iplot;
                       ArrType=ArrType, plotstep=0) where {dim, N}
   DFloat = eltype(Q)
   mpirank = MPI.Comm_rank(mpicomm)
@@ -1160,18 +749,20 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
       @show (step, nsteps, avg_stage_time)
     end
     # TODO: Fix VTK for 1-D
-    if dim > 1 && plotstep > 0 && step % plotstep == 0
+      #    if dim > 1 && plotstep > 0 && step % plotstep == 0
+    if dim > 1 && mod(step,iplot) == 0
       Q .= d_QL
+      convert_set2c_to_set2nc(Val(dim), Val(N), vgeo, Q)
       X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                             nelem), dim)
       ρ = reshape((@view Q[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
       U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
       V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
-      W = reshape((@view Q[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
       E = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-      writemesh(@sprintf("viz/euler%dD_%s_rank_%04d_step_%05d",
+      E = E .- 300.0
+      writemesh(@sprintf("viz/euler%dD_set2c_%s_rank_%04d_step_%05d",
                          dim, ArrType, mpirank, step), X...;
-                fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)),
+                fields=(("ρ", ρ), ("U", U), ("V", V), ("E", E)),
                 realelems=mesh.realelems)
     end
   end
@@ -1184,8 +775,153 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
 end
 # }}}
 
+# {{{ convert_variables
+function convert_set2nc_to_set2c(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
+  DFloat = eltype(Q)
+  γ::DFloat       = _γ
+  p0::DFloat      = _p0
+  R_gas::DFloat   = _R_gas
+  c_p::DFloat     = _c_p
+  c_v::DFloat     = _c_v
+  gravity::DFloat = _gravity
+
+  Np = (N+1)^dim
+  (~, ~, nelem) = size(Q)
+
+  @inbounds for e = 1:nelem, n = 1:Np
+    ρ, u, v, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
+    Q[n, _U, e] = ρ*u
+    Q[n, _V, e] = ρ*v
+    Q[n, _E, e] = ρ*E
+  end
+end
+
+function convert_set2c_to_set2nc(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
+  DFloat = eltype(Q)
+  γ::DFloat       = _γ
+  p0::DFloat      = _p0
+  R_gas::DFloat   = _R_gas
+  c_p::DFloat     = _c_p
+  c_v::DFloat     = _c_v
+  gravity::DFloat = _gravity
+
+  Np = (N+1)^dim
+  (~, ~, nelem) = size(Q)
+
+  @inbounds for e = 1:nelem, n = 1:Np
+    ρ, U, V, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
+    u=U/ρ
+    v=V/ρ
+    E=E/ρ
+    Q[n, _U, e] = u
+    Q[n, _V, e] = v
+    Q[n, _E, e] = E
+  end
+end
+
+function convert_set2nc_to_set3c(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
+  DFloat = eltype(Q)
+  γ::DFloat       = _γ
+  p0::DFloat      = _p0
+  R_gas::DFloat   = _R_gas
+  c_p::DFloat     = _c_p
+  c_v::DFloat     = _c_v
+  gravity::DFloat = _gravity
+
+  Np = (N+1)^dim
+  (~, ~, nelem) = size(Q)
+
+  @inbounds for e = 1:nelem, n = 1:Np
+    ρ, u, v, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
+    y = vgeo[n, _y, e]
+    P = p0 * (ρ * R_gas * E / p0)^(c_p / c_v)
+    T = P/(ρ*R_gas)
+    E = c_v*T + 0.5*(u^2 + v^2) + gravity*y
+    Q[n, _U, e] = ρ*u
+    Q[n, _V, e] = ρ*v
+    Q[n, _E, e] = ρ*E
+  end
+end
+
+function convert_set3c_to_set2nc(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
+  DFloat = eltype(Q)
+  γ::DFloat       = _γ
+  p0::DFloat      = _p0
+  R_gas::DFloat   = _R_gas
+  c_p::DFloat     = _c_p
+  c_v::DFloat     = _c_v
+  gravity::DFloat = _gravity
+
+  Np = (N+1)^dim
+  (~, ~, nelem) = size(Q)
+
+  @inbounds for e = 1:nelem, n = 1:Np
+    ρ, U, V, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
+    y = vgeo[n, _y, e]
+    u=U/ρ
+    v=V/ρ
+    E=E/ρ
+    P = (R_gas/c_v)*ρ*(E - 0.5*(u^2 + v^2) - gravity*y)
+    E=p0/(ρ * R_gas)*( P/p0 )^(c_v/c_p)
+    Q[n, _U, e] = u
+    Q[n, _V, e] = v
+    Q[n, _E, e] = E
+  end
+end
+
+function convert_set2nc_to_set4c(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
+  DFloat = eltype(Q)
+  γ::DFloat       = _γ
+  p0::DFloat      = _p0
+  R_gas::DFloat   = _R_gas
+  c_p::DFloat     = _c_p
+  c_v::DFloat     = _c_v
+  gravity::DFloat = _gravity
+
+  Np = (N+1)^dim
+  (~, ~, nelem) = size(Q)
+
+  @inbounds for e = 1:nelem, n = 1:Np
+    ρ, u, v, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
+    y = vgeo[n, _y, e]
+    P = p0 * (ρ * R_gas * E / p0)^(c_p / c_v)
+    T = P/(ρ*R_gas)
+    E = c_v*T
+    Q[n, _U, e] = ρ*u
+    Q[n, _V, e] = ρ*v
+    Q[n, _E, e] = ρ*E
+  end
+end
+
+function convert_set4c_to_set2nc(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
+  DFloat = eltype(Q)
+  γ::DFloat       = _γ
+  p0::DFloat      = _p0
+  R_gas::DFloat   = _R_gas
+  c_p::DFloat     = _c_p
+  c_v::DFloat     = _c_v
+  gravity::DFloat = _gravity
+
+  Np = (N+1)^dim
+  (~, ~, nelem) = size(Q)
+
+  @inbounds for e = 1:nelem, n = 1:Np
+    ρ, U, V, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
+    y = vgeo[n, _y, e]
+    u=U/ρ
+    v=V/ρ
+    T=E/(ρ*c_v)
+    P=ρ*R_gas*T
+    E=p0/(ρ* R_gas)*(P/p0)^(c_v/c_p)
+    Q[n, _U, e] = u
+    Q[n, _V, e] = v
+    Q[n, _E, e] = E
+  end
+end
+# }}}
+
 # {{{ euler driver
-function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend;
+function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot;
                meshwarp=(x...)->identity(x),
                tout = 1, ArrType=Array, plotstep=0) where {dim, N}
   DFloat = typeof(tend)
@@ -1194,7 +930,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend;
   mpisize = MPI.Comm_size(mpicomm)
 
   # Partion the mesh using a Hilbert curve based partitioning
-  mpirank == 0 && println("[CPU] partiting mesh...")
+  mpirank == 0 && println("[CPU] partitioning mesh...")
   mesh = partition(mpicomm, mesh...)
 
   # Connect the mesh in parallel
@@ -1223,18 +959,24 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend;
   # setup the initial condition
   mpirank == 0 && println("[CPU] computing initial conditions (CPU)...")
   @inbounds for e = 1:nelem, i = 1:(N+1)^dim
-    x, y, z = vgeo[i, _x, e], vgeo[i, _y, e], vgeo[i, _z, e]
-    ρ, U, V, W, E = ic(x, y, z)
+    x, y = vgeo[i, _x, e], vgeo[i, _y, e]
+    ρ, U, V, E = ic(x, y)
     Q[i, _ρ, e] = ρ
     Q[i, _U, e] = U
     Q[i, _V, e] = V
-    Q[i, _W, e] = W
     Q[i, _E, e] = E
   end
+
+  # Convert to proper variables
+  mpirank == 0 && println("[CPU] converting variables (CPU)...")
+  convert_set2nc_to_set4c(Val(dim), Val(N), vgeo, Q)
+  convert_set4c_to_set2nc(Val(dim), Val(N), vgeo, Q)
+  convert_set2nc_to_set2c(Val(dim), Val(N), vgeo, Q)
 
   # Compute time step
   mpirank == 0 && println("[CPU] computing dt (CPU)...")
   base_dt = cfl(Val(dim), Val(N), vgeo, Q, mpicomm) / N^√2
+  base_dt=0.02 #FXG DT
   mpirank == 0 && @show base_dt
 
   nsteps = ceil(Int64, tend / base_dt)
@@ -1244,46 +986,51 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend;
   # Do time stepping
   stats = zeros(DFloat, 2)
   mpirank == 0 && println("[CPU] computing initial energy...")
-  stats[1] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
+  Q_temp=copy(Q)
+  convert_set2c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
+  stats[1] = L2energysquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems)
 
   # plot the initial condition
   mkpath("viz")
-  # TODO: Fix VTK for 1-D
+  # TODO: Fix VTK for 1D
   if dim > 1
     X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
-    ρ = reshape((@view Q[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
-    U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
-    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
-    W = reshape((@view Q[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
-    E = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-    writemesh(@sprintf("viz/euler%dD_%s_rank_%04d_step_%05d",
+    ρ = reshape((@view Q_temp[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
+    U = reshape((@view Q_temp[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
+    V = reshape((@view Q_temp[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
+    E = reshape((@view Q_temp[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
+    E = E .- 300.0
+    writemesh(@sprintf("viz/euler%dD_set2c_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, 0), X...;
-              fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)),
+              fields=(("ρ", ρ), ("U", U), ("V", V), ("E", E)),
               realelems=mesh.realelems)
   end
 
+  #Call Time-stepping Routine
   mpirank == 0 && println("[DEV] starting time stepper...")
   lowstorageRK(Val(dim), Val(N), mesh, vgeo, sgeo, Q, rhs, D, dt, nsteps, tout,
-               vmapM, vmapP, mpicomm; ArrType=ArrType, plotstep=plotstep)
+               vmapM, vmapP, mpicomm, iplot; ArrType=ArrType, plotstep=plotstep)
 
-  # TODO: Fix VTK for 1-D
+  # TODO: Fix VTK for 1D
   if dim > 1
+    Q_temp=copy(Q)
+    convert_set2c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
     X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
                           nelem), dim)
-    ρ = reshape((@view Q[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
-    U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
-    V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
-    W = reshape((@view Q[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
-    E = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-    writemesh(@sprintf("viz/euler%dD_%s_rank_%04d_step_%05d",
+    ρ = reshape((@view Q_temp[:, _ρ, :]), ntuple(j->(N+1),dim)..., nelem)
+    U = reshape((@view Q_temp[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
+    V = reshape((@view Q_temp[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
+    E = reshape((@view Q_temp[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
+    E = E .- 300.0
+    writemesh(@sprintf("viz/euler%dD_set2c_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, nsteps), X...;
-              fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)),
+              fields=(("ρ", ρ), ("U", U), ("V", V), ("E", E)),
               realelems=mesh.realelems)
   end
 
   mpirank == 0 && println("[CPU] computing final energy...")
-  stats[2] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
+  stats[2] = L2energysquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems)
 
   stats = sqrt.(MPI.allreduce(stats, MPI.SUM, mpicomm))
 
@@ -1300,7 +1047,7 @@ function main()
   DFloat = Float64
 
   # MPI.Init()
-  MPI.Initialized() ||MPI.Init()
+  MPI.Initialized() || MPI.Init()
   MPI.finalize_atexit()
 
   mpicomm = MPI.COMM_WORLD
@@ -1335,52 +1082,38 @@ function main()
     c=c_v/R_gas
     ρ_k=p0/(R_gas*θ_k)*(π_k)^c
     ρ = ρ_k
-    U = ρ*(u0)
-    V = ρ*(0.0)
-    W = ρ*(0.0)
-    E = ρ*θ_k
-    ρ, U, V, W, E
+    U = u0
+    V = 0.0
+    E = θ_k
+    ρ, U, V, E
   end
 
-  tend = DFloat(0.1)
+  time_final = DFloat(20.0)
+  iplot=100
   Ne = 10
   N  = 4
+  dim = 2
+  hardware="cpu"
+  @show (N,Ne,iplot,time_final,hardware)
 
   mesh2D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
                       range(DFloat(0); length=Ne+1, stop=1000)),
                      (true, false),
                    part=mpirank+1, numparts=mpisize)
 
-  mpirank == 0 && println("Running 2d (CPU)...")
-  euler(Val(2), Val(N), mpicomm, (x...)->ic(2, x...), mesh2D, tend;
+  if hardware == "cpu"
+     mpirank == 0 && println("Running 2d (CPU)...")
+     euler(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot;
         ArrType=Array, tout = 10)
-  mpirank == 0 && println()
-
-  @hascuda begin
-    mpirank == 0 && println("Running 2d (GPU)...")
-    euler(Val(2), Val(N), mpicomm, (x...)->ic(2, x...), mesh2D, tend;
+     mpirank == 0 && println()
+  elseif hardware == "gpu"
+     @hascuda begin
+       mpirank == 0 && println("Running 2d (GPU)...")
+       euler(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot;
           ArrType=CuArray, tout = 10)
-    mpirank == 0 && println()
+       mpirank == 0 && println()
+     end
   end
-
-  mesh3D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
-                      range(DFloat(0); length=Ne+1, stop=1000),
-                      range(DFloat(0); length=Ne+1, stop=1000)),
-                   (true, true, false),
-                   part=mpirank+1, numparts=mpisize)
-
-  mpirank == 0 && println("Running 3d (CPU)...")
-  euler(Val(3), Val(N), mpicomm, (x...)->ic(3, x...), mesh3D, tend;
-        ArrType=Array, tout = 10)
-  mpirank == 0 && println()
-
-  @hascuda begin
-    mpirank == 0 && println("Running 3d (GPU)...")
-    euler(Val(3), Val(N), mpicomm, (x...)->ic(3, x...), mesh3D, tend;
-          ArrType=CuArray, tout = 10)
-  end
-
-  # MPI.Finalize()
   nothing
 end
 # }}}
