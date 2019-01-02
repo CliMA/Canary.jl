@@ -481,22 +481,20 @@ function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, vgeo, elems, vma
                 eM, eP = e, ((idP - 1) ÷ Np) + 1
                 vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
 
-                #Left conservation variables
+                #Left variables
                 ρM = Q[vidM, _ρ, eM]
                 UM = Q[vidM, _U, eM]
                 VM = Q[vidM, _V, eM]
                 EM = Q[vidM, _E, eM]
                 yM = vgeo[vidM, _y, eM]
                 PM = (R_gas/c_v)*(EM - (UM^2 + VM^2)/(2*ρM) - ρM*gravity*yM)
-
-                #Left primitive variables
                 uM=UM/ρM
                 vM=VM/ρM
                 TM=PM/(R_gas*ρM)
 
+                #Right variables
                 bc = elemtobndy[f, e]
                 ρP = UP = VP = EP = PP = zero(eltype(Q))
-                #Right conservation/primitive variables
                 if bc == 0
                     ρP = Q[vidP, _ρ, eP]
                     UP = Q[vidP, _U, eP]
@@ -520,6 +518,7 @@ function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, vgeo, elems, vma
                 else
                     error("Invalid boundary conditions $bc on face $f of element $e")
                 end
+
                 #Left Fluxes
                 fluxρM = ρM
                 fluxUM = uM
@@ -657,7 +656,7 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  gradQ, Q, sgeo, elems, vma
                 eM, eP = e, ((idP - 1) ÷ Np) + 1
                 vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
 
-                #Left conservation variables
+                #Left variables
                 ρxM = gradQ[vidM, _ρ, 1, eM]
                 ρyM = gradQ[vidM, _ρ, 2, eM]
                 UxM = gradQ[vidM, _U, 1, eM]
@@ -669,15 +668,15 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  gradQ, Q, sgeo, elems, vma
                 ρM = Q[vidM, _ρ, eM]
                 UM = Q[vidM, _U, eM]
                 VM = Q[vidM, _V, eM]
-                #Left primitive variables
+
                 uM=UM/ρM
                 vM=VM/ρM
                 uxM, uyM = UxM, UyM
                 vxM, vyM = VxM, VyM
                 TxM, TyM = ExM, EyM
 
+                #Right variables
                 bc = elemtobndy[f, e]
-                #Right conservation variables
                 ρxP = ρyP = UxP = UyP = VxP = VyP = ExP = EyP = zero(eltype(Q))
                 if bc == 0
                     ρxP = gradQ[vidP, _ρ, 1, eP]
@@ -688,7 +687,7 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  gradQ, Q, sgeo, elems, vma
                     VyP = gradQ[vidP, _V, 2, eP]
                     ExP = gradQ[vidP, _E, 1, eP]
                     EyP = gradQ[vidP, _E, 2, eP]
-                    #primitive variables
+
                     ρP = Q[vidP, _ρ, eP]
                     UP = Q[vidP, _U, eP]
                     VP = Q[vidP, _V, eP]
@@ -710,7 +709,7 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  gradQ, Q, sgeo, elems, vma
                     EnM = nxM * ExM +  nyM * EyM
                     ExP = ExM - 2 * EnM * nxM
                     EyP = EyM - 2 * EnM * nyM
-                    #primitive variables
+
                     unM = nxM * uM +  nyM * vM
                     uP = uM - 2 * unM * nxM
                     vP = vM - 2 * unM * nyM

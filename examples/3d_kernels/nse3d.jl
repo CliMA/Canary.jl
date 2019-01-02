@@ -1,5 +1,5 @@
 #--------------------------------Markdown Language Header-----------------------
-# # 3D Euler Equations Based on Total Energy
+# # 3D Compressible Navier-Stokes Equations
 #
 #
 #-
@@ -7,22 +7,31 @@
 #-
 # ## Introduction
 #
-# This example shows how to solve the 3D Euler equations using vanilla DG.
+# This example shows how to solve the 3D compressible Navier-Stokes equations using vanilla DG.
 #
 # ## Continuous Governing Equations
 # We solve the following equation:
 #
 # ```math
-# \frac{\partial \rho}{\partial t} + \nabla \cdot \mathbf{U} = \nu \nabla^2 \rho \; \; (1.1)
+# \frac{\partial \rho}{\partial t} + \nabla \cdot \mathbf{U} = 0 \; \; (1.1)
 # ```
 # ```math
-# \frac{\partial \mathbf{U}}{\partial t} + \nabla \cdot \left( \frac{\mathbf{U} \otimes \mathbf{U}}{\rho} + P \mathbf{I}_2 \right) + \rho g \hat{\mathbf{k}}= \nu \nabla^2 \mathbf{U} \; \; (1.2)
+# \frac{\partial \mathbf{U}}{\partial t} + \nabla \cdot \left( \frac{\mathbf{U} \otimes \mathbf{U}}{\rho} + P \mathbf{I}_2 \right) + \rho g \hat{\mathbf{k}}= \nabla \cdot \mathbf{F}_U^{visc} \; \; (1.2)
 # ```
 # ```math
-# \frac{\partial E}{\partial t} + \nabla \cdot \left( \frac{\mathbf{U} \left(E+P \right)}{\rho} \right = \nu \nabla^2 E \; \; (1.3)
+# \frac{\partial E}{\partial t} + \nabla \cdot \left( \frac{\mathbf{U} \left(E+P \right)}{\rho} \right = \nabla \cdot \mathbf{F}_E^{visc} \; \; (1.3)
 # ```
-# where $\mathbf{u}=(u,v,w)$ is the velocity, $\mathbf{U}=\rho \mathbf{u}$, is the momentum, with $\rho$ being the total density and $E=(\gamma-1) \rho \left( c_v T + \frac{1}{2} \mathbf{u} \cdot \mathbf{u} + g z \right)$ is the total energy (internal $+$ kinetic $+$ potential).
-# In addition, $\nu$ is the artificial viscosity parameter. We employ periodic boundary conditions in the x-y directions and no-flux boundary conditions in the z-direction.
+# where $\mathbf{u}=(u,v,w)$ is the velocity, $\mathbf{U}=\rho \mathbf{u}$, is the momentum, with $\rho$ the total density and $E=(\gamma-1) \rho \left( c_v T + \frac{1}{2} \mathbf{u} \cdot \mathbf{u} + g z \right)$ the total energy (internal $+$ kinetic $+$ potential).
+# The viscous fluxes are defined as follows
+# ```math
+# \mathbf{F}_U^{visc} = \mu \left\[ \nabla \mathbf{u} +  \lambda \left( \nabla \mathbf{u} \right)^T + \nabla \cdot \mathbf{u}  \mathbf{I}_2 \right\]
+# ```
+# and
+# ```math
+# \mathbf{F}_E^{visc} =  \mathbf{u} \cdot \mathbf{F}_U^{visc} + \frac{c_p/Pr} \nabla T
+# ```
+# where $\mu$ is the kinematic (or artificial) viscosity, $\lambda=-\frac{2}{3}$ is the Stokes hypothesis, $Pr \approx 0.71$ is the Prandtl number for air and $T$ is the temperature.
+# We employ periodic boundary conditions in the horizontaland no-flux boundary conditions in the vertical.  At the bottom and top of the domain, we need to impose no-flux boundary conditions in $\nabla T$ to avoid a (artificial) thermal boundary layer.
 #
 #-
 # ## Discontinous Galerkin Method
@@ -45,24 +54,25 @@
 # \int_{\Omega_e} \psi \frac{\partial \mathbf{q}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Gamma_e} \psi \mathbf{n} \cdot \mathbf{F}^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \nabla \psi \cdot \mathbf{F}^{(e)}_N d\Omega_e = \int_{\Omega_e} \psi S\left( q^{(e)}_N} \right) d\Omega_e \; \; (3)
 # ```
 #
-# where the second term on the left denotes the flux integral term (computed in "function fluxrhs") and the third term denotes the volume integral term (computed in "function volumerhs").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the Rusanov flux.
+# where the second term on the left denotes the flux integral term (computed in "function flux\_rhs") and the third term denotes the volume integral term (computed in "function volume\_rhs").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the Rusanov flux.
 #
 #-
 # ## Local Discontinous Galerkin Method
-# To approximate the second order terms on the right hand side of Eq.\ (1) we use the local discontinuous Galerkin (LDG) method, which we described in \texttt{LDG3d.jl}. We will highlight the main steps below for completeness. The operator $\nabla^2$ is approximated by the following two-step process: first we approximate the gradient of $q$ as follows
+# To approximate the second order terms on the right hand side of Eq.\ (1) we use the local discontinuous Galerkin (LDG) method, which we described in LDG2d.jl. We will highlight the main steps below for completeness. We employ the following two-step process: first we approximate the gradient of $q$ as follows
 # ```math
-# \mathbf{Q}(x,y,z) = \nabla \vc{q}(x,y,z) \; \; (2)
+# \mathbf{Q}(\mathbf{x}) = \nabla \vc{q}(\mathbf{x}) \; \; (2)
 # ```
 # where $\mathbf{Q}$ is an auxiliary vector function, followed by
 # ```math
-# \nabla \cdot \mathbf{Q} (x,y,z) =  \nabla^2 \vc{q}(x,y,z) \; \; (3)
+# \nabla \cdot \left \mathbf{F}^{visc}\left( \mathbf{Q} \right) \; \; (3)
 # ```
-# which represents the Laplacian of $\vc{q}$.
+# which completes the approximation of the second order derivatives.
 #
 #-
 # ## Commented Program
 #
 #--------------------------------Markdown Language Header-----------------------
+
 include(joinpath(@__DIR__,"vtk.jl"))
 using MPI
 using Canary
@@ -116,6 +126,8 @@ const _R_gas = 28717 // 100
 const _c_p = 100467 // 100
 const _c_v = 7175 // 10
 const _gravity = 10
+const _Prandtl = 71 // 10
+const _Stokes = -2 // 3
 # }}}
 
 # {{{ courant
@@ -250,7 +262,7 @@ end
 
 # {{{ CPU Kernels
 # Volume RHS
-function volumerhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where {dim, N}
+function volume_rhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where {dim, N}
     DFloat = eltype(Q)
     γ::DFloat       = _γ
     p0::DFloat      = _p0
@@ -339,7 +351,7 @@ function volumerhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where {
 end
 
 # flux RHS
-function fluxrhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM,
+function flux_rhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM,
                   vmapP, elemtobndy) where {dim, N}
     DFloat = eltype(Q)
     γ::DFloat       = _γ
@@ -362,15 +374,16 @@ function fluxrhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM,
                 eM, eP = e, ((idP - 1) ÷ Np) + 1
                 vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
 
+                #Left conservation variables
                 ρM = Q[vidM, _ρ, eM]
                 UM = Q[vidM, _U, eM]
                 VM = Q[vidM, _V, eM]
                 WM = Q[vidM, _W, eM]
                 EM = Q[vidM, _E, eM]
                 zM = vgeo[vidM, _z, eM]
-
-                bc = elemtobndy[f, e]
                 PM = (R_gas/c_v)*(EM - (UM^2 + VM^2 + WM^2)/(2*ρM) - ρM*gravity*zM)
+                #Right conservation variables
+                bc = elemtobndy[f, e]
                 if bc == 0
                     ρP = Q[vidP, _ρ, eP]
                     UP = Q[vidP, _U, eP]
@@ -461,6 +474,13 @@ end
 # {{{ Volume grad(Q)
 function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where {dim, N}
     DFloat = eltype(Q)
+    γ::DFloat       = _γ
+    p0::DFloat      = _p0
+    R_gas::DFloat   = _R_gas
+    c_p::DFloat     = _c_p
+    c_v::DFloat     = _c_v
+    gravity::DFloat = _gravity
+
     Nq = N + 1
     nelem = size(Q)[end]
 
@@ -486,13 +506,20 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
 
             U, V, W = Q[i, j, k, _U, e], Q[i, j, k, _V, e], Q[i, j, k, _W, e]
             ρ, E = Q[i, j, k, _ρ, e], Q[i, j, k, _E, e]
+            P = (R_gas/c_v)*(E - (U^2 + V^2 + W^2)/(2*ρ) - ρ*gravity*z)
+
+            #Primitive variables
+            u=U/ρ
+            v=V/ρ
+            w=W/ρ
+            T=P/(R_gas*ρ)
 
             #Compute fluxes
             fluxρ = ρ
-            fluxU = U
-            fluxV = V
-            fluxW = W
-            fluxE = E
+            fluxU = u
+            fluxV = v
+            fluxW = w
+            fluxE = T
 
             s_F[i, j, k, _ρ, 1], s_F[i, j, k, _ρ, 2], s_F[i, j, k, _ρ, 3] = MJ * (ξx * fluxρ), MJ * (ξy * fluxρ), MJ * (ξz * fluxρ)
             s_F[i, j, k, _U, 1], s_F[i, j, k, _U, 2], s_F[i, j, k, _U, 3] = MJ * (ξx * fluxU), MJ * (ξy * fluxU), MJ * (ξz * fluxU)
@@ -536,7 +563,15 @@ end
 # }}}
 
 # Flux grad(Q)
-function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy) where {dim, N}
+function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, vgeo, elems, vmapM, vmapP, elemtobndy) where {dim, N}
+    DFloat = eltype(Q)
+    γ::DFloat       = _γ
+    p0::DFloat      = _p0
+    R_gas::DFloat   = _R_gas
+    c_p::DFloat     = _c_p
+    c_v::DFloat     = _c_v
+    gravity::DFloat = _gravity
+
     Np = (N+1)^dim
     Nfp = (N+1)^(dim-1)
     nface = 2*dim
@@ -550,20 +585,34 @@ function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vm
                 eM, eP = e, ((idP - 1) ÷ Np) + 1
                 vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
 
+                #Left variables
                 ρM = Q[vidM, _ρ, eM]
                 UM = Q[vidM, _U, eM]
                 VM = Q[vidM, _V, eM]
                 WM = Q[vidM, _W, eM]
                 EM = Q[vidM, _E, eM]
+                zM = vgeo[vidM, _z, eM]
+                PM = (R_gas/c_v)*(EM - (UM^2 + VM^2 + WM^2)/(2*ρM) - ρM*gravity*zM)
+                uM=UM/ρM
+                vM=VM/ρM
+                wM=WM/ρM
+                TM=PM/(R_gas*ρM)
 
+                #Right variables
                 bc = elemtobndy[f, e]
-                ρP = UP = VP = WP = EP = zero(eltype(Q))
+                ρP = UP = VP = WP = EP = PP = zero(eltype(Q))
                 if bc == 0
                     ρP = Q[vidP, _ρ, eP]
                     UP = Q[vidP, _U, eP]
                     VP = Q[vidP, _V, eP]
                     WP = Q[vidP, _W, eP]
                     EP = Q[vidP, _E, eP]
+                    zP = vgeo[vidP, _z, eP]
+                    PP = (R_gas/c_v)*(EP - (UP^2 + VP^2 + WP^2)/(2*ρP) - ρP*gravity*zP)
+                    uP=UP/ρP
+                    vP=VP/ρP
+                    wP=WP/ρP
+                    TP=PP/(R_gas*ρP)
                 elseif bc == 1
                     UnM = nxM * UM + nyM * VM + nzM * WM
                     UP = UM - 2 * UnM * nxM
@@ -571,23 +620,28 @@ function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vm
                     WP = WM - 2 * UnM * nzM
                     ρP = ρM
                     EP = EM
+                    PP = PM
+                    uP=UP/ρP
+                    vP=VP/ρP
+                    wP=WP/ρP
+                    TP=TM
                 else
                     error("Invalid boundary conditions $bc on face $f of element $e")
                 end
 
                 #Left Fluxes
                 fluxρM = ρM
-                fluxUM = UM
-                fluxVM = VM
-                fluxWM = WM
-                fluxEM = EM
+                fluxUM = uM
+                fluxVM = vM
+                fluxWM = wM
+                fluxEM = TM
 
                 #Right Fluxes
                 fluxρP = ρP
-                fluxUP = UP
-                fluxVP = VP
-                fluxWP = WP
-                fluxEP = EP
+                fluxUP = uP
+                fluxVP = vP
+                fluxWP = wP
+                fluxEP = TP
 
                 #Compute Numerical/Rusanov Flux
                 fluxρS = 0.5*(fluxρM + fluxρP)
@@ -619,12 +673,22 @@ end
 # }}}
 
 # {{{ Volume div(grad(Q))
-function volume_div!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where {dim, N}
+function volume_div!(::Val{dim}, ::Val{N}, rhs::Array, gradQ, Q, vgeo, D, elems) where {dim, N}
     DFloat = eltype(Q)
+    γ::DFloat       = _γ
+    p0::DFloat      = _p0
+    R_gas::DFloat   = _R_gas
+    c_p::DFloat     = _c_p
+    c_v::DFloat     = _c_v
+    gravity::DFloat = _gravity
+    Pr::DFloat = _Prandtl
+    lambda::DFloat = _Stokes
+
     Nq = N + 1
     nelem = size(Q)[end]
 
-    Q = reshape(Q, Nq, Nq, Nq, _nstate, dim, nelem)
+    Q = reshape(Q, Nq, Nq, Nq, _nstate, nelem)
+    gradQ = reshape(gradQ, Nq, Nq, Nq, _nstate, dim, nelem)
     rhs = reshape(rhs, Nq, Nq, Nq, _nstate, dim, nelem)
     vgeo = reshape(vgeo, Nq, Nq, Nq, _nvgeo, nelem)
 
@@ -643,28 +707,39 @@ function volume_div!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where 
             ηx, ηy, ηz = vgeo[i,j,k,_ηx,e], vgeo[i,j,k,_ηy,e], vgeo[i,j,k,_ηz,e]
             ζx, ζy, ζz = vgeo[i,j,k,_ζx,e], vgeo[i,j,k,_ζy,e], vgeo[i,j,k,_ζz,e]
 
-            ρx, ρy, ρz = Q[i,j,k,_ρ,1,e], Q[i,j,k,_ρ,2,e], Q[i,j,k,_ρ,3,e]
-            Ux, Uy, Uz = Q[i,j,k,_U,1,e], Q[i,j,k,_U,2,e], Q[i,j,k,_U,3,e]
-            Vx, Vy, Vz = Q[i,j,k,_V,1,e], Q[i,j,k,_V,2,e], Q[i,j,k,_V,3,e]
-            Wx, Wy, Wz = Q[i,j,k,_W,1,e], Q[i,j,k,_W,2,e], Q[i,j,k,_W,3,e]
-            Ex, Ey, Ez = Q[i,j,k,_E,1,e], Q[i,j,k,_E,2,e], Q[i,j,k,_E,3,e]
+            ρx, ρy, ρz = gradQ[i,j,k,_ρ,1,e], gradQ[i,j,k,_ρ,2,e], gradQ[i,j,k,_ρ,3,e]
+            Ux, Uy, Uz = gradQ[i,j,k,_U,1,e], gradQ[i,j,k,_U,2,e], gradQ[i,j,k,_U,3,e]
+            Vx, Vy, Vz = gradQ[i,j,k,_V,1,e], gradQ[i,j,k,_V,2,e], gradQ[i,j,k,_V,3,e]
+            Wx, Wy, Wz = gradQ[i,j,k,_W,1,e], gradQ[i,j,k,_W,2,e], gradQ[i,j,k,_W,3,e]
+            Ex, Ey, Ez = gradQ[i,j,k,_E,1,e], gradQ[i,j,k,_E,2,e], gradQ[i,j,k,_E,3,e]
+            ρ, U, V, W= Q[i,j,k,_ρ,e], Q[i,j,k,_U,e], Q[i,j,k,_V,e], Q[i,j,k,_W,e]
+
+            #Compute primitive variables
+            ux, uy, uz = Ux, Uy, Uz
+            vx, vy, vz = Vx, Vy, Vz
+            wx, wy, wz = Wx, Wy, Wz
+            Tx, Ty, Tz = Ex, Ey, Ez
+            div_u=ux + vy + wz
+            u=U/ρ
+            v=V/ρ
+            w=W/ρ
 
             #Compute fluxes
-            fluxρ_x = ρx
-            fluxρ_y = ρy
-            fluxρ_z = ρz
-            fluxU_x = Ux
-            fluxU_y = Uy
-            fluxU_z = Uz
-            fluxV_x = Vx
-            fluxV_y = Vy
-            fluxV_z = Vz
-            fluxW_x = Wx
-            fluxW_y = Wy
-            fluxW_z = Wz
-            fluxE_x = Ex
-            fluxE_y = Ey
-            fluxE_z = Ez
+            fluxρ_x = 0*ρx
+            fluxρ_y = 0*ρy
+            fluxρ_z = 0*ρz
+            fluxU_x = 2*ux + lambda*div_u
+            fluxU_y = uy + vx
+            fluxU_z = uz + wx
+            fluxV_x = vx + uy
+            fluxV_y = 2*vy + lambda*div_u
+            fluxV_z = vz + wy
+            fluxW_x = wx + uz
+            fluxW_y = wy + vz
+            fluxW_z = 2*wz + lambda*div_u
+            fluxE_x = u*(2*ux + lambda*div_u) + v*(uy + vx) + w*(uz + wx) + c_p/Pr*Tx
+            fluxE_y = u*(vx + uy) + v*(2*vy + lambda*div_u) + w*(vz + wy) + c_p/Pr*Ty
+            fluxE_z = u*(wx + uz) + v*(wy + vz) + w*(2*wz + lambda*div_u) + c_p/Pr*Tz
 
             s_F[i, j, k, _ρ] = MJ * (ξx * fluxρ_x + ξy * fluxρ_y + ξz * fluxρ_z)
             s_F[i, j, k, _U] = MJ * (ξx * fluxU_x + ξy * fluxU_y + ξz * fluxU_z)
@@ -702,7 +777,17 @@ end
 # }}}
 
 # Flux div(grad(Q))
-function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vmapP, elemtobndy) where {dim, N}
+function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  gradQ, Q, sgeo, elems, vmapM, vmapP, elemtobndy) where {dim, N}
+    DFloat = eltype(Q)
+    γ::DFloat       = _γ
+    p0::DFloat      = _p0
+    R_gas::DFloat   = _R_gas
+    c_p::DFloat     = _c_p
+    c_v::DFloat     = _c_v
+    gravity::DFloat = _gravity
+    Pr::DFloat = _Prandtl
+    lambda::DFloat = _Stokes
+
     Np = (N+1)^dim
     Nfp = (N+1)^(dim-1)
     nface = 2*dim
@@ -716,22 +801,36 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vma
                 eM, eP = e, ((idP - 1) ÷ Np) + 1
                 vidM, vidP = ((idM - 1) % Np) + 1,  ((idP - 1) % Np) + 1
 
-                ρxM = Q[vidM, _ρ, 1, eM]
-                ρyM = Q[vidM, _ρ, 2, eM]
-                ρzM = Q[vidM, _ρ, 3, eM]
-                UxM = Q[vidM, _U, 1, eM]
-                UyM = Q[vidM, _U, 2, eM]
-                UzM = Q[vidM, _U, 3, eM]
-                VxM = Q[vidM, _V, 1, eM]
-                VyM = Q[vidM, _V, 2, eM]
-                VzM = Q[vidM, _V, 3, eM]
-                WxM = Q[vidM, _W, 1, eM]
-                WyM = Q[vidM, _W, 2, eM]
-                WzM = Q[vidM, _W, 3, eM]
-                ExM = Q[vidM, _E, 1, eM]
-                EyM = Q[vidM, _E, 2, eM]
-                EzM = Q[vidM, _E, 3, eM]
+                #Left variables
+                ρxM = gradQ[vidM, _ρ, 1, eM]
+                ρyM = gradQ[vidM, _ρ, 2, eM]
+                ρzM = gradQ[vidM, _ρ, 3, eM]
+                UxM = gradQ[vidM, _U, 1, eM]
+                UyM = gradQ[vidM, _U, 2, eM]
+                UzM = gradQ[vidM, _U, 3, eM]
+                VxM = gradQ[vidM, _V, 1, eM]
+                VyM = gradQ[vidM, _V, 2, eM]
+                VzM = gradQ[vidM, _V, 3, eM]
+                WxM = gradQ[vidM, _W, 1, eM]
+                WyM = gradQ[vidM, _W, 2, eM]
+                WzM = gradQ[vidM, _W, 3, eM]
+                ExM = gradQ[vidM, _E, 1, eM]
+                EyM = gradQ[vidM, _E, 2, eM]
+                EzM = gradQ[vidM, _E, 3, eM]
+                ρM = Q[vidM, _ρ, eM]
+                UM = Q[vidM, _U, eM]
+                VM = Q[vidM, _V, eM]
+                WM = Q[vidM, _W, eM]
 
+                uM=UM/ρM
+                vM=VM/ρM
+                wM=WM/ρM
+                uxM, uyM, uzM = UxM, UyM, UzM
+                vxM, vyM, vzM = VxM, VyM, VzM
+                wxM, wyM, wzM = WxM, WyM, WzM
+                TxM, TyM, TzM = ExM, EyM, EzM
+
+                #Right variables
                 bc = elemtobndy[f, e]
                 ρxP = ρyP = ρzP = zero(eltype(Q))
                 UxP = UyP = UzP = zero(eltype(Q))
@@ -739,21 +838,33 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vma
                 WxP = WyP = WzP = zero(eltype(Q))
                 ExP = EyP = EzP = zero(eltype(Q))
                 if bc == 0
-                    ρxP = Q[vidP, _ρ, 1, eP]
-                    ρyP = Q[vidP, _ρ, 2, eP]
-                    ρzP = Q[vidP, _ρ, 3, eP]
-                    UxP = Q[vidP, _U, 1, eP]
-                    UyP = Q[vidP, _U, 2, eP]
-                    UzP = Q[vidP, _U, 3, eP]
-                    VxP = Q[vidP, _V, 1, eP]
-                    VyP = Q[vidP, _V, 2, eP]
-                    VzP = Q[vidP, _V, 3, eP]
-                    WxP = Q[vidP, _W, 1, eP]
-                    WyP = Q[vidP, _W, 2, eP]
-                    WzP = Q[vidP, _W, 3, eP]
-                    ExP = Q[vidP, _E, 1, eP]
-                    EyP = Q[vidP, _E, 2, eP]
-                    EzP = Q[vidP, _E, 3, eP]
+                    ρxP = gradQ[vidP, _ρ, 1, eP]
+                    ρyP = gradQ[vidP, _ρ, 2, eP]
+                    ρzP = gradQ[vidP, _ρ, 3, eP]
+                    UxP = gradQ[vidP, _U, 1, eP]
+                    UyP = gradQ[vidP, _U, 2, eP]
+                    UzP = gradQ[vidP, _U, 3, eP]
+                    VxP = gradQ[vidP, _V, 1, eP]
+                    VyP = gradQ[vidP, _V, 2, eP]
+                    VzP = gradQ[vidP, _V, 3, eP]
+                    WxP = gradQ[vidP, _W, 1, eP]
+                    WyP = gradQ[vidP, _W, 2, eP]
+                    WzP = gradQ[vidP, _W, 3, eP]
+                    ExP = gradQ[vidP, _E, 1, eP]
+                    EyP = gradQ[vidP, _E, 2, eP]
+                    EzP = gradQ[vidP, _E, 3, eP]
+                    ρP = Q[vidP, _ρ, eP]
+                    UP = Q[vidP, _U, eP]
+                    VP = Q[vidP, _V, eP]
+                    WP = Q[vidP, _W, eP]
+
+                    uP=UP/ρP
+                    vP=VP/ρP
+                    wP=WP/ρP
+                    uxP, uyP, uzP = UxP, UyP, UzP
+                    vxP, vyP, vzP = VxP, VyP, VzP
+                    wxP, wyP, wzP = WxP, WyP, WzP
+                    TxP, TyP, TzP = ExP, EyP, EzP
                 elseif bc == 1
                     ρnM = nxM * ρxM + nyM * ρyM + nzM * ρzM
                     ρxP = ρxM - 2 * ρnM * nxM
@@ -775,43 +886,55 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, elems, vmapM, vma
                     ExP = ExM - 2 * EnM * nxM
                     EyP = EyM - 2 * EnM * nyM
                     EzP = EzM - 2 * EnM * nzM
+
+                    unM = nxM * uM + nyM * vM + nzM * wM
+                    uP = uM - 2 * unM * nxM
+                    vP = vM - 2 * unM * nyM
+                    wP = wM - 2 * unM * nzM
+                    uxP, uyP, uzP = UxP, UyP, UzP #FXG: Not sure about this BC
+                    vxP, vyP, vzP = VxP, VyP, VzP #FXG: Not sure about this BC
+                    wxP, wyP, wzP = WxP, WyP, WzP #FXG: Not sure about this BC
+                    #TxP, TyP, TzP = ExP, EyP, EzP #Produces thermal boundary layer
+                    TxP, TyP, TzP = TxM, TyM, TzM
                 else
                     error("Invalid boundary conditions $bc on face $f of element $e")
                 end
 
                 #Left Fluxes
-                fluxρM_x = ρxM
-                fluxρM_y = ρyM
-                fluxρM_z = ρzM
-                fluxUM_x = UxM
-                fluxUM_y = UyM
-                fluxUM_z = UzM
-                fluxVM_x = VxM
-                fluxVM_y = VyM
-                fluxVM_z = VzM
-                fluxWM_x = WxM
-                fluxWM_y = WyM
-                fluxWM_z = WzM
-                fluxEM_x = ExM
-                fluxEM_y = EyM
-                fluxEM_z = EzM
+                div_uM=uxM + vyM + wzM
+                fluxρM_x = 0*ρxM
+                fluxρM_y = 0*ρyM
+                fluxρM_z = 0*ρzM
+                fluxUM_x = 2*uxM + lambda*div_uM
+                fluxUM_y = uyM + vxM
+                fluxUM_z = uzM + wxM
+                fluxVM_x = vxM + uyM
+                fluxVM_y = 2*vyM + lambda*div_uM
+                fluxVM_z = vzM + wyM
+                fluxWM_x = wxM + uzM
+                fluxWM_y = wyM + vzM
+                fluxWM_z = 2*wzM + lambda*div_uM
+                fluxEM_x = uM*(2*uxM + lambda*div_uM) + vM*(uyM + vxM) + wM*(uzM + wxM) + c_p/Pr*TxM
+                fluxEM_y = uM*(vxM + uyM) + vM*(2*vyM + lambda*div_uM) + wM*(vzM + wyM) + c_p/Pr*TyM
+                fluxEM_z = uM*(wxM + uzM) + vM*(wyM + vzM) + wM*(2*wzM + lambda*div_uM) + c_p/Pr*TzM
 
                 #Right Fluxes
-                fluxρP_x = ρxP
-                fluxρP_y = ρyP
-                fluxρP_z = ρzP
-                fluxUP_x = UxP
-                fluxUP_y = UyP
-                fluxUP_z = UzP
-                fluxVP_x = VxP
-                fluxVP_y = VyP
-                fluxVP_z = VzP
-                fluxWP_x = WxP
-                fluxWP_y = WyP
-                fluxWP_z = WzP
-                fluxEP_x = ExP
-                fluxEP_y = EyP
-                fluxEP_z = EzP
+                div_uP=uxP + vyP + wzP
+                fluxρP_x = 0*ρxP
+                fluxρP_y = 0*ρyP
+                fluxρP_z = 0*ρzP
+                fluxUP_x = 2*uxP + lambda*div_uP
+                fluxUP_y = uyP + vxP
+                fluxUP_z = uzP + wxP
+                fluxVP_x = vxP + uyP
+                fluxVP_y = 2*vyP + lambda*div_uP
+                fluxVP_z = vzP + wyP
+                fluxWP_x = wxP + uzP
+                fluxWP_y = wyP + vzP
+                fluxWP_z = 2*wzP + lambda*div_uP
+                fluxEP_x = uP*(2*uxP + lambda*div_uP) + vP*(uyP + vxP) + wP*(uzP + wxP) + c_p/Pr*TxP
+                fluxEP_y = uP*(vxP + uyP) + vP*(2*vyP + lambda*div_uP) + wP*(vzP + wyP) + c_p/Pr*TyP
+                fluxEP_z = uP*(wxP + uzP) + vP*(wyP + vzP) + wP*(2*wzP + lambda*div_uP) + c_p/Pr*TzP
 
                 #Compute Numerical Flux
                 fluxρS = 0.5*(nxM * (fluxρM_x + fluxρP_x) + nyM * (fluxρM_y + fluxρP_y) + nzM * (fluxρM_z + fluxρP_z))
@@ -877,7 +1000,7 @@ end
 # {{{ improved GPU kernles
 
 # {{{ Volume RHS for 3D
-@hascuda function knl_volumerhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
+@hascuda function knl_volume_rhs!(::Val{3}, ::Val{N}, rhs, Q, vgeo, D, nelem) where N
     DFloat = eltype(D)
     γ::DFloat       = _γ
     p0::DFloat      = _p0
@@ -1001,7 +1124,7 @@ end
 # }}}
 
 # {{{ Face RHS (all dimensions)
-@hascuda function knl_fluxrhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, vgeo, nelem, vmapM,
+@hascuda function knl_flux_rhs!(::Val{dim}, ::Val{N}, rhs, Q, sgeo, vgeo, nelem, vmapM,
                                vmapP, elemtobndy) where {dim, N}
     DFloat = eltype(Q)
     γ::DFloat       = _γ
@@ -1224,18 +1347,18 @@ end
 # }}}
 
 # {{{ GPU kernel wrappers
-@hascuda function volumerhs!(::Val{dim}, ::Val{N}, d_rhsC::CuArray, d_QC,
+@hascuda function volume_rhs!(::Val{dim}, ::Val{N}, d_rhsC::CuArray, d_QC,
                              d_vgeoC, d_D, elems) where {dim, N}
     nelem = length(elems)
     @cuda(threads=ntuple(j->N+1, dim), blocks=nelem,
-          knl_volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, nelem))
+          knl_volume_rhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, nelem))
 end
 
-@hascuda function fluxrhs!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_sgeo,
+@hascuda function flux_rhs!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_sgeo,
                            d_vgeoL, elems, d_vmapM, d_vmapP, d_elemtobndy) where {dim, N}
     nelem = length(elems)
     @cuda(threads=(ntuple(j->N+1, dim-1)..., 1), blocks=nelem,
-          knl_fluxrhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, d_vgeoL, nelem, d_vmapM,
+          knl_flux_rhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, d_vgeoL, nelem, d_vmapM,
                        d_vmapP, d_elemtobndy))
 end
 
@@ -1448,13 +1571,13 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                        ArrType=ArrType)
 
             # volume RHS computation
-            volumerhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, mesh.realelems)
+            volume_rhs!(Val(dim), Val(N), d_rhsC, d_QC, d_vgeoC, d_D, mesh.realelems)
 
             # Receive Data Q
             receivedata_Q!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_QL)
 
             # face RHS computation
-            fluxrhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, d_vgeoL, mesh.realelems, d_vmapM,
+            flux_rhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, d_vgeoL, mesh.realelems, d_vmapM,
                      d_vmapP, d_elemtobndy)
 
             #---------------2nd Order Operators--------------------------#
@@ -1463,7 +1586,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                 volume_grad!(Val(dim), Val(N), d_rhs_gradQC, d_QC, d_vgeoC, d_D, mesh.realelems)
 
                 # flux grad Q computation
-                flux_grad!(Val(dim), Val(N), d_rhs_gradQL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
+                flux_grad!(Val(dim), Val(N), d_rhs_gradQL, d_QL, d_sgeo, d_vgeoL, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
 
                 # Construct grad Q
                 update_gradQ!(Val(dim), Val(N), d_gradQL, d_rhs_gradQL, d_vgeoL, mesh.realelems)
@@ -1474,13 +1597,13 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                                d_gradQL, mpicomm;ArrType=ArrType)
 
                 # volume div(grad Q) computation
-                volume_div!(Val(dim), Val(N), d_rhs_gradQC, d_gradQC, d_vgeoC, d_D, mesh.realelems)
+                volume_div!(Val(dim), Val(N), d_rhs_gradQC, d_gradQC, d_QC, d_vgeoC, d_D, mesh.realelems)
 
                 # Receive Data grad(Q)
                 receivedata_gradQ!(Val(dim), Val(N), mesh, recvreq, recvgradQ, d_recvgradQ, d_gradQL)
 
                 # flux div(grad Q) computation
-                flux_div!(Val(dim), Val(N), d_rhs_gradQL, d_gradQL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
+                flux_div!(Val(dim), Val(N), d_rhs_gradQL, d_gradQL, d_QL, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
             end
 
             #---------------Update Solution--------------------------#
@@ -1510,7 +1633,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
             W = reshape((@view Q[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
             E = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
             E = E .- 300.0
-            writemesh(@sprintf("viz/euler%dD_set3c_%s_rank_%04d_step_%05d",dim, ArrType, mpirank, step), X...;
+            writemesh(@sprintf("viz/nse%dD_set3c_%s_rank_%04d_step_%05d",dim, ArrType, mpirank, step), X...;
                       fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)), realelems=mesh.realelems)
         end
     end
@@ -1677,8 +1800,8 @@ function convert_set4c_to_set2nc(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
 end
 # }}}
 
-# {{{ euler driver
-function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
+# {{{ nse driver
+function nse(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
                meshwarp=(x...)->identity(x),
                tout = 1, ArrType=Array, plotstep=0) where {dim, N}
     DFloat = typeof(tend)
@@ -1757,7 +1880,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
     W = reshape((@view Q_temp[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
     E = reshape((@view Q_temp[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
     E = E .- 300.0
-    writemesh(@sprintf("viz/euler%dD_set3c_%s_rank_%04d_step_%05d",
+    writemesh(@sprintf("viz/nse%dD_set3c_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, 0), X...;
               fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)),
               realelems=mesh.realelems)
@@ -1777,7 +1900,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
     W = reshape((@view Q_temp[:, _W, :]), ntuple(j->(N+1),dim)..., nelem)
     E = reshape((@view Q_temp[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
     E = E .- 300.0
-    writemesh(@sprintf("viz/euler%dD_set3c_%s_rank_%04d_step_%05d",
+    writemesh(@sprintf("viz/nse%dD_set3c_%s_rank_%04d_step_%05d",
                        dim, ArrType, mpirank, nsteps), X...;
               fields=(("ρ", ρ), ("U", U), ("V", V), ("W", W), ("E", E)),
               realelems=mesh.realelems)
@@ -1842,11 +1965,11 @@ function main()
         ρ, U, V, W, E
     end
 
-    time_final = DFloat(300.0)
+    time_final = DFloat(10.0)
     iplot=100
     Ne = 10
     N  = 4
-    visc = 0
+    visc = 1.0
     dim = 3
     hardware="cpu"
     @show (N,Ne,visc,iplot,time_final,hardware,mpisize)
@@ -1859,13 +1982,13 @@ function main()
 
     if hardware == "cpu"
         mpirank == 0 && println("Running 3d (CPU)...")
-        euler(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh3D, time_final, iplot, visc;
+        nse(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh3D, time_final, iplot, visc;
               ArrType=Array, tout = 10)
         mpirank == 0 && println()
     elseif hardware == "gpu"
         @hascuda begin
             mpirank == 0 && println("Running 3d (GPU)...")
-            euler(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh3D, time_final, iplot, visc;
+            nse(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh3D, time_final, iplot, visc;
                   ArrType=CuArray, tout = 10)
             mpirank == 0 && println()
         end
