@@ -1134,16 +1134,8 @@ end
     c_v::DFloat     = _c_v
     gravity::DFloat = _gravity
 
-    if dim == 1
-        Np = (N+1)
-        nface = 2
-    elseif dim == 2
-        Np = (N+1) * (N+1)
-        nface = 4
-    elseif dim == 3
-        Np = (N+1) * (N+1) * (N+1)
-        nface = 6
-    end
+    Np = (N+1) * (N+1) * (N+1)
+    nface = 6
 
     (i, j, k) = threadIdx()
     e = blockIdx().x
