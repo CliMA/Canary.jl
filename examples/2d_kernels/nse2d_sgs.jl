@@ -611,9 +611,10 @@ function volume_div!(::Val{dim}, ::Val{N}, rhs::Array, gradQ, Q, visc_sgs, vgeo,
             v=V/ρ
 
             #Store viscosity coefficients
-            μ=visc_sgs[1,e]
-            κ=visc_sgs[2,e]
-            ν=visc_sgs[3,e]
+            ρ=1 #assumes visc_sgs in compute_viscosity_sgs has density included
+            μ=ρ*visc_sgs[1,e]
+            κ=ρ*visc_sgs[2,e]
+            ν=ρ*visc_sgs[3,e]
 
             #Compute fluxes
             fluxρ_x = ν*ρx
@@ -693,13 +694,15 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  gradQ, Q, visc_sgs, sgeo, 
                 TxM, TyM = ExM, EyM
 
                 #Store viscosity coefficients
-                μM=visc_sgs[1,eM]
-                κM=visc_sgs[2,eM]
-                νM=visc_sgs[3,eM]
+                ρM=1 #assumes visc_sgs in compute_viscosity_sgs has density included
+                μM=ρM*visc_sgs[1,eM]
+                κM=ρM*visc_sgs[2,eM]
+                νM=ρM*visc_sgs[3,eM]
 
                 #Right variables
                 bc = elemtobndy[f, e]
                 ρxP = ρyP = UxP = UyP = VxP = VyP = ExP = EyP = zero(eltype(Q))
+                EPflag=1.0
                 if bc == 0
                     ρxP = gradQ[vidP, _ρ, 1, eP]
                     ρyP = gradQ[vidP, _ρ, 2, eP]
@@ -720,9 +723,10 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  gradQ, Q, visc_sgs, sgeo, 
                     TxP, TyP = ExP, EyP
 
                     #Store viscosity coefficients
-                    μP=visc_sgs[1,eP]
-                    κP=visc_sgs[2,eP]
-                    νP=visc_sgs[3,eP]
+                    ρP=1 #assumes visc_sgs in compute_viscosity_sgs has density included
+                    μP=ρP*visc_sgs[1,eP]
+                    κP=ρP*visc_sgs[2,eP]
+                    νP=ρP*visc_sgs[3,eP]
                 elseif bc == 1
                     ρnM = nxM * ρxM +  nyM * ρyM
                     ρxP = ρxM - 2 * ρnM * nxM
@@ -744,9 +748,9 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  gradQ, Q, visc_sgs, sgeo, 
                     vxP, vyP = VxP, VyP #FXG: Not sure about this BC
                     #TxP, TyP = ExP, EyP #Produces thermal boundary layer
                     TxP, TyP = TxM, TyM
-#                    uxM = uyM = vxM = vyM = 0
-#                    uxP = uyP = vxP = vyP = 0
-
+#                    TxP = 0
+#                    TyP = -gravity/c_p
+#                    EPflag=0
                     #Store viscosity coefficients
                     μP=μM
                     κP=κM
@@ -774,8 +778,8 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  gradQ, Q, visc_sgs, sgeo, 
                 fluxUP_y = μP*(uyP + vxP)
                 fluxVP_x = μP*(vxP + uyP)
                 fluxVP_y = μP*(2*vyP + lambda*div_uP)
-                fluxEP_x = μP*(uP*(2*uxP + lambda*div_uP) + vP*(uyP + vxP)) + κP*c_p/Pr*TxP
-                fluxEP_y = μP*(uP*(vxP + uyP) + vP*(2*vyP + lambda*div_uP)) + κP*c_p/Pr*TyP
+                fluxEP_x = μP*(uP*(2*uxP + lambda*div_uP) + vP*(uyP + vxP))*EPflag + κP*c_p/Pr*TxP
+                fluxEP_y = μP*(uP*(vxP + uyP) + vP*(2*vyP + lambda*div_uP))*EPflag + κP*c_p/Pr*TyP
 
                 #Compute Numerical Flux
                 fluxρS = 0.5*(nxM * (fluxρM_x + fluxρP_x) + nyM * (fluxρM_y + fluxρP_y))
@@ -822,7 +826,9 @@ end
 # {{{ Update solution (for all dimensions)
 function updatesolution!(::Val{dim}, ::Val{N}, rhs::Array,  rhs_gradQ, Q, vgeo, elems, rka, rkb, dt) where {dim, N}
 
-    @inbounds for e = elems, s = 1:_nstate, i = 1:(N+1)^dim
+    Np=(N+1)^dim
+
+    @inbounds for e = elems, s = 1:_nstate, i = 1:Np
         rhs[i, s, e] += rhs_gradQ[i,s,1,e]
         Q[i, s, e] += rkb * dt * rhs[i, s, e] * vgeo[i, _MJI, e]
         rhs[i, s, e] *= rka
@@ -832,12 +838,13 @@ end
 # }}}
 
 # {{{ Store residual for sgs
-function store_residual_sgs!(::Val{dim}, ::Val{N}, rhs_sgs::Array,  rhs, vgeo, elems) where {dim, N}
+function store_residual_sgs!(::Val{dim}, ::Val{N}, rhs_sgs::Array, rhs, vgeo, elems) where {dim, N}
 
+    Np=(N+1)^dim
     fill!( rhs_sgs, zero(rhs_sgs[1]))
 
-    @inbounds for e = elems, s = 1:_nstate, i = 1:(N+1)^dim
-        rhs_sgs[i, s, e] += rhs[i,s,e] * vgeo[i, _MJI, e]
+    @inbounds for e = elems, s = 1:_nstate, i = 1:Np
+        rhs_sgs[i, s, e] += rhs[i, s, e] * vgeo[i, _MJI, e]
     end
 
 end
@@ -862,17 +869,22 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
     Q_mean_global = zeros(DFloat, nstate)
     ΔQ_global = zeros(DFloat, nstate)
     rhs_max = zeros(DFloat, nstate)
+
     mpirank = MPI.Comm_rank(mpicomm)
-    eps=1e-0
+    mpisize = MPI.Comm_size(mpicomm)
+    eps=1e-8
+    eps=1e-8
+#    eps2=1e-8
+#    @show (eps, eps2)
 
     #Compute Q_mean_global
     @inbounds for e = 1:nelem, s=1:nstate, i = 1:Np
         Q_mean_global[s] += Q[i, s, e]
     end
-    for s=1:_nstate
+    for s=1:nstate
         Q_mean_global[s] = Q_mean_global[s]/(nelem*Np)
     end
-    Q_mean_global=MPI.allreduce(Q_mean_global, MPI.SUM, mpicomm)
+    Q_mean_global=MPI.allreduce(Q_mean_global, MPI.SUM, mpicomm)/mpisize
 
     #Compute Infinity/Max norm of (Q-Q_mean_global)
     @inbounds for e = 1:nelem, s=1:nstate, i = 1:Np
@@ -884,10 +896,10 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
     @inbounds for e = 1:nelem
 
         #Initialize arrays
-        c_max = 0
-        ρ_max = 0
-        ds_min = 1e6
-        rhs_max = zeros(DFloat, nstate)
+        c_max = -1e6
+        ρ_max = -1e6
+        ds_min = +1e6
+        rhs_max = -1e6*ones(DFloat, nstate)
 
         #Loop through Element DOF
         for i = 1:Np
@@ -904,7 +916,7 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
 
             #Compute Element Length
             dx, dy = 1.0/(2*ξx), 1.0/(2*ηy)
-            ds=max(dx,dy)
+            ds=min(dx,dy)
             ds_min=min( ds_min, ds )
 
             #Compute Max Element Density
@@ -919,35 +931,169 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
         #Compute μ1
         ds=ds_min
 
-        if ( ΔQ_global[_U] < 1e-5 || ΔQ_global[_V] < 1e-5 || ΔQ_global[_E] < 1e-5 )
-            μ1=C1*ds^2*ΔQ_global[_ρ]*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
-#            μ1=C1*ds^2*ρ_max*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
+        #=
+        ρ_flag=U_flag=V_flag=E_flag=1
+        if ( ΔQ_global[_ρ] < eps2 )
+        end
+        if ( ΔQ_global[_U] < eps2 )
+            ΔQ_global[_U]=1.0
+        end
+        if ( ΔQ_global[_V] < eps2 )
+            ΔQ_global[_V]=1.0
+        end
+        if ( ΔQ_global[_E] < eps2 )
+            ΔQ_global[_E]=1.0
+        end
+        =#
+
+        μ1=C1*ds^2*ΔQ_global[_ρ]*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps), #Nazarov
+                                      rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
+#        μ1=C1*ds^2*ΔQ_global[_ρ]*max( rhs_max[_ρ], rhs_max[_U],
+#                                      rhs_max[_V], rhs_max[_E] )
+
+        #=
+        if ( ΔQ_global[_ρ] < eps2 || ΔQ_global[_U] < eps2 || ΔQ_global[_V] < eps2 || ΔQ_global[_E] < eps2 )
+            μ1=C1*ds^2*ΔQ_global[_ρ]*rhs_max[_ρ] #Nazarov
+            #            μ1=C1*ds^2*ρ_max*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
+            #μ1=C1*ds^2*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
         else
-#            μ1=C1*ds^2*ρ_max*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
+            #            μ1=C1*ds^2*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
+            #                                  rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
+            #            μ1=C1*ds^2*ρ_max*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
+            μ1=C1*ds^2*ΔQ_global[_ρ]*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps), #Nazarov
+                                          rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
+        end
+        =#
+
+        #Compute μmax
+        μmax=C2*ds*ρ_max*c_max #Nazarov
+
+        #Compute μ, κ, ν
+        μ_elem=min(μ1, μmax)
+        μ_elem=min(μ_elem, visc)
+
+        #Store viscosities
+#        μ_elem=visc
+        visc_sgs[1,e]=μ_elem #μ
+        visc_sgs[2,e]=Pr/(γ-1)*μ_elem #κ
+        visc_sgs[3,e]=Pr/ρ_max*μ_elem #ν
+        visc_sgs[3,e]=0 #μ
+
+    end
+#    @show (minimum(visc_sgs[1,:]), maximum(visc_sgs[1,:]))
+end
+# }}}
+
+# {{{ Compute viscosity for SGS
+function compute_viscosity_sgs_working(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo, visc, mpicomm) where {dim, N}
+    DFloat = eltype(Q)
+    γ::DFloat       = _γ
+    p0::DFloat      = _p0
+    R_gas::DFloat   = _R_gas
+    c_p::DFloat     = _c_p
+    c_v::DFloat     = _c_v
+    gravity::DFloat = _gravity
+    Pr::DFloat      = _Prandtl
+    lambda::DFloat  = _Stokes
+    C1::DFloat      = _C1
+    C2::DFloat      = _C2
+
+    (Np, nstate, nelem) = size(Q)
+
+    Q_mean_global = zeros(DFloat, nstate)
+    ΔQ_global = zeros(DFloat, nstate)
+    rhs_max = zeros(DFloat, nstate)
+
+    mpirank = MPI.Comm_rank(mpicomm)
+    mpisize = MPI.Comm_size(mpicomm)
+    eps=1e-8
+    eps=1e-1
+    eps2=1e-2
+#    @show (eps, eps2)
+
+    #Compute Q_mean_global
+    @inbounds for e = 1:nelem, s=1:nstate, i = 1:Np
+        Q_mean_global[s] += Q[i, s, e]
+    end
+    for s=1:nstate
+        Q_mean_global[s] = Q_mean_global[s]/(nelem*Np)
+    end
+    Q_mean_global=MPI.allreduce(Q_mean_global, MPI.SUM, mpicomm)/mpisize
+
+    #Compute Infinity/Max norm of (Q-Q_mean_global)
+    @inbounds for e = 1:nelem, s=1:nstate, i = 1:Np
+        ΔQ_global[s]=max( ΔQ_global[s], abs( Q[i, s, e] - Q_mean_global[s] ) )
+    end
+    ΔQ_global=MPI.allreduce(ΔQ_global, MPI.MAX, mpicomm)
+
+    #Loop through elements
+    @inbounds for e = 1:nelem
+
+        #Initialize arrays
+        c_max = -1e6
+        ρ_max = -1e6
+        ds_min = +1e6
+        rhs_max = -1e6*ones(DFloat, nstate)
+
+        #Loop through Element DOF
+        for i = 1:Np
+            ρ, U, V, E = Q[i, _ρ, e], Q[i, _U, e], Q[i, _V, e], Q[i, _E, e]
+            ξx, ξy, ηx, ηy = vgeo[i, _ξx, e], vgeo[i, _ξy, e], vgeo[i, _ηx, e], vgeo[i, _ηy, e]
+            y = vgeo[i, _y, e]
+            P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
+
+            #Compute Max Wave Speed
+            u, v = U/ρ, V/ρ
+            vel=sqrt( u^2 + v^2 )
+            wave_speed = (vel + sqrt(γ * P / ρ))
+            c_max = max( c_max, wave_speed )
+
+            #Compute Element Length
+            dx, dy = 1.0/(2*ξx), 1.0/(2*ηy)
+            ds=min(dx,dy)
+            ds_min=min( ds_min, ds )
+
+            #Compute Max Element Density
+            ρ_max = max( ρ_max, abs(ρ) )
+
+            #Compute Max Element RHS
+            for s=1:nstate
+                rhs_max[s]=max( rhs_max[s], abs( rhs_sgs[i,s,e] ) )
+            end
+        end
+
+        #Compute μ1
+        ds=ds_min
+
+        if ( ΔQ_global[_ρ] < eps2 || ΔQ_global[_U] < eps2 || ΔQ_global[_V] < eps2 || ΔQ_global[_E] < eps2 )
+            μ1=C1*ds^2*ΔQ_global[_ρ]*rhs_max[_ρ] #Nazarov
+            #            μ1=C1*ds^2*ρ_max*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
+            #μ1=C1*ds^2*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
+        else
+#            μ1=C1*ds^2*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
 #                                  rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
-            μ1=C1*ds^2*ΔQ_global[_ρ]*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
+                                  #            μ1=C1*ds^2*ρ_max*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
+            μ1=C1*ds^2*ΔQ_global[_ρ]*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps), #Nazarov
                                           rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
         end
 #        μ1=C1*ds^2*ρ_max*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
 
         #Compute μmax
-        μmax=C2*ds*ρ_max*c_max
+        μmax=C2*ds*ρ_max*c_max #Nazarov
+#        μmax=C2*ds*c_max
 
         #Compute μ, κ, ν
         μ_elem=min(μ1, μmax)
 
         #Store viscosities
+#        μ_elem=visc
         visc_sgs[1,e]=μ_elem #μ
         visc_sgs[2,e]=Pr/(γ-1)*μ_elem #κ
         visc_sgs[3,e]=Pr/ρ_max*μ_elem #ν
-
-        #=
-        visc_sgs[1,e]=visc #μ
-        visc_sgs[2,e]=visc #μ
         visc_sgs[3,e]=0 #μ
-        =#
 
     end
+#    @show (minimum(visc_sgs[1,:]), maximum(visc_sgs[1,:]))
 end
 # }}}
 
@@ -1968,6 +2114,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                 store_residual_sgs!(Val(dim), Val(N), d_rhs_sgs, d_rhsL, d_vgeoL, mesh.realelems)
 
                 # Compute viscosity coefficient for SGS model
+                #                compute_viscosity_sgs_working(Val(dim), Val(N), d_visc_sgs, d_rhs_sgs, d_QL, d_vgeoL, visc, mpicomm)
                 compute_viscosity_sgs(Val(dim), Val(N), d_visc_sgs, d_rhs_sgs, d_QL, d_vgeoL, visc, mpicomm)
 
                 # volume grad Q computation
@@ -2031,12 +2178,14 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                                ArrType, mpirank, step), X...;
                       fields=(("ρ", ρ), ("U", U), ("V", V), ("E", E), ("mu1", MU1), ("mu2", MU2), ("mu3", MU3)),
                       realelems=mesh.realelems)
+            @show (step*dt, minimum(E), maximum(E))
         end
     end
 if (mpirank == 0)
     avg_stage_time = (time_ns() - start_time) * 1e-9 / ((nsteps-1) * length(RKA))
     @show (nsteps, avg_stage_time)
 end
+
 Q .= d_QL
 rhs .= d_rhsL
 end
@@ -2279,11 +2428,11 @@ function main()
     end
 
     #Input Parameters
-    time_final = DFloat(300)
+    time_final = DFloat(700)
     iplot=100
     Ne = 10
     N  = 4
-    visc = 10.0
+    visc = 200.0
     dim = 2
     hardware="cpu"
     if mpirank == 0
