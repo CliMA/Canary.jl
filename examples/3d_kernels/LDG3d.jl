@@ -38,23 +38,23 @@
 # \end{array}
 # \right)
 # ```
-# Integrating Eq.\ (4) by parts yields
+# Integrating Eq. (4) by parts yields
 #
 # ```math
 # \int_{\Omega_e} \mathbf{\Psi} \cdot \mathbf{Q}^{(e)}_N d\Omega_e = \int_{\Gamma_e} \left( \mathbf{n} \cdot \mathbf{\Psi} \right) q^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \left( \nabla \cdot \mathbf{\Psi} \right) q^{(e)}_N d\Omega_e \; \; (5)
 # ```
 #
-# Equation (5) represents the approximation of the gradient operator on the variable $q$ where the first term on the right denotes the flux integral term (computed in "function flux_grad") and the second term on the right denotes the volume integral term (computed in "function volume_grad").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the average flux. In matrix form, Eq.\ (5) becomes
+# Equation (5) represents the approximation of the gradient operator on the variable $q$ where the first term on the right denotes the flux integral term (computed in "function flux\_grad") and the second term on the right denotes the volume integral term (computed in "function volume\_grad").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the average flux. In matrix form, Eq. (5) becomes
 # ```math
 # M^{(e)}_{i,j} \mathbf{Q}^{(e)}_j = \mathbf{F}_{i,j} q^{(*,e)}_j - \widetilde{\mathbf{D}}^{(e)} q^{(e)}_j \; \; (6)
 # ```
 #
-# Next, integrating Eq.\ (3) by parts gives a similar form to Eq.\ (6) as follows
+# Next, integrating Eq. (3) by parts gives a similar form to Eq. (6) as follows
 # ```math
-# M^{(e)}_{i,j} \left( \nabla^2 q^{(e)} \right)_j = \mathbf{F}_{i,j}^T \mathbf{Q}^{(*,e)}_j - \widetilde{\mathbf{D}}^{(e)}^T \mathbf{Q}^{(e)}_j \; \; (7)
+# M^{(e)}_{i,j} \left( \nabla^2 q^{(e)} \right)_j = \mathbf{F}_{i,j}^T \mathbf{Q}^{(*,e)}_j - \left( \widetilde{\mathbf{D}}^{(e)} \right)^T \mathbf{Q}^{(e)}_j \; \; (7)
 # ```
 #
-# Equation (7) represents the approximation of the divergence operator on the vector $\mathbf{Q}$ where the first term on the right denotes the flux integral (computed in "function volume_dv") and the second term on the right denotes the volume integral term (computed in "function volume_div").
+# Equation (7) represents the approximation of the divergence operator on the vector $\mathbf{Q}$ where the first term on the right denotes the flux integral (computed in "function volume\_div") and the second term on the right denotes the volume integral term (computed in "function volume\_div").
 #-
 # ## Commented Program
 #
