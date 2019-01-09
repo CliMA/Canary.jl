@@ -19,26 +19,26 @@
 # \frac{\partial \mathbf{U}}{\partial t} + \nabla \cdot \left( \frac{\mathbf{U} \otimes \mathbf{U}}{\rho} + P \mathbf{I}_2 \right) + \rho g \hat{\mathbf{k}}= \nabla \cdot \mathbf{F}_U^{visc} \; \; (1.2)
 # ```
 # ```math
-# \frac{\partial E}{\partial t} + \nabla \cdot \left( \frac{\mathbf{U} \left(E+P \right)}{\rho} \right = \nabla \cdot \mathbf{F}_E^{visc} \; \; (1.3)
+# \frac{\partial E}{\partial t} + \nabla \cdot \left( \frac{\mathbf{U} \left(E+P \right)}{\rho} \right) = \nabla \cdot \mathbf{F}_E^{visc} \; \; (1.3)
 # ```
 # where $\mathbf{u}=(u,v)$ is the velocity, $\mathbf{U}=\rho \mathbf{u}$, is the momentum, with $\rho$ the total density and $E=(\gamma-1) \rho \left( c_v T + \frac{1}{2} \mathbf{u} \cdot \mathbf{u} + g z \right)$ the total energy (internal $+$ kinetic $+$ potential).
 # The viscous fluxes are defined as follows
 # ```math
-# \mathbf{F}_U^{visc} = \mu \left\[ \nabla \mathbf{u} +  \lambda \left( \nabla \mathbf{u} \right)^T + \nabla \cdot \mathbf{u}  \mathbf{I}_2 \right\]
+# \mathbf{F}_U^{visc} = \mu \left( \nabla \mathbf{u} +  \left( \nabla \mathbf{u} \right)^T + \lambda \left( \nabla \cdot \mathbf{u} \right)  \mathbf{I}_2 \right)
 # ```
 # and
 # ```math
-# \mathbf{F}_E^{visc} =  \mathbf{u} \cdot \mathbf{F}_U^{visc} + \frac{c_p/Pr} \nabla T
+# \mathbf{F}_E^{visc} =  \mathbf{u} \cdot \mathbf{F}_U^{visc} + \frac{c_p}{Pr} \nabla T
 # ```
 # where $\mu$ is the kinematic (or artificial) viscosity, $\lambda=-\frac{2}{3}$ is the Stokes hypothesis, $Pr \approx 0.71$ is the Prandtl number for air and $T$ is the temperature.
 # We employ periodic boundary conditions in the horizontaland no-flux boundary conditions in the vertical.  At the bottom and top of the domain, we need to impose no-flux boundary conditions in $\nabla T$ to avoid a (artificial) thermal boundary layer.
 #
 #-
 # ## Discontinous Galerkin Method
-# To solve Eq.\ (1) we use the discontinuous Galerkin method with basis functions comprised of Lagrange polynomials based on Lobatto points. Multiplying Eq.\ (1) by a test function $\psi$ and integrating within each element $\Omega_e$ such that $\Omega = \bigcup_{e=1}^{N_e} \Omega_e$ we get
+# To solve Eq. (1) we use the discontinuous Galerkin method with basis functions comprised of Lagrange polynomials based on Lobatto points. Multiplying Eq. (1) by a test function $\psi$ and integrating within each element $\Omega_e$ such that $\Omega = \bigcup_{e=1}^{N_e} \Omega_e$ we get
 #
 # ```math
-# \int_{\Omega_e} \psi \frac{\partial \mathbf{q}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Omega_e} \psi \nabla \cdot \mathbf{F}^{(e)}_N d\Omega_e =  \int_{\Omega_e} \psi S\left( q^{(e)}_N} \right) d\Omega_e \; \; (2)
+# \int_{\Omega_e} \psi \frac{\partial \mathbf{q}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Omega_e} \psi \nabla \cdot \mathbf{F}^{(e)}_N d\Omega_e =  \int_{\Omega_e} \psi S\left( q^{(e)}_N \right) d\Omega_e \; \; (2)
 # ```
 # where $\mathbf{q}^{(e)}_N=\sum_{i=1}^{(N+1)^{dim}} \psi_i(\mathbf{x}) \mathbf{q}_i(t)$ is the finite dimensional expansion with basis functions $\psi(\mathbf{x})$, where $\mathbf{q}=\left( \rho, \mathbf{U}^T, E \right)^T$,
 # ```math
@@ -46,25 +46,25 @@
 # ```
 # and
 # ```math
-#  S\left( q^{(e)}_N} \right)  = \nu \left( \nabla^2 \rho, \nabla^2 \mathbf{U}, \nabla^2 E \right).
+#  S\left( q^{(e)}_N \right)  = \left( 0, \nabla \cdot \mathbf{F}_U^{visc}, \nabla \cdot \mathbf{F}_E^{visc} \right).
 # ```
-# Integrating Eq.\ (2) by parts yields
+# Integrating Eq. (2) by parts yields
 #
 # ```math
-# \int_{\Omega_e} \psi \frac{\partial \mathbf{q}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Gamma_e} \psi \mathbf{n} \cdot \mathbf{F}^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \nabla \psi \cdot \mathbf{F}^{(e)}_N d\Omega_e = \int_{\Omega_e} \psi S\left( q^{(e)}_N} \right) d\Omega_e \; \; (3)
+# \int_{\Omega_e} \psi \frac{\partial \mathbf{q}^{(e)}_N}{\partial t} d\Omega_e + \int_{\Gamma_e} \psi \mathbf{n} \cdot \mathbf{F}^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \nabla \psi \cdot \mathbf{F}^{(e)}_N d\Omega_e = \int_{\Omega_e} \psi S\left( q^{(e)}_N \right) d\Omega_e \; \; (3)
 # ```
 #
 # where the second term on the left denotes the flux integral term (computed in "function flux\_rhs") and the third term denotes the volume integral term (computed in "function volume\_rhs").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the Rusanov flux.
 #
 #-
 # ## Local Discontinous Galerkin Method
-# To approximate the second order terms on the right hand side of Eq.\ (1) we use the local discontinuous Galerkin (LDG) method, which we described in LDG2d.jl. We will highlight the main steps below for completeness. We employ the following two-step process: first we approximate the gradient of $q$ as follows
+# To approximate the second order terms on the right hand side of Eq. (1) we use the local discontinuous Galerkin (LDG) method, which we described in LDG2d.jl. We will highlight the main steps below for completeness. We employ the following two-step process: first we approximate the gradient of $q$ as follows
 # ```math
-# \mathbf{Q}(x,y) = \nabla \vc{q}(x,y) \; \; (2)
+# \mathbf{Q}(x,y) = \nabla \mathbf{q}(x,y) \; \; (4)
 # ```
 # where $\mathbf{Q}$ is an auxiliary vector function, followed by
 # ```math
-# \nabla \cdot \left \mathbf{F}^{visc}\left( \mathbf{Q} \right) \; \; (3)
+# \nabla \cdot  \mathbf{F}^{visc} \left( \mathbf{Q} \right) \; \; (5)
 # ```
 # which completes the approximation of the second order derivatives.
 #

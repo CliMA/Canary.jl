@@ -8,11 +8,10 @@ for d = 1:3
     EXAMPLES = ("LDG1d", "burger1d", "swe1d")
     EXTRA = ("vtk.jl",)
   elseif d == 2
-    EXAMPLES = ("LDG2d", "euler2d_set2c", "euler2d_set3c", "euler2d_set4c",
-                "nse2d", "swe2d")
+    EXAMPLES = ("LDG2d", "swe2d", "nse2d")
     EXTRA = ("vtk.jl",)
   elseif d == 3
-    EXAMPLES = ("LDG3d", "euler3d_set2c", "euler3d_set3c", "nse3d")
+    EXAMPLES = ("LDG3d", "nse3d")
     EXTRA = ("vtk.jl",)
   end
   EXAMPLEDIR = joinpath(@__DIR__, "..", "examples", "$(d)d_kernels")

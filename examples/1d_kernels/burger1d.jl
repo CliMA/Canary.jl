@@ -50,7 +50,7 @@
 # Integrating Eq. (4) by parts yields
 #
 # ```math
-# \int_{\Omega_e} \Psi \cdit \mathbf{Q}^{(e)}_N d\Omega_e = \int_{\Gamma_e} \left( \mathbf{n} \cdot \Psi \right) q^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \left( \nabla \cdot \Psi \right) q^{(e)}_N d\Omega_e \; \; (5)
+# \int_{\Omega_e} \Psi \cdot \mathbf{Q}^{(e)}_N d\Omega_e = \int_{\Gamma_e} \left( \mathbf{n} \cdot \Psi \right) q^{(*,e)}_N d\Gamma_e - \int_{\Omega_e} \left( \nabla \cdot \Psi \right) q^{(e)}_N d\Omega_e \; \; (5)
 # ```
 #
 # where the first term on the right denotes the flux integral term (computed in "function fluxQ") and the second term on the rightdenotes the volume integral term (computed in "function volumeQ").  The superscript $(*,e)$ in the flux integral term denotes the numerical flux. Here we use the average flux. In matrix form, Eq. (5) becomes
