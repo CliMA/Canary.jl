@@ -129,9 +129,9 @@ const _nsd = 2 #number of space dimensions
 # DEFINE CASE AND PRE_COMPILED QUANTITIES:
 #
 
-#_icase = 1    #RTB
+_icase = 1    #RTB
 #_icase = 1001 # RTB + 1 Passive tracer
-_icase = 1003 # RTB + 3 Passive tracers
+#_icase = 1003 # RTB + 3 Passive tracers
 #_icase = 1010 # Moist case of Pressel et al. 2015 JAMES
 if(_icase < 1000)
     DRY_CASE = true
@@ -403,7 +403,7 @@ function volume_rhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
     fluxQT_x = zeros(DFloat, _ntracers)
     fluxQT_y = zeros(DFloat, _ntracers)
     
-    q_tr = zeros(DFloat, _ntracers)
+    #q_tr = zeros(DFloat, _ntracers)
     
     @inbounds for e in elems
         for j = 1:Nq, i = 1:Nq
@@ -491,7 +491,7 @@ function flux_rhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM
     Np    = (N+1)^dim
     Nfp   = (N+1)^(dim-1)
     nface = 2*dim
-    q_tr  = zeros(DFloat, 3)
+    #q_tr  = zeros(DFloat, 3)
 
     #Allocate and initialize to zero tracer flux quantities
     QTM = zeros(DFloat, _ntracers)
@@ -501,7 +501,7 @@ function flux_rhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM
     fluxQTP_x = zeros(DFloat, _ntracers)
     fluxQTP_y = zeros(DFloat, _ntracers)
     
-    q_tr = zeros(DFloat, _ntracers)
+    #q_tr = zeros(DFloat, 3)
     
     @inbounds for e in elems
         for f = 1:nface
@@ -667,7 +667,7 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
     s_F = Array{DFloat}(undef, Nq, Nq, _nstate, dim)
     s_G = Array{DFloat}(undef, Nq, Nq, _nstate, dim)
 
-    q_tr = zeros(DFloat, _ntracers)
+    #q_tr = zeros(DFloat, 3)
     
     @inbounds for e in elems
         for j = 1:Nq, i = 1:Nq
@@ -680,9 +680,9 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
             ρ, E = Q[i, j, _ρ, e], Q[i, j, _E, e]
 
             #Moist air constant: Rm
-            q_tr[1] = 0.0
-            q_tr[2] = 0.0
-            q_tr[3] = 0.0
+            #q_tr[1] = 0.0
+            #q_tr[2] = 0.0
+            #q_tr[3] = 0.0
             #for itracer = 1:_ntracers
             #    istate = itracer + (_nsd+2)
             #    
@@ -760,7 +760,7 @@ function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, vgeo, elems, vma
     QTM = zeros(DFloat, _ntracers)
     QTP = zeros(DFloat, _ntracers)
     
-    q_tr = zeros(DFloat, _ntracers)
+    #q_tr = zeros(DFloat, 3)
     
     @inbounds for e in elems
         for f = 1:nface
@@ -779,9 +779,9 @@ function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, vgeo, elems, vma
                 yM = vgeo[vidM, _y, eM]
                 
                 #Moist air constant: Rm
-                q_tr[1] = 0.0
-                q_tr[2] = 0.0
-                q_tr[3] = 0.0
+                #q_tr[1] = 0.0
+                #q_tr[2] = 0.0
+                #q_tr[3] = 0.0
                 #for itracer = 1:_ntracers
                 #    istate = itracer + (_nsd+2)
                 #    
@@ -1280,9 +1280,11 @@ function sat_adjust!(::Val{2}, ::Val{N}, Q, vgeo, elems) where N
     
     Q      = reshape(Q, Nq, Nq, _nstate, nelem)
     vgeo   = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
-    q_tr   = zeros(DFloat, 3)
+
+    #q_tr   = zeros(DFloat, 3)
     Qinout = zeros(DFloat, _nstate)
-    q_tr   = zeros(DFloat, _ntracers)
+
+    #q_tr   = zeros(DFloat, 3)
     
     @inbounds for e in elems
         for j = 1:Nq, i = 1:Nq
@@ -1303,9 +1305,9 @@ function sat_adjust!(::Val{2}, ::Val{N}, Q, vgeo, elems) where N
             Qinout[_V]   = _U
             Qinout[_ρ]   = _ρ
             Qinout[_E]   = _E
-            Qinout[_qt1] = q_tr[1]
-            Qinout[_qt2] = q_tr[2]
-            Qinout[_qt3] = q_tr[3]
+            #Qinout[_qt1] = q_tr[1]
+            #Qinout[_qt2] = q_tr[2]
+            #Qinout[_qt3] = q_tr[3]
             
             #convert_set3c_to_set2nc_scalar(y, Qinout)
             #=
@@ -1383,7 +1385,7 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
         ρ_max = -1e6
         ds_min = +1e6
         rhs_max = -1e6*ones(DFloat, nstate)
-        q_tr = zeros(DFloat, _ntracers)
+        q_tr = zeros(DFloat, 3)
 
         #Loop through Element DOF
         for i = 1:Np
@@ -2764,14 +2766,14 @@ function convert_set2nc_to_set3c(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
 
     Np = (N+1)^dim
     (~, ~, nelem) = size(Q)
-    q_tr = zeros(DFloat, _ntracers)
+    #q_tr = zeros(DFloat, 3)
 
     @inbounds for e = 1:nelem, n = 1:Np
         ρ, u, v, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
         y = vgeo[n, _y, e]
         
         #Moist air constant: Rm
-#=        q_tr[1] = 0.0
+        #=        q_tr[1] = 0.0
         q_tr[2] = 0.0
         q_tr[3] = 0.0
         for itracer = 1:_ntracers
@@ -2801,7 +2803,7 @@ function convert_set2nc_to_set3c_scalar(x_ndim, Q)
     c_v::DFloat     = _c_v
     gravity::DFloat = _gravity
 
-    q_tr = zeros(DFloat, _ntracers)
+    #q_tr = zeros(DFloat, 3)
     
     ρ, u, v, E = Q[_ρ], Q[_U], Q[_V], Q[_E]
     
@@ -2845,9 +2847,8 @@ function convert_set3c_to_set2nc(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
 
     Np = (N+1)^dim
     (~, ~, nelem) = size(Q)
-    q_tr          = zeros(DFloat, 3)
-
-    q_tr = zeros(DFloat, 3)
+    #q_tr          = zeros(DFloat, 3)
+    
     @inbounds for e = 1:nelem, n = 1:Np
         ρ, U, V, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
         y = vgeo[n, _y, e]
@@ -2892,7 +2893,7 @@ function convert_set3c_to_set2nc_scalar(x_ndim, Q)
     q_tr            = zeros(DFloat, 3)
     ρ, U, V, E      = Q[_ρ], Q[_U], Q[_V], Q[_E]
 
-    q_tr  = zeros(DFloat, 3)
+    #q_tr  = zeros(DFloat, 3)
     
     #= Calculate air constant R_gas for moist air:
     q_tr[1] = 0.0
