@@ -129,10 +129,8 @@ const _nsd = 2 #number of space dimensions
 # DEFINE CASE AND PRE_COMPILED QUANTITIES:
 #
 
-_icase = 1    #RTB
-#_icase = 1001 # RTB + 1 Passive tracer
-#_icase = 1003 # RTB + 3 Passive tracers
-#_icase = 1010 # Moist case of Pressel et al. 2015 JAMES
+#_icase = 1    #RTB
+_icase = 1010 # Moist case of Pressel et al. 2015 JAMES
 if(_icase < 1000)
     DRY_CASE = true
 else
@@ -182,11 +180,6 @@ else
         const _U, _V, _ρ, _E, _qt1, _qt2, _qt3 = 1:_nstate
         const stateid = (U = _U, V = _V, ρ = _ρ, E = _E, qt1 = _qt1, qt2 = _qt2, qt3 = _qt3)
         
-        #const _ntracers = 1
-        #const _nstate = (_nsd + 2) + _ntracers
-        #const _U, _V, _ρ, _E, _qt = 1:_nstate
-        #const stateid = (U = _U, V = _V, ρ = _ρ, E = _E, qt = _qt)
-                
     else
         #
         # Moist dynamics
@@ -418,11 +411,10 @@ function volume_rhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
             for itracer = 1:_ntracers
                 istate = itracer + (_nsd+2)
 
-                q_tr[itracer]   = 0.0*Q[i, j, istate, e]
-            end        
+                q_tr[itracer]   = Q[i, j, istate, e]
+            end
             R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
-            #R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-            
+                       
             U, V = Q[i, j, _U, e], Q[i, j, _V, e]
             ρ, E = Q[i, j, _ρ, e], Q[i, j, _E, e]
             P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
@@ -523,11 +515,10 @@ function flux_rhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM
                 for itracer = 1:_ntracers
                     istate = itracer + (_nsd+2)
                     
-                    q_tr[itracer] = 0.0*Q[vidM, istate, eM]
+                    q_tr[itracer] = Q[vidM, istate, eM]
                 end
                 R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
-                #R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-                
+
                 PM = (R_gas/c_v)*(EM - (UM^2 + VM^2)/(2*ρM) - ρM*gravity*yM)
                 
                 #Tracers
@@ -682,11 +673,9 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
             for itracer = 1:_ntracers
                 istate = itracer + (_nsd+2)
                 
-                q_tr[itracer] = 0.0*Q[i, j, istate, e]
+                q_tr[itracer] = Q[i, j, istate, e]
             end
             R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
-            #R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-
             
             P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
             
@@ -780,10 +769,9 @@ function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, vgeo, elems, vma
                 for itracer = 1:_ntracers
                     istate = itracer + (_nsd+2)
                     
-                    q_tr[itracer] = 0.0*Q[vidM, istate, eM]
+                    q_tr[itracer] = Q[vidM, istate, eM]
                 end
                 R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
-                #R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
                 
                 PM = (R_gas/c_v)*(EM - (UM^2 + VM^2)/(2*ρM) - ρM*gravity*yM)
                 uM = UM/ρM
@@ -1282,6 +1270,8 @@ function sat_adjust!(::Val{2}, ::Val{N}, Q, vgeo, elems) where N
     ntracers = max(3, _ntracers)
     q_tr = zeros(DFloat, ntracers)
     
+    ql = zeros(DFloat, 1); qi = zeros(DFloat, 1)
+    
     @inbounds for e in elems
         for j = 1:Nq, i = 1:Nq
             y = vgeo[i,j,_y,e]
@@ -1290,44 +1280,43 @@ function sat_adjust!(::Val{2}, ::Val{N}, Q, vgeo, elems) where N
             for itracer = 1:_ntracers
                 istate = itracer + (_nsd+2)
                 
-                q_tr[itracer] = 0.0*Q[i, j, itracer, e]
+                q_tr[itracer] = Q[i, j, istate, e]
             end
             R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
-            #R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-
+            
             U, V = Q[i, j, _U, e], Q[i, j, _V, e]
             ρ, E = Q[i, j, _ρ, e], Q[i, j, _E, e]
             P    = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
-            @show(E)
-            Qinout[_U]   = _U
-            Qinout[_V]   = _U
-            Qinout[_ρ]   = _ρ
-            Qinout[_E]   = _E
-            #Qinout[_qt1] = q_tr[1]
-            #Qinout[_qt2] = q_tr[2]
-            #Qinout[_qt3] = q_tr[3]
             
-            #convert_set3c_to_set2nc_scalar(y, Qinout)
-            #=
+            Qinout[_U]   = U
+            Qinout[_V]   = V
+            Qinout[_ρ]   = ρ
+            Qinout[_E]   = E
+            
+            convert_E_to_theta_scalar(y, Qinout)
             θ        = Qinout[_E]
-            π_k      = 1.0 - gravity/(c_p*θ)*y
-            c        = c_v/R_gas
-            ρ        = p0/(R_gas*θ)*(π_k)^c
+
+            #!!!!!!!!!!!!
+            π_k      = 1.0 - gravity/(c_p*θ)*y  #TAPIO, THE ERROR MAY BE IN WHAT I AM USING HERE AND BELOW TO OBTAIN "T" to then pass to "internal_energy_sat.(T, ρ, qt);"
+            #!!!!!!!!!!!!
+            
+            ρ        = p0/(R_gas*θ)*(π_k)^(c_v/R_gas)
             P        = p0 * (ρ*R_gas*θ/p0)^(c_p/ c_v)
             T        = π_k*θ
-            @show(T)
             qt       = q_tr[1]
-            T_trial  = 290.0
-            E_int    = MoistThermodynamics.internal_energy_sat.(T, ρ, qt);
+            
+            E_int    = MoistThermodynamics.internal_energy_sat.(T, ρ, qt);            
             T        = MoistThermodynamics.saturation_adjustment.(E_int, ρ, qt);
+            
             θ        = T/π_k
-            ρ        = p0/(R_gas*θ)*(π_k)^c
+            ρ        = p0/(R_gas*θ)*(π_k)^(c_v/R_gas)
             
             #Obtain ql, qi from T,  ρ, qt
-            ql = zeros(size(T)); qi = zeros(size(T))
+            #ql = zeros(size(T)); qi = zeros(size(T))
             MoistThermodynamics.phase_partitioning_eq!(ql, qi, T, ρ, qt);
-            =#
-            
+            if(ql[1] > 0.0)
+                @show(ql[1])
+            end
         end
     end
 end
@@ -1360,6 +1349,12 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
 #    eps2=1e-8
 #    @show (eps, eps2)
 
+    
+    #Allocate at least 3 spaces to q_tr
+    ntracers = max(3, _ntracers)
+    q_tr = zeros(DFloat, ntracers)
+    
+    
     #Compute Q_mean_global
     @inbounds for e = 1:nelem, s=1:nstate, i = 1:Np
         Q_mean_global[s] += Q[i, s, e]
@@ -1383,8 +1378,7 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
         ρ_max = -1e6
         ds_min = +1e6
         rhs_max = -1e6*ones(DFloat, nstate)
-        q_tr = zeros(DFloat, 3)
-
+        
         #Loop through Element DOF
         for i = 1:Np
             ρ, U, V, E = Q[i, _ρ, e], Q[i, _U, e], Q[i, _V, e], Q[i, _E, e]
@@ -1392,16 +1386,12 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
             y = vgeo[i, _y, e]
 
             #Moist air constant: Rm
-            #q_tr[1] = 0.0
-            #q_tr[2] = 0.0
-            #q_tr[3] = 0.0
-            #for itracer = 1:_ntracers
-            #    istate = itracer + (_nsd+2)
-            #    
-            #    q_tr[itracer]       = Q[i, istate, e]
-            #end
-            #R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
-            R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
+            for itracer = 1:_ntracers
+                istate = itracer + (_nsd+2)
+                
+                q_tr[itracer] = Q[i, istate, e]
+            end
+            R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
             
             P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
 
@@ -2657,7 +2647,9 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
             #
             # --------------- Saturation adjustment -------------------------- #
             #
-            #sat_adjust!(Val(dim), Val(N), d_QL, d_vgeoL, mesh.realelems)
+            if(_icase == 1010)
+                sat_adjust!(Val(dim), Val(N), d_QL, d_vgeoL, mesh.realelems)
+            end
             #
             # End saturation adjustment
             #
@@ -2878,7 +2870,7 @@ function convert_set3c_to_set2nc(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
 end
 # }}}
 
-function convert_set3c_to_set2nc_scalar(x_ndim, Q)
+function convert_E_to_theta_scalar(x_ndim, Q)
     DFloat          = eltype(Q)
     γ::DFloat       = _γ
     p0::DFloat      = _p0
@@ -2887,37 +2879,31 @@ function convert_set3c_to_set2nc_scalar(x_ndim, Q)
     c_v::DFloat     = _c_v
     gravity::DFloat = _gravity
     
-    y               = x_ndim    
-    q_tr            = zeros(DFloat, 3)
-    ρ, U, V, E      = Q[_ρ], Q[_U], Q[_V], Q[_E]
+    y         = x_ndim    
+    q_tr      = zeros(DFloat, 3)
+    ρ, E      = Q[_ρ], Q[_E]
+    U, V      = Q[_U], Q[_V]
 
-    #q_tr  = zeros(DFloat, 3)
+    #Allocate at least 3 spaces to q_tr
+    ntracers = max(3, _ntracers)
+    q_tr = zeros(DFloat, ntracers)
     
-    #= Calculate air constant R_gas for moist air:
-    q_tr[1] = 0.0
-    q_tr[2] = 0.0
-    q_tr[3] = 0.0
+    # Calculate air constant R_gas for moist air:
     for itracer = 1:_ntracers
         istate = itracer + (_nsd+2)
         
         q_tr[itracer] = Q[istate]
-        #Q[istate]     = q_tr[itracer] /ρ
-        
     end    
-    R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])=#
-    R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
+    R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
     
     u = U/ρ
     v = V/ρ
     E = E/ρ
     
     P = (R_gas/c_v)*ρ*(E - 0.5*(u^2 + v^2) - gravity*y)
-    #@show(P, E, y, y*gravity)
-    E = p0/(ρ * R_gas)*( P/p0 )^(c_v/c_p)
+    θ = p0/(ρ * R_gas)*( P/p0 )^(c_v/c_p)
     
-    Q[_U] = 0.0 #u
-    Q[_V] = 0.0 #v
-    Q[_E] = E #θ
+    Q[_E]  = θ
     
 end
 # }}}
@@ -3142,9 +3128,10 @@ function main()
             return Qinit
             
         elseif(icase == 1001)
+            error( " CASE 1001 not coded yet for simple passiv etracers")
             #
             # RTB + 1 passive tracers
-            #
+            #=
             u0     = 0.0
             r      = sqrt((x[1]-500)^2 + (x[dim]-350)^2 )
             rc     = 250.0
@@ -3182,11 +3169,13 @@ function main()
             Qinit[5] = qt
             
             return Qinit
+            =#
 
         elseif(icase == 1003)
+            error( " CASE 1003 not coded yet for simple passiv etracers")
             #
             # RTB + 2 passive tracers
-            #
+            #=
             
             u0     = 0.0
             r      = sqrt((x[1]-500)^2 + (x[dim]-350)^2 )
@@ -3249,6 +3238,7 @@ function main()
             Qinit[7] = qt3
             
             return Qinit
+            =#
             
         elseif(icase == 1010)
             #
@@ -3263,8 +3253,7 @@ function main()
             θ_c    =   2.0
 
             #Moisture
-            qt_ref  = 0.0196 #kg/kg
-            qt      = qt_ref
+            qt      = 0.0196 #kg/kg
             ql      = 0.0
             qi      = 0.0
             R_gas   = MoistThermodynamics.gas_constant_air(qt, ql, qi)
@@ -3304,7 +3293,7 @@ function main()
             Qinit[3] = ρt
             Qinit[4] = θ
             Qinit[5] = qt
-            Qinit[6] = 0.0 #ql
+            Qinit[6] = ql[1]
             Qinit[7] = 0.0
 
             return Qinit
