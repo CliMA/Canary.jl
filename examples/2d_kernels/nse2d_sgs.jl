@@ -262,8 +262,8 @@ function courantnumber(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
         end
         
         E_int = E/ρ - 0.5*( u^2 + v^2 ) - gravity*y
-        T     = MoistThermodynamics.air_temperature(E_int, q_tr[1], q_tr[2], q_tr[3])
-        P     = MoistThermodynamics.air_pressure(T, ρ, q_tr[1], q_tr[2], q_tr[3])        
+        T     = MoistThermodynamics.air_temperature(E_int, q_tr[1], q_tr[2], q_tr[3]) - T_0
+        P     = MoistThermodynamics.air_pressure(T, ρ, q_tr[1], q_tr[2], q_tr[3])
         #P     = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
         
         wave_speed = (vel + sqrt(γ * P / ρ))
@@ -290,8 +290,8 @@ function courantnumber(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
         end
         
         E_int = E/ρ - 0.5*( u^2 + v^2 ) - gravity*y
-        T     = MoistThermodynamics.air_temperature(E_int, q_tr[1], q_tr[2], q_tr[3])
-        P     = MoistThermodynamics.air_pressure(T, ρ, q_tr[1], q_tr[2], q_tr[3])        
+        T     = MoistThermodynamics.air_temperature(E_int, q_tr[1], q_tr[2], q_tr[3]) - T_0
+        P     = MoistThermodynamics.air_pressure(T, ρ, q_tr[1], q_tr[2], q_tr[3])
         #P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
                 
         wave_speed = (vel + sqrt(γ * P / ρ))
