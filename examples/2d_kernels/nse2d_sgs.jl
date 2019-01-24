@@ -734,12 +734,13 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
             end
             R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
             
-            P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
+            E_int = E/ρ - 0.5*( u^2 + v^2 ) - gravity*y
+            T     = MoistThermodynamics.air_temperature(E_int, q_tr[1], q_tr[2], q_tr[3]) - T_0
+            P    = MoistThermodynamics.air_pressure(T, ρ, q_tr[1], q_tr[2], q_tr[3])
+            #P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
             
             #Primitive variables
-            u=U/ρ
-            v=V/ρ
-            T=P/(R_gas*ρ)
+            #T=P/(R_gas*ρ)
 
             #Compute fluxes
             fluxρ  = ρ
