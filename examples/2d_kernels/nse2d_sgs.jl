@@ -92,6 +92,7 @@ include("/Users/simone/Work/Tapio/CLIMA/src/Utilities/src/MoistThermodynamics.jl
 using PlanetParameters
 using MPI
 using Canary
+using Roots
 using DelimitedFiles
 using Dierckx
 using Printf: @sprintf
@@ -135,6 +136,7 @@ _icase = 1    #RTB
 #_icase = 1001 # RTB + 1 Passive tracer
 #_icase = 1003 # RTB + 3 Passive tracers
 #_icase = 1010 # Moist case of Pressel et al. 2015 JAMES
+#_icase = 1201 # Moist case of Kurowski and Grabowski 2014
 if(_icase < 1000)
     DRY_CASE = true
 else
@@ -2934,13 +2936,10 @@ end
 #
 # Interpolate the sounding along the FIRST column of the grid.
 #
-# !!!WARNING!!! This function can only work for sturctured grids with vertical boundaries!!!
-# !!!TO BE REWRITTEN FOR THE GENERAL CODE!!!!
-#
 function read_sounding()
     
     #read in the original squal sounding
-    fsounding = open("..//soundings/sounding_GC1991.dat")    
+    fsounding = open("../soundings/sounding_GC1991.dat")    
     sound_data = readdlm(fsounding)
     close(fsounding)
 
@@ -2954,7 +2953,10 @@ function read_sounding()
 end
 
 function interpolate_sounding(dim, N, Ne, vgeo)
-
+    #
+    # !!!WARNING!!! This function can only work for sturctured grids with vertical boundaries!!!
+    # !!!TO BE REWRITTEN FOR THE GENERAL CODE!!!!
+    #
     γ::Float64       = _γ
     p0::Float64      = _p0
     R_gas::Float64   = _R_gas
@@ -3092,14 +3094,13 @@ function interpolate_sounding(dim, N, Ne, vgeo)
     end        
     
     for iz = 1:nzmax
-        ini_data_interp[iz, 1] = dataz[iz]
-        ini_data_interp[iz, 2] = datat[iz]
-        ini_data_interp[iz, 3] = datau[iz]
-        ini_data_interp[iz, 4] = datav[iz]
-        ini_data_interp[iz, 5] = datap[iz]
-        ini_data_interp[iz, 6] = datarho[iz]
-        ini_data_interp[iz, 7] = datapi[iz]
-        #@show(ini_data_interp[iz, 7], iz)
+        ini_data_interp[iz, 1] = dataz[iz]   #z
+        ini_data_interp[iz, 2] = datat[iz]   #theta
+        ini_data_interp[iz, 3] = datau[iz]   #u
+        ini_data_interp[iz, 4] = datav[iz]   #v
+        ini_data_interp[iz, 5] = datap[iz]   #p
+        ini_data_interp[iz, 6] = datarho[iz] #rho
+        ini_data_interp[iz, 7] = datapi[iz]  #exner
     end
     
     return ini_data_interp
@@ -3566,7 +3567,7 @@ function ic(sound_ini_interp, dim, x...)
 
      elseif(icase == 1201)
 
-            @show(size(sound_ini_interp))
+            (nz, ~) = size(sound_ini_interp)
             
             #
             # Moist bubble from Kurowski et al. 2013
@@ -3602,11 +3603,11 @@ function ic(sound_ini_interp, dim, x...)
             
             theta = thetae;
             
-            (P, ρ)   = calculate_dry_pressure(x[dim], theta);
-<            
+            (p, ρ)   = calculate_dry_pressure(x[dim], theta);
+
             #Calculate T as the zeros of the non-linear thethae function (non-linear in T):
             T_start = 300.0 #Starting value to find the zeros of the thetae=f(T) function
-            T       = find_zero(x -> thetae_function(x, P, q_t) - thetae, T_start, Order1(), atol=1e-12);
+            T       = find_zero(x -> thetae_function(x, p, q_t) - thetae, T_start, Order1(), atol=1e-12);
             #verify = thetae - thetae_function(T, P, q_t) #ok
             #aux = thetae_function(T, P, q_t)
             #@show(thetae, aux, T, verify)
@@ -3668,7 +3669,7 @@ function main()
 
 
     #Input Parameters
-    time_final = DFloat(2500)
+    time_final = DFloat(1000)
     iplot=1000
     Ne = 10
     N  = 4
