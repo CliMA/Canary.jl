@@ -47,7 +47,7 @@
 # and
 # ```math
 #  S\left( q^{(e)}_N} \right)  = \nu \left( \nabla^2 \rho, \nabla^2 \mathbf{U}, \nabla^2 E \right).
-<# ```
+# ```
 # Integrating Eq.\ (2) by parts yields
 #
 # ```math
@@ -129,8 +129,10 @@ const _nsd = 2 #number of space dimensions
 # DEFINE CASE AND PRE_COMPILED QUANTITIES:
 #
 
-#_icase = 1    #RTB
-_icase = 1010 # Moist case of Pressel et al. 2015 JAMES
+_icase = 1    #RTB
+#_icase = 1001 # RTB + 1 Passive tracer
+#_icase = 1003 # RTB + 3 Passive tracers
+#_icase = 1010 # Moist case of Pressel et al. 2015 JAMES
 if(_icase < 1000)
     DRY_CASE = true
 else
@@ -144,8 +146,6 @@ if DRY_CASE
     const _U, _V, _ρ, _E = 1:_nstate
     const stateid = (U = _U, V = _V, ρ = _ρ, E = _E)
     
-        xmax_in = 1000.0
-        ymax_in = 1000.0
 else
     
     if (_icase == 1001)
@@ -156,9 +156,6 @@ else
         const _nstate = (_nsd + 2) + _ntracers
         const _U, _V, _ρ, _E, _qt = 1:_nstate
         const stateid = (U = _U, V = _V, ρ = _ρ, E = _E, qt = _qt)
-    
-        xmax_in = 1000.0
-        ymax_in = 1000.0
 
     elseif (_icase == 1002)
         #
@@ -174,22 +171,21 @@ else
         const _nstate = (_nsd + 2) + _ntracers
         const _U, _V, _ρ, _E, _qt1, _qt2, _qt3 = 1:_nstate
         const stateid = (U = _U, V = _V, ρ = _ρ, E = _E, qt1 = _qt1, qt2 = _qt2, qt3 = _qt3)
-    
-        xmax_in = 1000.0
-        ymax_in = 1000.0
 
     elseif (_icase == 1010)
         #
         # Moist case of Pressel et al. 2015 JAMES:
         # Total water qt, ql, qi:
-        #
+        #        
         const _ntracers = 3
         const _nstate = (_nsd + 2) + _ntracers
         const _U, _V, _ρ, _E, _qt1, _qt2, _qt3 = 1:_nstate
         const stateid = (U = _U, V = _V, ρ = _ρ, E = _E, qt1 = _qt1, qt2 = _qt2, qt3 = _qt3)
-
-        xmax_in = 10000.0
-        ymax_in = 10000.0
+        
+        #const _ntracers = 1
+        #const _nstate = (_nsd + 2) + _ntracers
+        #const _U, _V, _ρ, _E, _qt = 1:_nstate
+        #const stateid = (U = _U, V = _V, ρ = _ρ, E = _E, qt = _qt)
         
     else
         #
@@ -211,13 +207,13 @@ const _nsgeo = 4
 const _nx, _ny, _sMJ, _vMJI = 1:_nsgeo
 const sgeoid = (nx = _nx, ny = _ny, sMJ = _sMJ, vMJI = _vMJI)
 
-const _γ = 14  / 10
+const _γ = 14  // 10
 const _p0 = 100000
-const _R_gas = 28717 / 100
-const _c_p = 100467 / 100
-const _c_v = 7175 / 10
+const _R_gas = 28717 // 100
+const _c_p = 100467 // 100
+const _c_v = 7175 // 10
 const _gravity = 10
-const _Prandtl = 71 / 100
+const _Prandtl = 71 // 100
 const _Stokes = -2 // 3
 
 const _C1 = 10/10
@@ -233,48 +229,22 @@ function courantnumber(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
     c_p::DFloat     = _c_p
     c_v::DFloat     = _c_v
     gravity::DFloat = _gravity
-   
+    
     Np = (N+1)^dim
     (~, ~, nelem) = size(Q)
 
     dt = [floatmax(DFloat)]
     Courant = - [floatmax(DFloat)]
-    
-    #Allocate at least 3 spaces to q_tr
-    ntracers = max(3, _ntracers)
-    q_tr = zeros(DFloat, ntracers)
-    q_l, q_i = zeros(DFloat, 1), zeros(DFloat, 1)
-    
+
     #Compute DT
     @inbounds for e = 1:nelem, n = 1:Np
         ρ, U, V, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
-
-        P = Q[n, _nstate+3, e]
-        
         ξx, ξy, ηx, ηy = vgeo[n, _ξx, e], vgeo[n, _ξy, e], vgeo[n, _ηx, e], vgeo[n, _ηy, e]
         y = vgeo[n, _y, e]
-        
+        P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
         u, v = U/ρ, V/ρ
         dx=sqrt( (1.0/(2*ξx))^2 + (1.0/(2*ηy))^2 )
         vel=sqrt( u^2 + v^2 )
-
-        #Moist air constant: Rm
-        for itracer = 1:_ntracers
-            istate = itracer + (_nsd+2)
-            
-            q_tr[itracer]   = Q[n, istate, e]
-        end
-        q_t, q_l, q_i = q_tr[1], q_tr[2], q_tr[3]
-        R_gas   = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)
-        E_int   = E/ρ - 0.5*( u^2 + v^2 ) - gravity*y
-        T       = MoistThermodynamics.air_temperature(E_int, q_t, q_l, q_i)
-        P       = MoistThermodynamics.air_pressure(T, ρ, q_t, q_l, q_i)
-       
-        #R_gas   = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-        #c_v     = MoistThermodynamics.cv_m(q_t, q_l, q_i)
-        #c_p     = MoistThermodynamics.cp_m(q_t, q_l, q_i)
-        #P     = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
-
         wave_speed = (vel + sqrt(γ * P / ρ))
         loc_dt = 1.0*dx/wave_speed/N
         dt[1] = min(dt[1], loc_dt)
@@ -286,28 +256,10 @@ function courantnumber(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
         ρ, U, V, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
         ξx, ξy, ηx, ηy = vgeo[n, _ξx, e], vgeo[n, _ξy, e], vgeo[n, _ηx, e], vgeo[n, _ηy, e]
         y = vgeo[n, _y, e]
-
-        u, v = U/ρ, V/ρ               
+        P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
+        u, v = U/ρ, V/ρ
         dx=sqrt( (1.0/(2*ξx))^2 + (1.0/(2*ηy))^2 )
         vel=sqrt( u^2 + v^2 )
-        
-        #Moist air constant: Rm
-        for itracer = 1:_ntracers
-            istate = itracer + (_nsd+2)
-
-            q_tr[itracer]   = Q[n, istate, e]
-        end
-        q_t, q_l, q_i = q_tr[1], q_tr[2], q_tr[3]        
-        R_gas   = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)
-        E_int   = E/ρ - 0.5*( u^2 + v^2 ) - gravity*y
-        T       = MoistThermodynamics.air_temperature(E_int, q_t, q_l, q_i)
-        P       = MoistThermodynamics.air_pressure(T, ρ, q_t, q_l, q_i)
-        
-        #R_gas   = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-        #c_v     = MoistThermodynamics.cv_m(q_t, q_l, q_i)
-        #c_p     = MoistThermodynamics.cp_m(q_t, q_l, q_i)
-        #P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
-        
         wave_speed = (vel + sqrt(γ * P / ρ))
         loc_Courant = wave_speed*dt_min/dx*N
         dx=sqrt( (1.0/(2*ξx))^2 + (1.0/(2*ηy))^2 )
@@ -315,7 +267,6 @@ function courantnumber(::Val{dim}, ::Val{N}, vgeo, Q, mpicomm) where {dim, N}
         wave_speed = (vel + sqrt(γ * P / ρ))
         loc_Courant = wave_speed*dt_min/dx*N
         Courant[1] = max(Courant[1], loc_Courant)
-        
     end
     Courant_max=MPI.Allreduce(Courant[1], MPI.MAX, mpicomm)
 
@@ -415,14 +366,14 @@ end
 function integrate_volume_rhs!(rhs,                 #in/out
                                e, D, Nq, s_F, s_G)
     
-        # loop of ξ-grid lines
-        for s = 1:_nstate, j = 1:Nq, i = 1:Nq, k = 1:Nq
-            rhs[i, j, s, e] += D[k, i] * s_F[k, j, s]
-        end
-        # loop of η-grid lines
-        for s = 1:_nstate, j = 1:Nq, i = 1:Nq, k = 1:Nq
-            rhs[i, j, s, e] += D[k, j] * s_G[i, k, s]
-        end
+    # loop of ξ-grid lines
+    for s = 1:_nstate, j = 1:Nq, i = 1:Nq, k = 1:Nq
+        rhs[i, j, s, e] += D[k, i] * s_F[k, j, s]
+    end
+    # loop of η-grid lines
+    for s = 1:_nstate, j = 1:Nq, i = 1:Nq, k = 1:Nq
+        rhs[i, j, s, e] += D[k, j] * s_G[i, k, s]
+    end
 end
 
 #
@@ -440,8 +391,8 @@ function volume_rhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
     Nq = N + 1
     nelem = size(Q)[end]
 
-    Q    = reshape(Q, Nq, Nq, _nstate+3, nelem)
-    rhs  = reshape(rhs, Nq, Nq, _nstate+2, nelem)
+    Q    = reshape(Q, Nq, Nq, _nstate, nelem)
+    rhs  = reshape(rhs, Nq, Nq, _nstate, nelem)
     vgeo = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
 
     #Allocate Arrays
@@ -452,7 +403,7 @@ function volume_rhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
     fluxQT_x = zeros(DFloat, _ntracers)
     fluxQT_y = zeros(DFloat, _ntracers)
 
-    #Allocate at least 3 spaces to q_tr
+    
     ntracers = max(3, _ntracers)
     q_tr = zeros(DFloat, ntracers)
     
@@ -463,30 +414,18 @@ function volume_rhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
             ηx, ηy = vgeo[i,j,_ηx,e], vgeo[i,j,_ηy,e]
             y = vgeo[i,j,_y,e]
 
+            #=Moist air constant: Rm
+            for itracer = 1:_ntracers
+            istate = itracer + (_nsd+2)
+
+            q_tr[itracer]   = Q[i, j, istate, e]
+            end        
+            R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])=#
+            R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
+            
             U, V = Q[i, j, _U, e], Q[i, j, _V, e]
             ρ, E = Q[i, j, _ρ, e], Q[i, j, _E, e]
-            u, v = U/ρ, V/ρ
-            
-            geopotential = y*gravity
-            KE           = 0.5*( u^2 + v^2 )
-            
-            #Moist air constant: Rm
-            for itracer = 1:_ntracers
-                istate = itracer + (_nsd+2)
-
-                q_tr[itracer]   = Q[i, j, istate, e]
-            end
-            q_t, q_l, q_i = q_tr[1], q_tr[2], q_tr[3]
-            R_gas   = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)
-            E_int   = E/ρ - KE - geopotential
-            T       = MoistThermodynamics.air_temperature(E_int, q_t, q_l, q_i)
-            P       = MoistThermodynamics.air_pressure(T-T_0, ρ, q_t, q_l, q_i)
-            #E       = MoistThermodynamics.total_energy(KE, geopotential, T, q_t)
-            
-            #R_gas   = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-            #c_v     = MoistThermodynamics.cv_m(q_t, q_l, q_i)
-            #c_p     = MoistThermodynamics.cp_m(q_t, q_l, q_i)
-            #P       = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
+            P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
             
             ρinv = 1 / ρ
             fluxρ_x = U
@@ -539,7 +478,7 @@ end
 
 # Flux RHS
 function flux_rhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM,
-                  vmapP, elemtobndy) where {dim, N}
+                   vmapP, elemtobndy) where {dim, N}
     DFloat = eltype(Q)
     γ::DFloat       = _γ
     p0::DFloat      = _p0
@@ -552,6 +491,9 @@ function flux_rhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM
     Nfp   = (N+1)^(dim-1)
     nface = 2*dim
     
+    ntracers = max(3, _ntracers)
+    q_tr = zeros(DFloat, ntracers)
+    
     #Allocate and initialize to zero tracer flux quantities
     QTM = zeros(DFloat, _ntracers)
     QTP = zeros(DFloat, _ntracers)
@@ -559,10 +501,6 @@ function flux_rhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM
     fluxQTM_y = zeros(DFloat, _ntracers)
     fluxQTP_x = zeros(DFloat, _ntracers)
     fluxQTP_y = zeros(DFloat, _ntracers)
-    
-    #Allocate at least 3 spaces to q_tr
-    ntracers = max(3, _ntracers)
-    q_tr = zeros(DFloat, ntracers)
     
     @inbounds for e in elems
         for f = 1:nface
@@ -578,25 +516,24 @@ function flux_rhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM
                 UM = Q[vidM, _U, eM]
                 VM = Q[vidM, _V, eM]
                 EM = Q[vidM, _E, eM]
-                u, v = UM/ρM, VM/ρM
-                
                 yM = vgeo[vidM, _y, eM]
+
+                #=Moist air constant: Rm
+                for itracer = 1:_ntracers
+                istate = itracer + (_nsd+2)
+                
+                q_tr[itracer] = Q[vidM, istate, eM]
+                end
+                R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])=#
+                R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
+                
+                PM = (R_gas/c_v)*(EM - (UM^2 + VM^2)/(2*ρM) - ρM*gravity*yM)
                 
                 #Tracers
                 @inbounds for itracer = 1:_ntracers
                     istate = itracer + (_nsd+2)
                     QTM[itracer] = Q[vidM, istate, eM]
                 end
-                q_t, q_l, q_i = QTM[1], QTM[2], QTM[3]
-                R_gas   = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)
-                E_int   = EM/ρM - 0.5*( u^2 + v^2 ) - gravity*yM
-                T       = MoistThermodynamics.air_temperature(E_int, q_t, q_l, q_i)
-                PM      = MoistThermodynamics.air_pressure(T-T_0, ρM, q_t, q_l, q_i)
-                
-                #R_gas   = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-                #c_v     = MoistThermodynamics.cv_m(q_t, q_l, q_i)
-                #c_p     = MoistThermodynamics.cp_m(q_t, q_l, q_i)
-                #PM      = (R_gas/c_v)*(EM - (UM^2 + VM^2)/(2*ρM) - ρM*gravity*yM)
                 
                 #Right variables
                 bc = elemtobndy[f, e]
@@ -608,29 +545,17 @@ function flux_rhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM
                 end
                 
                 if bc == 0
-                    ρP   = Q[vidP, _ρ, eP]
-                    UP   = Q[vidP, _U, eP]
-                    VP   = Q[vidP, _V, eP]
-                    EP   = Q[vidP, _E, eP]
-                    u, v = UP/ρP, VP/ρP
-                    
+                    ρP = Q[vidP, _ρ, eP]
+                    UP = Q[vidP, _U, eP]
+                    VP = Q[vidP, _V, eP]
+                    EP = Q[vidP, _E, eP]
                     yP = vgeo[vidP, _y, eP]
-
+                    PP = (R_gas/c_v)*(EP - (UP^2 + VP^2)/(2*ρP) - ρP*gravity*yP)
                     #Tracers
                     @inbounds for itracer = 1:_ntracers
                         istate = itracer + (_nsd+2)
                         QTP[itracer] = Q[vidP, istate, eP]
-                    end             
-                    q_t, q_l, q_i = QTP[1], QTP[2], QTP[3]
-                    R_gas   = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)
-                    E_int   = EP/ρP - 0.5*( u^2 + v^2 ) - gravity*yP
-                    T       = MoistThermodynamics.air_temperature(E_int, q_t, q_l, q_i)
-                    PP      = MoistThermodynamics.air_pressure(T-T_0, ρP, q_t, q_l, q_i)
-
-                    #R_gas   = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-                    #c_v     = MoistThermodynamics.cv_m(q_t, q_l, q_i)
-                    #c_p     = MoistThermodynamics.cp_m(q_t, q_l, q_i)
-                    #PP      = (R_gas/c_v)*(EP - (UP^2 + VP^2)/(2*ρP) - ρP*gravity*yP)
+                    end
                     
                 elseif bc == 1
                     UnM = nxM * UM + nyM * VM
@@ -654,7 +579,7 @@ function flux_rhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM
                 fluxUM_x  = ρMinv * UM * UM + PM
                 fluxVM_x  = ρMinv * VM * UM
                 fluxEM_x  = ρMinv * UM * (EM+PM)
-               
+                
                 fluxρM_y  = VM
                 fluxUM_y  = ρMinv * UM * VM
                 fluxVM_y  = ρMinv * VM * VM + PM
@@ -707,10 +632,10 @@ function flux_rhs!(::Val{dim}, ::Val{N}, rhs::Array, Q, sgeo, vgeo, elems, vmapM
                     #Update RHS LOOP HERE
                     rhs[vidM, istate, eM] -= sMJ * fluxQTS
                 end
-                
-            end
-        end
-    end
+
+end
+end
+end
 end
 # }}}
 
@@ -727,8 +652,8 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
     Nq = N + 1
     nelem = size(Q)[end]
 
-    Q = reshape(Q, Nq, Nq, _nstate+3, nelem)
-    rhs = reshape(rhs, Nq, Nq, _nstate+2, dim, nelem)
+    Q = reshape(Q, Nq, Nq, _nstate, nelem)
+    rhs = reshape(rhs, Nq, Nq, _nstate, dim, nelem)
     vgeo = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
 
     #Initialize RHS vector
@@ -737,8 +662,7 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
     #Allocate Arrays
     s_F = Array{DFloat}(undef, Nq, Nq, _nstate, dim)
     s_G = Array{DFloat}(undef, Nq, Nq, _nstate, dim)
-    
-    #Allocate at least 3 spaces to q_tr
+
     ntracers = max(3, _ntracers)
     q_tr = zeros(DFloat, ntracers)
     
@@ -751,28 +675,24 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
 
             U, V = Q[i, j, _U, e], Q[i, j, _V, e]
             ρ, E = Q[i, j, _ρ, e], Q[i, j, _E, e]
-            u, v = U/ρ, V/ρ
 
             #Moist air constant: Rm
-            for itracer = 1:_ntracers
-                istate = itracer + (_nsd+2)
-                
-                q_tr[itracer] = Q[i, j, istate, e]
-            end
-            q_t, q_l, q_i = q_tr[1], q_tr[2], q_tr[3]
-            R_gas  = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)           
-            E_int  = E/ρ - 0.5*( u^2 + v^2 ) - gravity*y
-            T      = MoistThermodynamics.air_temperature(E_int, q_t, q_l, q_i)
-            P      = MoistThermodynamics.air_pressure(T-T_0, ρ, q_t, q_l, q_i)
-            T      = T-T_0
+            #for itracer = 1:_ntracers
+            #    istate = itracer + (_nsd+2)
+            #    
+            #    q_tr[itracer]       = Q[i, j, istate, e]
+            #end
+            #R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
+            R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
+
             
-            #R_gas  = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-            #c_v    = MoistThermodynamics.cv_m(q_tr[1], q_tr[2], q_tr[3])
-            #c_p    = MoistThermodynamics.cp_m(q_tr[1], q_tr[2], q_tr[3])
-            #P      = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
+            P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
+            
             #Primitive variables
-            #T=P/(R_gas*ρ)
-            
+            u=U/ρ
+            v=V/ρ
+            T=P/(R_gas*ρ)
+
             #Compute fluxes
             fluxρ  = ρ
             fluxU  = u
@@ -796,7 +716,7 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
                 #Compute fluxes
                 QT     = Q[i, j, istate, e]
                 fluxQT = QT
-            
+                
                 s_F[i, j, istate, 1], s_F[i, j, istate, 2] = build_volume_fluxes_ije(ξx, 0.0, MJ, fluxQT, 0.0),  build_volume_fluxes_ije(0.0, ξy, MJ, 0.0, fluxQT)
                 s_G[i, j, istate, 1], s_G[i, j, istate, 2] = build_volume_fluxes_ije(ηx, 0.0, MJ, fluxQT, 0.0),  build_volume_fluxes_ije(0.0, ηy, MJ, 0.0, fluxQT)
             end
@@ -834,7 +754,6 @@ function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, vgeo, elems, vma
     QTM = zeros(DFloat, _ntracers)
     QTP = zeros(DFloat, _ntracers)
     
-    #Allocate at least 3 spaces to q_tr
     ntracers = max(3, _ntracers)
     q_tr = zeros(DFloat, ntracers)
     
@@ -852,27 +771,23 @@ function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, vgeo, elems, vma
                 UM = Q[vidM, _U, eM]
                 VM = Q[vidM, _V, eM]
                 EM = Q[vidM, _E, eM]
-                uM, vM = UM/ρM, VM/ρM
                 yM = vgeo[vidM, _y, eM]
                 
                 #Moist air constant: Rm
-                for itracer = 1:_ntracers
-                    istate = itracer + (_nsd+2)
-                    
-                    q_tr[itracer] = Q[vidM, istate, eM]
-                end
-                q_t, q_l, q_i = q_tr[1], q_tr[2], q_tr[3]
-                R_gas  = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)           
-                E_int  = EM/ρM - 0.5*( uM^2 + vM^2 ) - gravity*yM
-                T      = MoistThermodynamics.air_temperature(E_int, q_t, q_l, q_i)
-                PM     = MoistThermodynamics.air_pressure(T-T_0, ρM, q_t, q_l, q_i)
-                TM     = T - T_0
+                #for itracer = 1:_ntracers
+                #    istate = itracer + (_nsd+2)
+                #    
+                #    q_tr[itracer]       = Q[vidM, istate, eM]
+                #end
+                #R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
+                R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
                 
-                #R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-                #c_v   = MoistThermodynamics.cv_m(q_t, q_l, q_i)
-                #c_p   = MoistThermodynamics.cp_m(q_t, q_l, q_i)
-                #PM    = (R_gas/c_v)*(EM - (UM^2 + VM^2)/(2*ρM) - ρM*gravity*yM)
-                #TM = PM/(R_gas*ρM)
+                PM = (R_gas/c_v)*(EM - (UM^2 + VM^2)/(2*ρM) - ρM*gravity*yM)
+                uM = UM/ρM
+                vM = VM/ρM
+                TM = PM/(R_gas*ρM)
+
+                #Tracers
                 
                 #Right variables
                 bc = elemtobndy[f, e]
@@ -882,7 +797,7 @@ function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, vgeo, elems, vma
                 for itracer = 1:_ntracers
                     istate = itracer + (_nsd+2)
 
-                    QTM[itracer] = Q[vidM, istate, eM]
+                    QTM[itracer] = Q[vidM, istate, eM]                
                     QTP[itracer] = zero(eltype(Q))
                 end
                 
@@ -891,28 +806,18 @@ function flux_grad!(::Val{dim}, ::Val{N}, rhs::Array,  Q, sgeo, vgeo, elems, vma
                     UP = Q[vidP, _U, eP]
                     VP = Q[vidP, _V, eP]
                     EP = Q[vidP, _E, eP]
-                    uP, vP = UP/ρP, VP/ρP
                     yP = vgeo[vidP, _y, eP]
-                    
+                    PP = (R_gas/c_v)*(EP - (UP^2 + VP^2)/(2*ρP) - ρP*gravity*yP)
+                    uP = UP/ρP
+                    vP = VP/ρP
+                    TP = PP/(R_gas*ρP)
+
                     #Tracers
                     for itracer = 1:_ntracers
                         istate = itracer + (_nsd+2)
                         QTP[itracer] = Q[vidP, istate, eP]
                     end
-                    q_t, q_l, q_i = QTP[1], QTP[2], QTP[3]
-                    R_gas   = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)
-                    E_int   = EP/ρP - 0.5*( uP^2 + vP^2 ) - gravity*yP
-                    T       = MoistThermodynamics.air_temperature(E_int, q_t, q_l, q_i)
-                    PP      = MoistThermodynamics.air_pressure(T-T_0, ρP, q_t, q_l, q_i)
-                    TP = T - T_0
                     
-                    #R_gas   = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-                    #c_v     = MoistThermodynamics.cv_m(q_t, q_l, q_i)
-                    #c_p     = MoistThermodynamics.cp_m(q_t, q_l, q_i)
-                    #PP      = (R_gas/c_v)*(EP - (UP^2 + VP^2)/(2*ρP) - ρP*gravity*yP)
-                    
-                    TP = PP/(R_gas*ρP)
-
                 elseif bc == 1
                     UnM = nxM * UM +  nyM * VM
                     UP = UM - 2 * UnM * nxM
@@ -998,9 +903,9 @@ function volume_div!(::Val{dim}, ::Val{N}, rhs::Array, gradQ, Q, visc_sgs, vgeo,
     Nq = N + 1
     nelem = size(Q)[end]
 
-    Q     = reshape(Q, Nq, Nq, _nstate+3, nelem)
-    gradQ = reshape(gradQ, Nq, Nq, _nstate+3, dim, nelem)
-    rhs   = reshape(rhs, Nq, Nq, _nstate+2, dim, nelem)
+    Q     = reshape(Q, Nq, Nq, _nstate, nelem)
+    gradQ = reshape(gradQ, Nq, Nq, _nstate, dim, nelem)
+    rhs   = reshape(rhs, Nq, Nq, _nstate, dim, nelem)
     vgeo  = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
 
     #Initialize RHS vector
@@ -1022,7 +927,7 @@ function volume_div!(::Val{dim}, ::Val{N}, rhs::Array, gradQ, Q, visc_sgs, vgeo,
             Ex, Ey = gradQ[i, j, _E, 1, e], gradQ[i, j, _E, 2, e]
             ρ, U, V = Q[i, j, _ρ, e], Q[i, j, _U, e], Q[i, j, _V, e]
 
-           
+            
             #Compute primitive variables
             ux, uy = Ux, Uy
             vx, vy = Vx, Vy
@@ -1217,9 +1122,9 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  gradQ, Q, visc_sgs, sgeo, 
                     vxP, vyP = VxP, VyP #FXG: Not sure about this BC
                     #TxP, TyP = ExP, EyP #Produces thermal boundary layer
                     TxP, TyP = TxM, TyM
-#                    TxP = 0
-#                    TyP = -gravity/c_p
-#                    EPflag=0
+                    #                    TxP = 0
+                    #                    TyP = -gravity/c_p
+                    #                    EPflag=0
 
                     #Tracers
                     for itracer = 1:_ntracers
@@ -1238,63 +1143,63 @@ function flux_div!(::Val{dim}, ::Val{N}, rhs::Array,  gradQ, Q, visc_sgs, sgeo, 
                     error("Invalid boundary conditions $bc on face $f of element $e")
                 end
 
-                #Left Fluxes
-                div_uM=uxM + vyM           
-                fluxρM_x = νM*ρxM
-                fluxρM_y = νM*ρyM
-                fluxUM_x = μM*(2*uxM + lambda*div_uM)
-                fluxUM_y = μM*(uyM + vxM)
-                fluxVM_x = μM*(vxM + uyM)
-                fluxVM_y = μM*(2*vyM + lambda*div_uM)
-                fluxEM_x = μM*(uM*(2*uxM + lambda*div_uM) + vM*(uyM + vxM)) + κM*c_p/Pr*TxM
-                fluxEM_y = μM*(uM*(vxM + uyM) + vM*(2*vyM + lambda*div_uM)) + κM*c_p/Pr*TyM
+#Left Fluxes
+div_uM=uxM + vyM           
+fluxρM_x = νM*ρxM
+fluxρM_y = νM*ρyM
+fluxUM_x = μM*(2*uxM + lambda*div_uM)
+fluxUM_y = μM*(uyM + vxM)
+fluxVM_x = μM*(vxM + uyM)
+fluxVM_y = μM*(2*vyM + lambda*div_uM)
+fluxEM_x = μM*(uM*(2*uxM + lambda*div_uM) + vM*(uyM + vxM)) + κM*c_p/Pr*TxM
+fluxEM_y = μM*(uM*(vxM + uyM) + vM*(2*vyM + lambda*div_uM)) + κM*c_p/Pr*TyM
 
-                
-                #Right Fluxes
-                div_uP=uxP + vyP
-                fluxρP_x = νP*ρxP
-                fluxρP_y = νP*ρyP
-                fluxUP_x = μP*(2*uxP + lambda*div_uP)
-                fluxUP_y = μP*(uyP + vxP)
-                fluxVP_x = μP*(vxP + uyP)
-                fluxVP_y = μP*(2*vyP + lambda*div_uP)
-                fluxEP_x = μP*(uP*(2*uxP + lambda*div_uP) + vP*(uyP + vxP))*EPflag + κP*c_p/Pr*TxP
-                fluxEP_y = μP*(uP*(vxP + uyP) + vP*(2*vyP + lambda*div_uP))*EPflag + κP*c_p/Pr*TyP
 
-                #Compute Numerical Flux
-                fluxρS = 0.5*(nxM * (fluxρM_x + fluxρP_x) + nyM * (fluxρM_y + fluxρP_y))
-                fluxUS = 0.5*(nxM * (fluxUM_x + fluxUP_x) + nyM * (fluxUM_y + fluxUP_y))
-                fluxVS = 0.5*(nxM * (fluxVM_x + fluxVP_x) + nyM * (fluxVM_y + fluxVP_y))
-                fluxES = 0.5*(nxM * (fluxEM_x + fluxEP_x) + nyM * (fluxEM_y + fluxEP_y))
+#Right Fluxes
+div_uP=uxP + vyP
+fluxρP_x = νP*ρxP
+fluxρP_y = νP*ρyP
+fluxUP_x = μP*(2*uxP + lambda*div_uP)
+fluxUP_y = μP*(uyP + vxP)
+fluxVP_x = μP*(vxP + uyP)
+fluxVP_y = μP*(2*vyP + lambda*div_uP)
+fluxEP_x = μP*(uP*(2*uxP + lambda*div_uP) + vP*(uyP + vxP))*EPflag + κP*c_p/Pr*TxP
+fluxEP_y = μP*(uP*(vxP + uyP) + vP*(2*vyP + lambda*div_uP))*EPflag + κP*c_p/Pr*TyP
 
-                #Update RHS
-                rhs[vidM, _ρ, 1, eM] += sMJ * fluxρS
-                rhs[vidM, _U, 1, eM] += sMJ * fluxUS
-                rhs[vidM, _V, 1, eM] += sMJ * fluxVS
-                rhs[vidM, _E, 1, eM] += sMJ * fluxES
+#Compute Numerical Flux
+fluxρS = 0.5*(nxM * (fluxρM_x + fluxρP_x) + nyM * (fluxρM_y + fluxρP_y))
+fluxUS = 0.5*(nxM * (fluxUM_x + fluxUP_x) + nyM * (fluxUM_y + fluxUP_y))
+fluxVS = 0.5*(nxM * (fluxVM_x + fluxVP_x) + nyM * (fluxVM_y + fluxVP_y))
+fluxES = 0.5*(nxM * (fluxEM_x + fluxEP_x) + nyM * (fluxEM_y + fluxEP_y))
 
-                #Tracers
-                for itracer = 1:_ntracers
-                    istate = itracer + (_nsd+2)
+#Update RHS
+rhs[vidM, _ρ, 1, eM] += sMJ * fluxρS
+rhs[vidM, _U, 1, eM] += sMJ * fluxUS
+rhs[vidM, _V, 1, eM] += sMJ * fluxVS
+rhs[vidM, _E, 1, eM] += sMJ * fluxES
 
-                    #Left and Right Fluxes
-                    fluxQTM_x = κM*QTxM[itracer]
-                    fluxQTM_y = κM*QTyM[itracer]
-                    
-                    fluxQTP_x = κP*QTxP[itracer]
-                    fluxQTP_y = κP*QTyP[itracer]
-                    
-                    #Compute Numerical Flux
-                    fluxQTS   = 0.5*(nxM * (fluxQTM_x + fluxQTP_x) + nyM * (fluxQTM_y + fluxQTP_y))
+#Tracers
+for itracer = 1:_ntracers
+    istate = itracer + (_nsd+2)
 
-                    #Update RHS
-                    rhs[vidM, istate, 1, eM] += sMJ * fluxQTS
-                end 
+    #Left and Right Fluxes
+    fluxQTM_x = κM*QTxM[itracer]
+    fluxQTM_y = κM*QTyM[itracer]
+    
+    fluxQTP_x = κP*QTxP[itracer]
+    fluxQTP_y = κP*QTyP[itracer]
+    
+    #Compute Numerical Flux
+    fluxQTS   = 0.5*(nxM * (fluxQTM_x + fluxQTP_x) + nyM * (fluxQTM_y + fluxQTP_y))
 
-               
-            end
-        end
-    end
+    #Update RHS
+    rhs[vidM, istate, 1, eM] += sMJ * fluxQTS
+end 
+
+
+end
+end
+end
 end
 # }}}
 
@@ -1353,7 +1258,7 @@ end
 #
 # {{{ CPU Kernels
 # Saturation adjustment
-function sat_adjust(::Val{2}, ::Val{N}, Q, vgeo, elems) where N
+function sat_adjust!(::Val{2}, ::Val{N}, Q, vgeo, elems) where N
     DFloat          = eltype(Q)
     γ::DFloat       = _γ
     p0::DFloat      = _p0
@@ -1365,68 +1270,55 @@ function sat_adjust(::Val{2}, ::Val{N}, Q, vgeo, elems) where N
     Nq = N + 1
     nelem = size(Q)[end]
     
-    Q      = reshape(Q, Nq, Nq, _nstate+3, nelem)
+    Q      = reshape(Q, Nq, Nq, _nstate, nelem)
     vgeo   = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
-    
-    #Allocate at least 3 spaces to q_tr
-    ntracers = max(3, _ntracers)
-    q_tr = zeros(DFloat, ntracers)    
-    q_l = zeros(DFloat, 1); q_i = zeros(DFloat, 1)
+    q_tr   = zeros(DFloat, 3)
+    Qinout = zeros(DFloat, _nstate)
+    q_tr   = zeros(DFloat, _ntracers)
     
     @inbounds for e in elems
         for j = 1:Nq, i = 1:Nq
             y = vgeo[i,j,_y,e]
-            geopotential = gravity*y
-           
+
+            #Moist air constant: Rm
+            #R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
+            R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
+
             U, V = Q[i, j, _U, e], Q[i, j, _V, e]
             ρ, E = Q[i, j, _ρ, e], Q[i, j, _E, e]
-            u, v = U/ρ, V/ρ
-
-            T_prev = Q[i, j, _nstate+1, e]
+            P    = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
+            @show(E)
+            Qinout[_U]   = _U
+            Qinout[_V]   = _U
+            Qinout[_ρ]   = _ρ
+            Qinout[_E]   = _E
+            Qinout[_qt1] = q_tr[1]
+            Qinout[_qt2] = q_tr[2]
+            Qinout[_qt3] = q_tr[3]
             
-            #Moist air constant: Rm
-            for itracer = 1:_ntracers
-                istate = itracer + (_nsd+2)
-                
-                q_tr[itracer] = Q[i, j, istate, e]
-            end
+            #convert_set3c_to_set2nc_scalar(y, Qinout)
+            #=
+            θ        = Qinout[_E]
+            π_k      = 1.0 - gravity/(c_p*θ)*y
+            c        = c_v/R_gas
+            ρ        = p0/(R_gas*θ)*(π_k)^c
+            P        = p0 * (ρ*R_gas*θ/p0)^(c_p/ c_v)
+            T        = π_k*θ
+            @show(T)
+            qt       = q_tr[1]
+            T_trial  = 290.0
+            E_int    = MoistThermodynamics.internal_energy_sat.(T, ρ, qt);
+            T        = MoistThermodynamics.saturation_adjustment.(E_int, ρ, qt);
+            θ        = T/π_k
+            ρ        = p0/(R_gas*θ)*(π_k)^c
             
-            # compute internal energy from dynamic variables            
-            KE       = 0.5 * ( u.^2 .+ v.^2)
-            E_int    = E - KE - geopotential
-            #T_prev   = MoistThermodynamics.air_temperature(E_int, q_tr[1], q_tr[2], q_tr[3])
-            #P        = MoistThermodynamics.air_pressure(T, ρ, q_tr[1], q_tr[2], q_tr[3])
-            
-            #@show(E, E_int, KE)
-            # compute temperature, pressure and condensate specific humidities,
-            # using T_prev as initial condition for iterations
-            
-            #
-            q_t    = q_tr[1]
-            #
-            T      = MoistThermodynamics.saturation_adjustment(E_int, ρ, q_t)
-                     MoistThermodynamics.phase_partitioning_eq!(q_l, q_i, T, ρ, q_t);
-
-            ql = q_l[1]
-            qi = q_i[1]
-            P      = MoistThermodynamics.air_pressure(T, ρ, q_t, ql, qi)
-            
-            # Update temperature for next timestep
-            E      = MoistThermodynamics.total_energy(KE, geopotential, T, q_t)
-
-            #@show(E, T, P, ql, q_t)
-            
-            Q[i, j, _qt1, e] = q_t
-            Q[i, j, _qt2, e] = ql
-            Q[i, j, _qt3, e] = qi
-            Q[i, j, _E, e]   = E
-            #@show(E, T)
-            #T_prev = T;
-            #Q[i, j, _nstate+1, e] = T_prev - T_0
+            #Obtain ql, qi from T,  ρ, qt
+            ql = zeros(size(T)); qi = zeros(size(T))
+            MoistThermodynamics.phase_partitioning_eq!(ql, qi, T, ρ, qt);
+            =#
             
         end
     end
-    return Q
 end
 # }}}
 
@@ -1454,15 +1346,9 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
     mpisize = MPI.Comm_size(mpicomm)
     eps=1e-8
     eps=1e-8
-#    eps2=1e-8
-#    @show (eps, eps2)
+    #    eps2=1e-8
+    #    @show (eps, eps2)
 
-    
-    #Allocate at least 3 spaces to q_tr
-    ntracers = max(3, _ntracers)
-    q_tr = zeros(DFloat, ntracers)
-    
-    
     #Compute Q_mean_global
     @inbounds for e = 1:nelem, s=1:nstate, i = 1:Np
         Q_mean_global[s] += Q[i, s, e]
@@ -1487,36 +1373,32 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
         ds_min = +1e6
         rhs_max = -1e6*ones(DFloat, nstate)
         
+        ntracers = max(3, _ntracers)
+        q_tr = zeros(DFloat, ntracers)
+        
         #Loop through Element DOF
         for i = 1:Np
             ρ, U, V, E = Q[i, _ρ, e], Q[i, _U, e], Q[i, _V, e], Q[i, _E, e]
-            u, v = U/ρ, V/ρ
             ξx, ξy, ηx, ηy = vgeo[i, _ξx, e], vgeo[i, _ξy, e], vgeo[i, _ηx, e], vgeo[i, _ηy, e]
             y = vgeo[i, _y, e]
 
             #Moist air constant: Rm
-            for itracer = 1:_ntracers
-                istate = itracer + (_nsd+2)
-                
-                q_tr[itracer] = Q[i, istate, e]
-            end
-            q_t, q_l, q_i = q_tr[1], q_tr[2], q_tr[3]
-            R_gas  = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)           
-            E_int  = E/ρ - 0.5*( u^2 + v^2 ) - gravity*y
-            T      = MoistThermodynamics.air_temperature(E_int, q_t, q_l, q_i)
-            P      = MoistThermodynamics.air_pressure(T-T_0, ρ, q_t, q_l, q_i)
+            #for itracer = 1:_ntracers
+            #    istate = itracer + (_nsd+2)
+            #    
+            #    q_tr[itracer]       = Q[i, istate, e]
+            #end
+            #R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
+            R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
             
-            #R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-            #c_v   = MoistThermodynamics.cv_m(q_tr[1], q_tr[2], q_tr[3])
-            #c_p   = MoistThermodynamics.cp_m(q_tr[1], q_tr[2], q_tr[3])
-            #P     = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
-            
+            P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
+
             #Compute Max Wave Speed
             u, v = U/ρ, V/ρ
             vel=sqrt( u^2 + v^2 )
             wave_speed = (vel + sqrt(γ * P / ρ))
             c_max = max( c_max, wave_speed )
-            
+
             #Compute Element Length
             dx, dy = 1.0/(2*ξx), 1.0/(2*ηy)
             ds=min(dx,dy)
@@ -1539,32 +1421,32 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
         if ( ΔQ_global[_ρ] < eps2 )
         end
         if ( ΔQ_global[_U] < eps2 )
-            ΔQ_global[_U]=1.0
+        ΔQ_global[_U]=1.0
         end
         if ( ΔQ_global[_V] < eps2 )
-            ΔQ_global[_V]=1.0
+        ΔQ_global[_V]=1.0
         end
         if ( ΔQ_global[_E] < eps2 )
-            ΔQ_global[_E]=1.0
+        ΔQ_global[_E]=1.0
         end
         =#
 
         μ1=C1*ds^2*ΔQ_global[_ρ]*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps), #Nazarov
                                       rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
-#        μ1=C1*ds^2*ΔQ_global[_ρ]*max( rhs_max[_ρ], rhs_max[_U],
-#                                      rhs_max[_V], rhs_max[_E] )
+        #        μ1=C1*ds^2*ΔQ_global[_ρ]*max( rhs_max[_ρ], rhs_max[_U],
+        #                                      rhs_max[_V], rhs_max[_E] )
 
         #=
         if ( ΔQ_global[_ρ] < eps2 || ΔQ_global[_U] < eps2 || ΔQ_global[_V] < eps2 || ΔQ_global[_E] < eps2 )
-            μ1=C1*ds^2*ΔQ_global[_ρ]*rhs_max[_ρ] #Nazarov
-            #            μ1=C1*ds^2*ρ_max*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
-            #μ1=C1*ds^2*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
+        μ1=C1*ds^2*ΔQ_global[_ρ]*rhs_max[_ρ] #Nazarov
+        #            μ1=C1*ds^2*ρ_max*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
+        #μ1=C1*ds^2*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
         else
-            #            μ1=C1*ds^2*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
-            #                                  rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
-            #            μ1=C1*ds^2*ρ_max*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
-            μ1=C1*ds^2*ΔQ_global[_ρ]*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps), #Nazarov
-                                          rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
+        #            μ1=C1*ds^2*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
+        #                                  rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
+        #            μ1=C1*ds^2*ρ_max*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
+        μ1=C1*ds^2*ΔQ_global[_ρ]*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps), #Nazarov
+        rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
         end
         =#
 
@@ -1576,7 +1458,7 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
         μ_elem = min(μ_elem, visc)
         
         #Store viscosities
-#        μ_elem=visc
+        #        μ_elem=visc
         visc_sgs[1,e]=μ_elem #μ
         visc_sgs[2,e]=Pr/(γ-1)*μ_elem #κ
         visc_sgs[3,e]=Pr/ρ_max*μ_elem #ν
@@ -1585,13 +1467,13 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
 
         #=
         if(rhs_max[_U]/(ΔQ_global[_U]+eps) > 50 || rhs_max[_U]/(ΔQ_global[_V]+eps) > 50)
-           #        @show(rhs_max[_ρ], ΔQ_global[_ρ], μ1)
-           #        @show(ΔQ_global[_U])
-           #        @show(ΔQ_global[_V])
-            @show(rhs_max[_E], ΔQ_global[_E], rhs_max[_E]/(ΔQ_global[_E]+eps))
-            @show(rhs_max[_U], ΔQ_global[_U], rhs_max[_U]/(ΔQ_global[_U]+eps))
-            @show(rhs_max[_V], ΔQ_global[_V], rhs_max[_V]/(ΔQ_global[_V]+eps))
-         end
+        #        @show(rhs_max[_ρ], ΔQ_global[_ρ], μ1)
+        #        @show(ΔQ_global[_U])
+        #        @show(ΔQ_global[_V])
+        @show(rhs_max[_E], ΔQ_global[_E], rhs_max[_E]/(ΔQ_global[_E]+eps))
+        @show(rhs_max[_U], ΔQ_global[_U], rhs_max[_U]/(ΔQ_global[_U]+eps))
+        @show(rhs_max[_V], ΔQ_global[_V], rhs_max[_V]/(ΔQ_global[_V]+eps))
+        end
         =#
         
         visc_sgs[1,e]=visc #μ
@@ -1628,7 +1510,7 @@ function compute_viscosity_sgs_working(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs,
     eps=1e-8
     eps=1e-1
     eps2=1e-2
-#    @show (eps, eps2)
+    #    @show (eps, eps2)
 
     #Compute Q_mean_global
     @inbounds for e = 1:nelem, s=1:nstate, i = 1:Np
@@ -1689,30 +1571,30 @@ function compute_viscosity_sgs_working(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs,
             #            μ1=C1*ds^2*ρ_max*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
             #μ1=C1*ds^2*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
         else
-#            μ1=C1*ds^2*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
-#                                  rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
-                                  #            μ1=C1*ds^2*ρ_max*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
+            #            μ1=C1*ds^2*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
+            #                                  rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
+            #            μ1=C1*ds^2*ρ_max*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps),
             μ1=C1*ds^2*ΔQ_global[_ρ]*max( rhs_max[_ρ]/(ΔQ_global[_ρ]+eps), rhs_max[_U]/(ΔQ_global[_U]+eps), #Nazarov
                                           rhs_max[_V]/(ΔQ_global[_V]+eps), rhs_max[_E]/(ΔQ_global[_E]+eps) )
         end
-#        μ1=C1*ds^2*ρ_max*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
+        #        μ1=C1*ds^2*ρ_max*rhs_max[_ρ]/(ΔQ_global[_ρ]+eps)
 
         #Compute μmax
         μmax=C2*ds*ρ_max*c_max #Nazarov
-#        μmax=C2*ds*c_max
+        #        μmax=C2*ds*c_max
 
         #Compute μ, κ, ν
         μ_elem=min(μ1, μmax)
 
         #Store viscosities
-#        μ_elem=visc
+        #        μ_elem=visc
         visc_sgs[1,e]=μ_elem #μ
         visc_sgs[2,e]=Pr/(γ-1)*μ_elem #κ
         visc_sgs[3,e]=Pr/ρ_max*μ_elem #ν
         visc_sgs[3,e]=0 #μ
 
     end
-#    @show (minimum(visc_sgs[1,:]), maximum(visc_sgs[1,:]))
+    #    @show (minimum(visc_sgs[1,:]), maximum(visc_sgs[1,:]))
 end
 # }}}
 
@@ -1726,7 +1608,7 @@ end
     c_p::DFloat     = _c_p
     c_v::DFloat     = _c_v
     gravity::DFloat = _gravity
-    
+
     Nq = N + 1
 
     (i, j, k) = threadIdx()
@@ -2345,7 +2227,7 @@ end
             sync_threads()
         end
     end
-    nothing
+nothing
 end
 # }}}
 
@@ -2455,7 +2337,7 @@ end
 end
 
 @hascuda function flux_rhs!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_sgeo,
-                           d_vgeoL, elems, d_vmapM, d_vmapP, d_elemtobndy) where {dim, N}
+                            d_vgeoL, elems, d_vmapM, d_vmapP, d_elemtobndy) where {dim, N}
     nelem = length(elems)
     @cuda(threads=(ntuple(j->N+1, dim-1)..., 1), blocks=nelem,
           knl_flux_rhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, d_vgeoL, nelem, d_vmapM, d_vmapP, d_elemtobndy))
@@ -2477,7 +2359,7 @@ end
 end
 
 @hascuda function flux_grad!(::Val{dim}, ::Val{N}, d_rhsL::CuArray, d_QL, d_sgeo,
-                           d_vgeoL, elems, d_vmapM, d_vmapP, d_elemtobndy) where {dim, N}
+                             d_vgeoL, elems, d_vmapM, d_vmapP, d_elemtobndy) where {dim, N}
     nelem = length(elems)
     @cuda(threads=(ntuple(j->N+1, dim-1)..., 1), blocks=nelem,
           knl_flux_grad!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, d_vgeoL, nelem, d_vmapM, d_vmapP, d_elemtobndy))
@@ -2535,8 +2417,8 @@ end
 
 # {{{ Send Data Q
 function senddata_Q(::Val{dim}, ::Val{N}, mesh, sendreq, recvreq, sendQ,
-                  recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
-                  ArrType=ArrType) where {dim, N}
+                    recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
+                    ArrType=ArrType) where {dim, N}
     mpirank = MPI.Comm_rank(mpicomm)
 
     # Create send and recv request array
@@ -2554,7 +2436,7 @@ function senddata_Q(::Val{dim}, ::Val{N}, mesh, sendreq, recvreq, sendQ,
     MPI.Waitall!(sendreq)
 
     # pack data from d_QL into send buffer
-#    fillsendQ!(Val(dim), Val(N), sendQ, d_sendQ, d_QL, d_sendelems)
+    #    fillsendQ!(Val(dim), Val(N), sendQ, d_sendQ, d_QL, d_sendelems)
     sendQ[:, :, :] .= d_QL[:, :, d_sendelems]
 
     # post MPI sends
@@ -2567,8 +2449,8 @@ end
 
 # {{{ Send Data Grad(Q)
 function senddata_gradQ(::Val{dim}, ::Val{N}, mesh, sendreq, recvreq, sendQ,
-                  recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
-                  ArrType=ArrType) where {dim, N}
+                        recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
+                        ArrType=ArrType) where {dim, N}
     mpirank = MPI.Comm_rank(mpicomm)
 
     # Create send and recv request array
@@ -2586,7 +2468,7 @@ function senddata_gradQ(::Val{dim}, ::Val{N}, mesh, sendreq, recvreq, sendQ,
     MPI.Waitall!(sendreq)
 
     # pack data from d_QL into send buffer
-#    fillsendQ!(Val(dim), Val(N), sendQ, d_sendQ, d_QL, d_sendelems)
+    #    fillsendQ!(Val(dim), Val(N), sendQ, d_sendQ, d_QL, d_sendelems)
     sendQ[:, :, :, :] .= d_QL[:, :, :, d_sendelems]
 
     # post MPI sends
@@ -2689,56 +2571,51 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
     nelem = length(mesh.elems)
     
     #Create Device Arrays
-    d_QL, d_rhsL              = ArrType(Q), ArrType(rhs)
-    d_vgeoL, d_sgeo           = ArrType(vgeo), ArrType(sgeo)
-    d_vmapM, d_vmapP          = ArrType(vmapM), ArrType(vmapP)
+    d_QL, d_rhsL = ArrType(Q), ArrType(rhs)
+    d_vgeoL, d_sgeo = ArrType(vgeo), ArrType(sgeo)
+    d_vmapM, d_vmapP = ArrType(vmapM), ArrType(vmapP)
     d_sendelems, d_elemtobndy = ArrType(mesh.sendelems), ArrType(mesh.elemtobndy)
-    d_sendQ, d_recvQ          = ArrType(sendQ), ArrType(recvQ)
+    d_sendQ, d_recvQ = ArrType(sendQ), ArrType(recvQ)
     d_D = ArrType(D)
 
     #Create Device LDG Arrays
-    d_gradQL     = zeros(DFloat, (N+1)^dim, _nstate+3, dim, nelem)
-    d_rhs_gradQL = zeros(DFloat, (N+1)^dim, _nstate+2, dim, nelem)
+    d_gradQL = zeros(DFloat, (N+1)^dim, _nstate, dim, nelem)
+    d_rhs_gradQL = zeros(DFloat, (N+1)^dim, _nstate, dim, nelem)
     d_sendgradQ, d_recvgradQ = ArrType(sendgradQ), ArrType(recvgradQ)
 
     #Create Device SGS Arrays
-    d_rhs_sgs  = zeros(DFloat, (N+1)^dim, _nstate+2, nelem)
+    d_rhs_sgs = zeros(DFloat, (N+1)^dim, _nstate, nelem)
     d_visc_sgs = zeros(DFloat, 3, nelem)
-    visc_sgsL  = zeros(DFloat, (N+1)^dim, 3, nelem)
-
-    q_l = zeros(DFloat, 1); q_i = zeros(DFloat, 1)
+    visc_sgsL = zeros(DFloat, (N+1)^dim, 3, nelem)
     
     #Start Time Loop
     start_time = t1 = time_ns()
     for step = 1:nsteps
-
-        #Stages
         for s = 1:length(RKA)
-
 
             #---------------1st Order Operators--------------------------#
             # Send Data Q
             senddata_Q(Val(dim), Val(N), mesh, sendreq, recvreq, sendQ,
                        recvQ, d_sendelems, d_sendQ, d_recvQ, d_QL, mpicomm;
                        ArrType=ArrType)
-            
+
             # volume RHS computation
             volume_rhs!(Val(dim), Val(N), d_rhsL, d_QL, d_vgeoL, d_D, mesh.realelems)
 
             # Receive Data Q
             receivedata_Q!(Val(dim), Val(N), mesh, recvreq, recvQ, d_recvQ, d_QL)
-            
+
             # flux RHS computation
             flux_rhs!(Val(dim), Val(N), d_rhsL, d_QL, d_sgeo, d_vgeoL, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
 
-            
             #---------------2nd Order Operators--------------------------#
             if (visc > 0)
 
                 # Store gridpoint residual
-                #store_residual_sgs!(Val(dim), Val(N), d_rhs_sgs, d_rhsL, d_vgeoL, mesh.realelems)
+                store_residual_sgs!(Val(dim), Val(N), d_rhs_sgs, d_rhsL, d_vgeoL, mesh.realelems)
 
                 # Compute viscosity coefficient for SGS model
+                #                compute_viscosity_sgs_working(Val(dim), Val(N), d_visc_sgs, d_rhs_sgs, d_QL, d_vgeoL, visc, mpicomm)
                 compute_viscosity_sgs(Val(dim), Val(N), d_visc_sgs, d_rhs_sgs, d_QL, d_vgeoL, visc, mpicomm)
 
                 # volume grad Q computation
@@ -2765,82 +2642,21 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                 flux_div!(Val(dim), Val(N), d_rhs_gradQL, d_gradQL, d_QL, d_visc_sgs, d_sgeo, mesh.realelems, d_vmapM, d_vmapP, d_elemtobndy)
             end
 
-
-            
-            
-            #--------------------------------------------------------------------------------------
+            #
             # --------------- Saturation adjustment -------------------------- #
-            #--------------------------------------------------------------------------------------
-            if(_icase == 101001)
-                #sat_adjust(Val(dim), Val(N), d_QL, d_vgeoL, mesh.realelems)
-
-                Nq    = N + 1
-                Np    = (N+1)^dim
-                nelem = size(d_QL)[end]
-                
-                #Allocate at least 3 spaces to q_tr
-                ntracers = max(3, _ntracers)
-                q_tr     = zeros(DFloat, ntracers)    
-                q_l      = zeros(DFloat, 1); q_i = zeros(DFloat, 1)
-                
-                #@inbounds for e in nelem
-                #for j = 1:Nq, i = 1:Nq
-                @inbounds for e = 1:nelem, i = 1:Np
-                    
-                    y            = d_vgeoL[i, _y, e]
-                    geopotential = gravity*y
-
-                    U, V   = d_QL[i, _U, e], d_QL[i, _V, e]
-                    ρ, E   = d_QL[i, _ρ, e], d_QL[i, _E, e]
-                    q_t    = d_QL[i, _qt1, e]
-                    
-                    T_prev = d_QL[i, _nstate+1, e]
-                    
-                    # compute internal energy from dynamic variables
-                    u, v   = U/ρ, V/ρ
-                    KE       = 0.5 * ( u.^2 .+ v.^2)
-                    E_int    = E/ρ - KE - geopotential
-                    
-                    # compute temperature, pressure and condensate specific humidities,
-                    # using T_prev as initial condition for iterations
-                    #T      = MoistThermodynamics.saturation_adjustment(E_int, ρ, q_t, T_prev)
-                    T      = MoistThermodynamics.saturation_adjustment(E_int, ρ, q_t)
-                             MoistThermodynamics.phase_partitioning_eq!(q_l, q_i, T, ρ, q_t);
-                    
-                    ql = q_l[1]*0
-                    qi = q_i[1]*0
-                    #P  = R_gas*ρ*T
-                    P = MoistThermodynamics.air_pressure(T, ρ, q_t, ql, qi)
-                    
-                    # Update temperature for next timestep
-                    #E      = MoistThermodynamics.total_energy(KE, geopotential, T, q_t)
-
-                    #d_QL[i, _E, e]   = E
-                    #d_QL[i, _qt1, e] = q_t                    
-                    #d_QL[i, _qt2, e] = ql
-                    #d_QL[i, _qt3, e] = qi
-                    #if(ql > 0.0)
-                    #    @show("QL", ql)
-                    #end
-                    #T_prev = T;
-                    #d_QL[i, _nstate+1, e] = T_prev #- T_0
-                    
-                end
-            end        
-#--------------------------------------------------------------------------------------
-# End saturation adjustment
-#--------------------------------------------------------------------------------------
-
+            #
+            #sat_adjust!(Val(dim), Val(N), d_QL, d_vgeoL, mesh.realelems)
+            #
+            # End saturation adjustment
+            #
+            
             
             #---------------Update Solution--------------------------#
             # update solution and scale RHS
             updatesolution!(Val(dim), Val(N), d_rhsL, d_rhs_gradQL, d_QL, d_vgeoL, mesh.realelems,
                             RKA[s%length(RKA)+1], RKB[s], dt)
-            
-          
-        end #end stage
+        end #end time steopping
 
-       
         if step == 1
             @hascuda synchronize()
             start_time = time_ns()
@@ -2864,8 +2680,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
             U = reshape((@view Q[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
             V = reshape((@view Q[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
             E = reshape((@view Q[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-            E_ref = reshape((@view Q[:, _nstate+2, :]), ntuple(j->(N+1),dim)..., nelem)
-            E = E .- E_ref
+            E = E .- 300.0
 
             #Write dynamics to file:
             #MU1 = reshape((@view visc_sgsL[:, 1, :]), ntuple(j->(N+1),dim)..., nelem)
@@ -2887,18 +2702,18 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                                    itracer,
                                    ArrType, mpirank, step), X...;
                           fields=(("Rho", ρ), ("U", U), ("V", V), ("E", E), ("QT", Qtracers)),
-                      realelems=mesh.realelems)
+                          realelems=mesh.realelems)
             end
-           
+            
             @show (step*dt, minimum(E), maximum(E))
         end
-    end
-    if (mpirank == 0)
-        avg_stage_time = (time_ns() - start_time) * 1e-9 / ((nsteps-1) * length(RKA))
-        @show (nsteps, avg_stage_time)
-    end
-    Q .= d_QL
-    rhs .= d_rhsL
+end
+if (mpirank == 0)
+    avg_stage_time = (time_ns() - start_time) * 1e-9 / ((nsteps-1) * length(RKA))
+    @show (nsteps, avg_stage_time)
+end
+Q .= d_QL
+rhs .= d_rhsL
 end
 # }}}
 
@@ -2936,53 +2751,26 @@ function convert_set2nc_to_set3c(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
     gravity::DFloat = _gravity
 
     Np = (N+1)^dim
-    (~, ~, nelem) = size(Q)
-    #q_tr = zeros(DFloat, 3)
-
+    (~, ~, nelem) = size(Q) 
+   
+    ntracers = max(3, _ntracers)
+    q_tr = zeros(DFloat, ntracers)
+    
     @inbounds for e = 1:nelem, n = 1:Np
         ρ, u, v, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
         y = vgeo[n, _y, e]
         
         #Moist air constant: Rm
-        #=        q_tr[1] = 0.0
-        q_tr[2] = 0.0
-        q_tr[3] = 0.0
         for itracer = 1:_ntracers
             istate = itracer + (_nsd+2)
             
             q_tr[itracer] = Q[n, istate, e]
         end
-        R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])=#
         R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
         
         P = p0 * (ρ * R_gas * E / p0)^(c_p / c_v)
         T = P/(ρ*R_gas)
         E = c_v*T + 0.5*(u^2 + v^2) + gravity*y
-        
-        Q[n, _U, e] = ρ*u
-        Q[n, _V, e] = ρ*v
-        Q[n, _E, e] = ρ*E
-        
-    end
-end
-# }}}
-
-function convert_velo_to_mome_and_ene_to_ENE(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
-    DFloat = eltype(Q)
-    γ::DFloat       = _γ
-    p0::DFloat      = _p0
-    R_gas::DFloat   = _R_gas
-    c_p::DFloat     = _c_p
-    c_v::DFloat     = _c_v
-    gravity::DFloat = _gravity
-
-    Np = (N+1)^dim
-    (~, ~, nelem) = size(Q)
-    
-    @inbounds for e = 1:nelem, n = 1:Np
-        ρ, u, v, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
-        #y = vgeo[n, _y, e]
-        
         Q[n, _U, e] = ρ*u
         Q[n, _V, e] = ρ*v
         Q[n, _E, e] = ρ*E
@@ -2999,21 +2787,18 @@ function convert_set2nc_to_set3c_scalar(x_ndim, Q)
     c_v::DFloat     = _c_v
     gravity::DFloat = _gravity
 
-    #q_tr = zeros(DFloat, 3)
+    q_tr = zeros(DFloat, 3)
     
     ρ, u, v, E = Q[_ρ], Q[_U], Q[_V], Q[_E]
     
     # Moist air constant: Rm
     #= Get q from q*ρ
-    q_tr[1] = 0.0
-    q_tr[2] = 0.0
-    q_tr[3] = 0.0
     for itracer = 1:_ntracers
-        istate = itracer + (_nsd+2)
-        
-        q_tr[itracer] = Q[istate]
-        Q[istate]     = q_tr[itracer] /ρ
-        
+    istate = itracer + (_nsd+2)
+    
+    q_tr[itracer] = Q[istate]
+    Q[istate]     = q_tr[itracer] /ρ
+    
     end
     R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])=#
     R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
@@ -3043,14 +2828,12 @@ function convert_set3c_to_set2nc(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
 
     Np = (N+1)^dim
     (~, ~, nelem) = size(Q)
-    
-    #Allocate at least 3 spaces to q_tr
+
     ntracers = max(3, _ntracers)
-    q_tr = zeros(DFloat, ntracers)
+    q_tr     = zeros(DFloat, ntracers)  
     
     @inbounds for e = 1:nelem, n = 1:Np
         ρ, U, V, E = Q[n, _ρ, e], Q[n, _U, e], Q[n, _V, e], Q[n, _E, e]
-        u, v = U/ρ, V/ρ
         y = vgeo[n, _y, e]
 
         # Moist air constant: Rm
@@ -3059,28 +2842,24 @@ function convert_set3c_to_set2nc(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
             istate = itracer + (_nsd+2)
             
             q_tr[itracer]   = Q[n, istate, e]
+            #Q[n, istate, e] = q_tr[itracer] /ρ
             
         end
-        q_t, q_l, q_i = q_tr[1], q_tr[2], q_tr[3]
-        #R_gas   = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)            
-        #E_int   = E/ρ - 0.5*( u^2 + v^2 ) - gravity*y
-        #T       = MoistThermodynamics.air_temperature(E_int, q_t, q_l, q_i)
-        #P       = MoistThermodynamics.air_pressure(T-T_0, ρ, q_t, q_l, q_i)
-        
-        R_gas = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)
-        c_v   = MoistThermodynamics.cv_m(q_t, q_l, q_i)
-        c_p   = MoistThermodynamics.cp_m(q_t, q_l, q_i)
-        P = (R_gas/c_v)*(E - (U^2 + V^2)/(2*ρ) - ρ*gravity*y)
-        
-        θ = p0/(ρ * R_gas)*( P/p0 )^(c_v/c_p)
+
+        R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
+        u = U/ρ
+        v = V/ρ
+        E = E/ρ
+        P = (R_gas/c_v)*ρ*(E - 0.5*(u^2 + v^2) - gravity*y)
+        E = p0/(ρ * R_gas)*( P/p0 )^(c_v/c_p)
         Q[n, _U, e] = u
         Q[n, _V, e] = v
-        Q[n, _E, e] = θ
+        Q[n, _E, e] = E
     end
 end
 # }}}
 
-function convert_E_to_theta_scalar(x_ndim, Q)
+function convert_set3c_to_set2nc_scalar(x_ndim, Q)
     DFloat          = eltype(Q)
     γ::DFloat       = _γ
     p0::DFloat      = _p0
@@ -3089,42 +2868,40 @@ function convert_E_to_theta_scalar(x_ndim, Q)
     c_v::DFloat     = _c_v
     gravity::DFloat = _gravity
     
-    y         = x_ndim    
-    q_tr      = zeros(DFloat, 3)
-    ρ, E      = Q[_ρ], Q[_E]
-    U, V      = Q[_U], Q[_V]
-
-    #Allocate at least 3 spaces to q_tr
-    ntracers = max(3, _ntracers)
-    q_tr = zeros(DFloat, ntracers)
+    y               = x_ndim    
+    q_tr            = zeros(DFloat, 3)
+    ρ, U, V, E      = Q[_ρ], Q[_U], Q[_V], Q[_E]
     
-    # Calculate air constant R_gas for moist air:
+    #= Calculate air constant R_gas for moist air:
     for itracer = 1:_ntracers
-        istate = itracer + (_nsd+2)
-        
-        q_tr[itracer] = Q[istate]
+    istate = itracer + (_nsd+2)
+    
+    q_tr[itracer] = Q[istate]
+    #Q[istate]     = q_tr[itracer] /ρ
+    
     end    
-    #R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
+    R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])=#
     R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
-    #c_v   = MoistThermodynamics.cv_m(q_tr[1], q_tr[2], q_tr[3])
-    #c_p   = MoistThermodynamics.cp_m(q_tr[1], q_tr[2], q_tr[3])
     
     u = U/ρ
     v = V/ρ
     E = E/ρ
     
     P = (R_gas/c_v)*ρ*(E - 0.5*(u^2 + v^2) - gravity*y)
-    θ = p0/(ρ * R_gas)*( P/p0 )^(c_v/c_p)
+    #@show(P, E, y, y*gravity)
+    E = p0/(ρ * R_gas)*( P/p0 )^(c_v/c_p)
     
-    Q[_E]  = θ
+    Q[_U] = 0.0 #u
+    Q[_V] = 0.0 #v
+    Q[_E] = E #θ
     
 end
 # }}}
 
 # {{{ nse driver
 function nse2d_sgs(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
-               meshwarp=(x...)->identity(x),
-               tout = 1, ArrType=Array, plotstep=0) where {dim, N}
+                   meshwarp=(x...)->identity(x),
+                   tout = 1, ArrType=Array, plotstep=0) where {dim, N}
     DFloat = typeof(tend)
 
     mpirank = MPI.Comm_rank(mpicomm)
@@ -3154,9 +2931,9 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
 
     # Storage for the solution, rhs, and error
     mpirank == 0 && println("[CPU] creating fields (CPU)...")
-    Q       = zeros(DFloat, (N+1)^dim, _nstate+3, nelem)
-    rhs     = zeros(DFloat, (N+1)^dim, _nstate+2, nelem)
-    
+    Q = zeros(DFloat, (N+1)^dim, _nstate, nelem)
+    rhs = zeros(DFloat, (N+1)^dim, _nstate, nelem)
+
     # setup the initial condition
     mpirank == 0 && println("[CPU] computing initial conditions (CPU)...")
     @inbounds for e = 1:nelem, i = 1:(N+1)^dim
@@ -3167,15 +2944,6 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
         Q[i, _U, e] = Qinit[1]
         Q[i, _V, e] = Qinit[2]
         Q[i, _E, e] = Qinit[4]
-
-        #T_previous to be used for sat_adjust iteration:
-        Q[i, _nstate+1, e] = Qinit[_nstate+1] #T
-
-        #E_ref (background)
-        Q[i, _nstate+2, e] = Qinit[_nstate+2] #E_ref
-
-        #P
-        Q[i, _nstate+3, e] = Qinit[_nstate+3] #P
         
         #Add moist variables
         @inbounds for istate = 5:_nstate
@@ -3186,16 +2954,14 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
 
     # Convert to proper variables
     mpirank == 0 && println("[CPU] converting variables (CPU)...")
-   # convert_set2nc_to_set3c(Val(dim), Val(N), vgeo, Q)
-    convert_velo_to_mome_and_ene_to_ENE(Val(dim), Val(N), vgeo, Q) #SM
-    
+    convert_set2nc_to_set3c(Val(dim), Val(N), vgeo, Q)
 
     # Compute time step
     mpirank == 0 && println("[CPU] computing dt (CPU)...")
     (base_dt, Courant) = courantnumber(Val(dim), Val(N), vgeo, Q, mpicomm)
-#    base_dt=0.01 #FXG DT
+    #    base_dt=0.01 #FXG DT
     mpirank == 0 && @show (base_dt, Courant)
-    
+
     nsteps = ceil(Int64, tend / base_dt)
     dt = tend / nsteps
     mpirank == 0 && @show (dt, nsteps, dt * nsteps, tend)
@@ -3206,7 +2972,7 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
     Q_temp=copy(Q)
     convert_set3c_to_set2nc(Val(dim), Val(N), vgeo, Q_temp)
     stats[1] = L2energysquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems)
-    
+
     # plot the initial condition
     mkpath("viz")
     X = ntuple(j->reshape((@view vgeo[:, _x+j-1, :]), ntuple(j->N+1,dim)...,
@@ -3215,9 +2981,8 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
     U = reshape((@view Q_temp[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
     V = reshape((@view Q_temp[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
     E = reshape((@view Q_temp[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-    E_ref = reshape((@view Q[:, _nstate+2, :]), ntuple(j->(N+1),dim)..., nelem)
-    E = E .- E_ref
-        
+    E = E .- 300.0
+    
     #Write dynamics to file:
     writemesh(@sprintf("viz/nse2d_sgs_%s_rank_%04d_step_%05d",
                        ArrType, mpirank, 0), X...;
@@ -3237,7 +3002,7 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
                            ArrType, mpirank, 0), X...;
                   fields=(("Rho", ρ), ("U", U), ("V", V), ("E", E), ("QT", Qtracers)),
                   realelems=mesh.realelems)
-    
+        
     end
     
     mpirank == 0 && println("[DEV] starting time stepper...")
@@ -3253,39 +3018,38 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
     U        = reshape((@view Q_temp[:, _U, :]), ntuple(j->(N+1),dim)..., nelem)
     V        = reshape((@view Q_temp[:, _V, :]), ntuple(j->(N+1),dim)..., nelem)
     E        = reshape((@view Q_temp[:, _E, :]), ntuple(j->(N+1),dim)..., nelem)
-    E_ref    = reshape((@view Q_temp[:, _nstate+2, :]), ntuple(j->(N+1),dim)..., nelem)
-    E        = E .- E_ref
+    E        = E .- 300.0
     writemesh(@sprintf("viz/nse2d_sgs_%s_rank_%04d_step_%05d",
                        ArrType, mpirank, nsteps), X...;
               fields=(("Rho", ρ), ("U", U), ("V", V), ("E", E)),
               realelems=mesh.realelems)
 
-    #Write tracers to files (one file per tracer):
-    for itracer = 1:_ntracers
-        #
-        # WARNING: correct the call to writemesh to only write Qtracers
-        #          to the file, without re-writing the dynamics again
-        #
-        istate = itracer + (_nsd+2)        
-        Qtracers = reshape((@view Q[:, istate, :]), ntuple(j->(N+1),dim)..., nelem)    
-        writemesh(@sprintf("viz/TRACER_%04d_nse2d_sgs_%s_rank_%04d_step_%05d",
-                           itracer, 
-                           ArrType, mpirank, nsteps), X...;
-                  fields=(("Rho", ρ), ("U", U), ("V", V), ("E", E), ("QT",  Qtracers)),
-                  realelems=mesh.realelems)
-    end
+#Write tracers to files (one file per tracer):
+for itracer = 1:_ntracers
+    #
+    # WARNING: correct the call to writemesh to only write Qtracers
+    #          to the file, without re-writing the dynamics again
+    #
+    istate = itracer + (_nsd+2)        
+    Qtracers = reshape((@view Q[:, istate, :]), ntuple(j->(N+1),dim)..., nelem)    
+    writemesh(@sprintf("viz/TRACER_%04d_nse2d_sgs_%s_rank_%04d_step_%05d",
+                       itracer, 
+                       ArrType, mpirank, nsteps), X...;
+              fields=(("Rho", ρ), ("U", U), ("V", V), ("E", E), ("QT",  Qtracers)),
+              realelems=mesh.realelems)
+end
 
-    mpirank == 0 && println("[CPU] computing final energy...")
-    stats[2] = L2energysquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems)
+mpirank == 0 && println("[CPU] computing final energy...")
+stats[2] = L2energysquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems)
 
-    stats = sqrt.(MPI.allreduce(stats, MPI.SUM, mpicomm))
+stats = sqrt.(MPI.allreduce(stats, MPI.SUM, mpicomm))
 
-    if  mpirank == 0
-        @show eng0 = stats[1]
-        @show engf = stats[2]
-        @show Δeng = engf - eng0
-        @show (minimum(E), maximum(E))
-    end
+if  mpirank == 0
+    @show eng0 = stats[1]
+    @show engf = stats[2]
+    @show Δeng = engf - eng0
+    @show (minimum(E), maximum(E))
+end
 end
 # }}}
 
@@ -3318,7 +3082,7 @@ function main()
         c_v::DFloat     = _c_v
         gravity::DFloat = _gravity
 
-        Qinit = Array{DFloat}(undef, _nstate+3)
+        Qinit = Array{DFloat}(undef, _nstate)
 
         qt, ql, qi = 0.0, 0.0, 0.0
         
@@ -3328,7 +3092,6 @@ function main()
             # RTB
             #
             u0    = 0.0
-            v0    = 0.0
             r     = sqrt((x[1]-500)^2 + (x[dim]-350)^2 )
             rc    = 250.0
             θ_ref = 300.0
@@ -3341,60 +3104,146 @@ function main()
             π_k = 1.0 - gravity/(c_p*θ)*x[dim]
             c   = c_v/R_gas
             ρ   = p0/(R_gas*θ)*(π_k)^c
-            T   = π_k*θ + T_0
-            
-            E_int = MoistThermodynamics.internal_energy(T, 0.0, 0.0, 0.0)
-            T     = MoistThermodynamics.air_temperature(E_int, 0.0, 0.0, 0.0)
-            
-            P     = MoistThermodynamics.air_pressure(T, ρ, 0.0, 0.0, 0.0)
-            ρ     = MoistThermodynamics.air_density( T, P, 0.0, 0.0, 0.0)
-            
-            #Total energy
-            KE               = 0.5 * (u0.^2 .+ v0.^2)
-            geopotential     = gravity*x[dim]
-            E                = MoistThermodynamics.total_energy(KE, geopotential, T, 0.0)
-            
+
             U   = u0
-            V   = v0
-        
+            V   = 0.0
+            
             Qinit[1] = U
             Qinit[2] = V
             Qinit[3] = ρ
-            Qinit[4] = E
-            Qinit[_nstate+1] = 0.0
-            Qinit[_nstate+2] = θ_ref
-            Qinit[_nstate+3] = P
+            Qinit[4] = θ
             
             #ρ, U, V, E
-        
+            
             return Qinit
             
         elseif(icase == 1001)
-            error( " CASE 1001 not coded yet for simple passiv etracers")
-            
-        elseif(icase == 1003)
-            error( " CASE 1003 not coded yet for simple passiv etracers")
+            #
+            # RTB + 1 passive tracers
+            #
+            u0     = 0.0
+            r      = sqrt((x[1]-500)^2 + (x[dim]-350)^2 )
+            rc     = 250.0
 
+            #Thermal
+            θ_ref  = 300.0
+            θ_c    =   0.5
+            Δθ     =   0.0
+            
+            #Passive
+            rtracer  = sqrt((x[1]-500)^2 + (x[dim]-350)^2 )
+            rctracer = 250.0
+            qt_ref   =   0.0
+            qt_c     =   1.0
+            Δqt      =   0.0
+            
+            if r <= rc
+                Δθ  = 0.5 * θ_c  * (1.0 + cos(π * r/rc))
+                Δqt = 0.5 #* qt_c * (1.0 + cos(π * rtracer/rctracer))
+            end
+            
+            θ   = θ_ref + Δθ
+            π_k = 1.0 - gravity/(c_p*θ)*x[dim]
+            c   = c_v/R_gas
+            ρ   = p0/(R_gas*θ)*(π_k)^c
+            qt  = qt_ref + Δqt
+            
+            U    = u0
+            V    = 0.0
+            
+            Qinit[1] = U
+            Qinit[2] = V
+            Qinit[3] = ρ
+            Qinit[4] = θ
+            Qinit[5] = qt
+            
+            return Qinit
+
+        elseif(icase == 1003)
+            #
+            # RTB + 2 passive tracers
+            #
+            
+            u0     = 0.0
+            r      = sqrt((x[1]-500)^2 + (x[dim]-350)^2 )
+            rc     = 250.0
+
+            #Thermal
+            θ_ref  = 300.0
+            θ_c    =   0.5
+            Δθ     =   0.0
+            
+            #Passive
+            rt1  = sqrt((x[1]-500)^2 + (x[dim]-350)^2 )
+            rct1 = 250.0
+            
+            rt2  = sqrt((x[1]-200)^2 + (x[dim]-500)^2 )
+            rct2 = 100.0
+            
+            rt3  = sqrt((x[1]-300)^2 + (x[dim]-400)^2 )
+            rct3 = 150.0
+            
+            qt_ref  =   0.0
+            qt_c    =   1.0
+            
+            Δqt1    =   0.0
+            Δqt2    =   0.0
+            Δqt3    =   0.0
+            
+            if r <= rc
+                Δθ  = 0.5 * θ_c  * (1.0 + cos(π * r/rc))
+            end
+            if rt1 <= rct1
+                Δqt1 = 0.5 * qt_c * (1.0 + cos(π * rt1/rct1))
+            end
+            if rt2 <= rct2
+                Δqt2 = 0.5 * qt_c * (1.0 + cos(π * rt2/rct2))
+            end
+            if rt3 <= rct3
+                Δqt3 = 0.5 * qt_c * (1.0 + cos(π * rt3/rct3))
+            end
+            
+            θ   = θ_ref + Δθ
+            π_k = 1.0 - gravity/(c_p*θ)*x[dim]
+            c   = c_v/R_gas
+            ρ   = p0/(R_gas*θ)*(π_k)^c
+
+            U    = u0
+            V    = 0.0
+            
+            qt1 = qt_ref + Δqt1
+            qt2 = qt_ref + Δqt2
+            qt3 = qt_ref + Δqt3
+            
+            
+            Qinit[1] = U
+            Qinit[2] = V
+            Qinit[3] = ρ
+            Qinit[4] = θ
+            Qinit[5] = qt1
+            Qinit[6] = qt2
+            Qinit[7] = qt3
+            
+            return Qinit
+            
         elseif(icase == 1010)
             #
             # Moist bubble: Pressel at al. 2015 JAMES
             #            
-            u0  =     0.0
-            v0  =     0.0
-            rc  =  2000.0
-            r   = sqrt((x[1] - 5000.0)^2/rc^2 + (x[dim] - 2000.0)^2/rc^2 )
+            u0  =    0.0
+            rc  =  250.0
+            r      = sqrt((x[1]-500)^2/rc^2 + (x[dim]-350)^2/rc^2 )
             
             #Thermal
-            θ_ref  = 300.0
-            θ_c    =   0.5
+            θ_ref  = 320.0
+            θ_c    =   2.0
 
             #Moisture
-            q_t     = 0.0 #0.0196 #kg/kg
-            q_l     = 0.0
-            q_i     = 0.0
-            R_gas   = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)
-            c_v     = MoistThermodynamics.cv_m(q_t, q_l, q_i)
-            c_p     = MoistThermodynamics.cp_m(q_t, q_l, q_i)
+            qt_ref  = 0.0196 #kg/kg
+            qt      = qt_ref
+            ql      = 0.0
+            qi      = 0.0
+            R_gas   = MoistThermodynamics.gas_constant_air(qt, ql, qi)
             
             Δθ = 0.0
             if r <= 1.0
@@ -3403,165 +3252,78 @@ function main()
             
             θ    = θ_ref + Δθ
             π_k  = 1.0 - gravity/(c_p*θ)*x[dim]
-            ρ    = p0/(R_gas*θ)*(π_k)^(c_v/R_gas)
+            c    = c_v/R_gas
+            ρ    = p0/(R_gas*θ)*(π_k)^c
+            P    = p0 * (ρ*R_gas*θ/p0)^(c_p/ c_v)
             T    = π_k*θ
             
-            E_int = MoistThermodynamics.internal_energy(T+T_0, 0.0, 0.0, 0.0)
-            T     = MoistThermodynamics.air_temperature(E_int, q_t, 0.0, 0.0)        
-            P     = MoistThermodynamics.air_pressure(T, ρ, q_t, 0.0, 0.0)
-            #ρ     = MoistThermodynamics.air_density( T, P, q_t, 0.0, 0.0)
+            #Saturation adjustment
+            T_trial  = 290.0
+            E_int    = MoistThermodynamics.internal_energy_sat.(T, ρ, qt);
+            T        = MoistThermodynamics.saturation_adjustment.(E_int, ρ, qt);
+            θ        = T/π_k
+            ρ        = p0/(R_gas*θ)*(π_k)^c
             
-            #Total energy
-            KE               = 0.5 * (u0.^2 .+ v0.^2)
-            geopotential     = gravity*x[dim]
-            E                = E_int + KE + geopotential
-            #E                = MoistThermodynamics.total_energy(KE, geopotential, T, q_t)
-            
-            #Obtain q_l, q_i from T,  ρ, q_t
-            #q_l = zeros(size(T)); q_i = zeros(size(T))
-            #MoistThermodynamics.phase_partitioning_eq!(q_l, q_i, T, ρ, q_t);
-            
-            #Velo
-            U    = u0
-            V    = v0
+            #Obtain ql, qi from T,  ρ, qt
+            ql = zeros(size(T)); qi = zeros(size(T))
+            MoistThermodynamics.phase_partitioning_eq!(ql, qi, T, ρ, qt);
 
-            Qinit[1] = U
-            Qinit[2] = V
-            Qinit[3] = ρ
-            Qinit[4] = E
+#Velo
+U    = u0
+V    = 0.0
 
-            Qinit[5] = q_t
-            Qinit[6] = 0.0 #q_l[1]
-            Qinit[7] = 0.0 #q_i[1]
+#ρtotal = ρ_dry*(1 + qt)
+ρt = ρ*(1.0 + qt)
 
-            #T to be used as starting point for saturation adjustment iterations:
-            Qinit[_nstate+1] = T - T_0
+Qinit[1] = U
+Qinit[2] = V
+Qinit[3] = ρt
+Qinit[4] = θ
+Qinit[5] = qt
+Qinit[6] = 0.0 #ql
+Qinit[7] = 0.0
 
-            Qinit[_nstate+2] = θ_ref
-            Qinit[_nstate+3] = P
+return Qinit
 
-            return Qinit
-            
-            
-        elseif(icase == 101000)
-            #
-            # Moist bubble: Pressel at al. 2015 JAMES
-            #            
-            u0  =     0.0
-            v0  =     0.0
-            rc  =  2000.0
-            r   = sqrt((x[1] - 5000.0)^2/rc^2 + (x[dim] - 2000.0)^2/rc^2 )
-            
-            #Thermal
-            θ_ref  = 300.0
-            θ_c    =   0.5
-                  
-            #Moisture
-            q_t     = 0.0 #0.0196
-            q_l     = 0.0
-            q_i     = 0.0
-            
-            Δθ = 0.0
-            if r <= 1.0
-                Δθ = θ_c * cos(0.5 * π * r)*cos(0.5 * π * r)
-            end
+else
+error(" \'ic\': Undefined case for IC. Assign a value to icase in \'main\' ")
 
-            #Dry:
-            θ    = θ_ref + Δθ
-            π_k  = 1.0 - gravity/(c_p*θ)*x[dim]
-            T    = π_k*θ
-            ρ    = p0/(R_gas*θ)*(π_k)^(c_v/R_gas)
+end
+end
 
-            #P   = ρ * _R_gas * T * (1.0 + q_t/0.622)
-            
-            #Add moisture:
-            R_gas   = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)            
-            c_v     = MoistThermodynamics.cv_m(q_t, q_l, q_i)
-            c_p     = MoistThermodynamics.cp_m(q_t, q_l, q_i)
-            
-            E_int   = MoistThermodynamics.internal_energy(T + T_0, q_t, q_l, q_i)
-            T       = MoistThermodynamics.air_temperature(E_int, q_t, q_l, q_i)
+#Input Parameters
+time_final = DFloat(2500)
+iplot=1000
+Ne = 10
+N  = 4
+visc = 1.5
+dim = _nsd
+hardware="cpu"
+if mpirank == 0
+    @show (dim,N,Ne,visc,iplot,time_final,hardware,mpisize)
+end
 
-            # q_l, q_i from T,  ρ, q_t
-            #ql = zeros(size(T)); qi = zeros(size(T))
-            #MoistThermodynamics.phase_partitioning_eq!(ql, qi, T, ρ, q_t);
-            
-            #q_l, q_i = ql[1], qi[1]
-            P     = MoistThermodynamics.air_pressure(T, ρ, q_t, q_l, q_i)
-            #ρ     = MoistThermodynamics.air_density( T, P, q_t, q_l, q_i)
-            
-            #Total energy
-            KE               = 0.5 * (u0.^2 .+ v0.^2)
-            geopotential     = gravity*x[dim]
-            E                = MoistThermodynamics.total_energy(KE, geopotential, T + T_0, q_t)
+#Mesh Generation
+mesh2D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
+                    range(DFloat(0); length=Ne+1, stop=1000)),
+                   (true, false),
+                   part = mpirank+1, numparts = mpisize)
 
-            ####
-            #TEMPORARY
-            #P = p0 * (ρ * R_gas * θ / p0)^(c_p / c_v)
-            #T = P/(ρ*R_gas)
-            #E = c_v*T + 0.5*(u0.^2 .+ v0.^2) + gravity*x[dim]
-            ####
-            
-            
-            #Velo
-            U    = u0
-            V    = v0
-            
-            Qinit[1] = U
-            Qinit[2] = V
-            Qinit[3] = ρ
-            Qinit[4] = E
-
-            Qinit[5] = q_t
-            Qinit[6] = q_l
-            Qinit[7] = q_i
-            
-            #T to be used as starting point for saturation adjustment iterations:
-            Qinit[_nstate+1] = T
-            Qinit[_nstate+2] = θ_ref
-            Qinit[_nstate+3] = P
-
-            return Qinit
-            
-        else
-            error(" \'ic\': Undefined case for IC. Assign a value to icase in \'main\' ")
-            
-        end
-    end
-
-    #Input Parameters
-    time_final = DFloat(5000)
-    iplot=1000
-    Ne = 10
-    N  = 4
-    visc = 30
-    dim = _nsd
-    hardware="cpu"
-    if mpirank == 0
-        @show (dim,N,Ne,visc,iplot,time_final,hardware,mpisize)
-    end
-    
-    #Mesh Generation
-    mesh2D = brickmesh((range(DFloat(0); length = Ne + 1, stop=xmax_in),
-                        range(DFloat(0); length = Ne + 1, stop=ymax_in)),
-                       (true, false),
-                       part = mpirank+1, numparts = mpisize)
-
-    #Call Solver
-    if hardware == "cpu"
-        mpirank == 0 && println("Running 2d (CPU)...")
-        nse2d_sgs(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot, visc;
+#Call Solver
+if hardware == "cpu"
+    mpirank == 0 && println("Running 2d (CPU)...")
+    nse2d_sgs(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot, visc;
               ArrType=Array, tout = 10)
-        mpirank == 0 && println()
-    elseif hardware == "gpu"
-        @hascuda begin
-            mpirank == 0 && println("Running 2d (GPU)...")
-            nse2d_sgs(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot, visc;
+    mpirank == 0 && println()
+elseif hardware == "gpu"
+    @hascuda begin
+        mpirank == 0 && println("Running 2d (GPU)...")
+        nse2d_sgs(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot, visc;
                   ArrType=CuArray, tout = 10)
-            mpirank == 0 && println()
-        end
+        mpirank == 0 && println()
     end
-    nothing
+end
+nothing
 end
 # }}}
 
