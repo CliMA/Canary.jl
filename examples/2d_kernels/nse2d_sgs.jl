@@ -3079,9 +3079,9 @@ function interpolate_sounding(dim, N, Ne, vgeo)
 end
 
 # {{{ nse driver
-function nse2d_sgs(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
+function nse2d_sgs(::Val{dim}, ::Val{N}, ::Val{Ne}, mpicomm, ic, mesh, tend, iplot, visc;
                    meshwarp=(x...)->identity(x),
-                   tout = 1, ArrType=Array, plotstep=0) where {dim, N}
+                   tout = 1, ArrType=Array, plotstep=0) where {dim, N, Ne}
     DFloat = typeof(tend)
 
     mpirank = MPI.Comm_rank(mpicomm)
@@ -3116,6 +3116,12 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
 
     # setup the initial condition
     mpirank == 0 && println("[CPU] computing initial conditions (CPU)...")
+    
+    #Read sounding file:
+    sound_ini_interp = zeros(DFloat, Ne*N + 1, 10)
+    sound_ini_interp = interpolate_sounding(dim, N, Ne, vgeo)
+    (nz, ~) = size(sound_ini_interp)
+    
     @inbounds for e = 1:nelem, i = 1:(N+1)^dim
         x, y  = vgeo[i, _x, e], vgeo[i, _y, e]
         Qinit = ic(x, y)
@@ -3233,20 +3239,6 @@ end
 end
 # }}}
 
-# {{{ main
-function main()
-    DFloat = Float64
-    
-    # MPI.Init()
-    MPI.Initialized() || MPI.Init()
-    MPI.finalize_atexit()
-
-    mpicomm = MPI.COMM_WORLD
-    mpirank = MPI.Comm_rank(mpicomm)
-    mpisize = MPI.Comm_size(mpicomm)
-
-    # FIXME: query via hostname
-    @hascuda device!(mpirank % length(devices()))
 
     #Initial Conditions
     #
@@ -3491,39 +3483,55 @@ function main()
      end
 end
 
-#Input Parameters
-time_final = DFloat(2500)
-iplot=1000
-Ne = 10
-N  = 4
-visc = 1.5
-dim = _nsd
-hardware="cpu"
-if mpirank == 0
-    @show (dim,N,Ne,visc,iplot,time_final,hardware,mpisize)
-end
+# {{{ main
+function main()
+    DFloat = Float64
+    
+    # MPI.Init()
+    MPI.Initialized() || MPI.Init()
+    MPI.finalize_atexit()
 
-#Mesh Generation
-mesh2D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
-                    range(DFloat(0); length=Ne+1, stop=1000)),
-                   (true, false),
-                   part = mpirank+1, numparts = mpisize)
+    mpicomm = MPI.COMM_WORLD
+    mpirank = MPI.Comm_rank(mpicomm)
+    mpisize = MPI.Comm_size(mpicomm)
 
-#Call Solver
-if hardware == "cpu"
-    mpirank == 0 && println("Running 2d (CPU)...")
-    nse2d_sgs(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot, visc;
-              ArrType=Array, tout = 10)
-    mpirank == 0 && println()
-elseif hardware == "gpu"
-    @hascuda begin
-        mpirank == 0 && println("Running 2d (GPU)...")
-        nse2d_sgs(Val(dim), Val(N), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot, visc;
-                  ArrType=CuArray, tout = 10)
-        mpirank == 0 && println()
+    # FIXME: query via hostname
+    @hascuda device!(mpirank % length(devices()))
+
+
+    #Input Parameters
+    time_final = DFloat(2500)
+    iplot=1000
+    Ne = 10
+    N  = 4
+    visc = 1.5
+    dim = _nsd
+    hardware="cpu"
+    if mpirank == 0
+        @show (dim,N,Ne,visc,iplot,time_final,hardware,mpisize)
     end
-end
-nothing
+
+    #Mesh Generation
+    mesh2D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
+                        range(DFloat(0); length=Ne+1, stop=1000)),
+                       (true, false),
+                       part = mpirank+1, numparts = mpisize)
+
+    #Call Solver
+    if hardware == "cpu"
+        mpirank == 0 && println("Running 2d (CPU)...")
+        nse2d_sgs(Val(dim), Val(N), Val(Ne), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot, visc;
+                  ArrType=Array, tout = 10)
+        mpirank == 0 && println()
+    elseif hardware == "gpu"
+        @hascuda begin
+            mpirank == 0 && println("Running 2d (GPU)...")
+            nse2d_sgs(Val(dim), Val(N), Val(Ne), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot, visc;
+                      ArrType=CuArray, tout = 10)
+            mpirank == 0 && println()
+        end
+    end
+    nothing
 end
 # }}}
 
