@@ -132,11 +132,11 @@ const _nsd = 2 #number of space dimensions
 # DEFINE CASE AND PRE_COMPILED QUANTITIES:
 #
 
-_icase = 1    #RTB
+#_icase = 1    #RTB
 #_icase = 1001 # RTB + 1 Passive tracer
 #_icase = 1003 # RTB + 3 Passive tracers
 #_icase = 1010 # Moist case of Pressel et al. 2015 JAMES
-#_icase = 1201 # Moist case of Kurowski and Grabowski 2014
+=_icase = 1201 # Moist case of Kurowski and Grabowski 2014
 if(_icase < 1000)
     DRY_CASE = true
 else
@@ -3093,14 +3093,15 @@ function interpolate_sounding(dim, N, Ne, vgeo)
         
     end        
     
-    for iz = 1:nzmax
-        ini_data_interp[iz, 1] = dataz[iz]   #z
-        ini_data_interp[iz, 2] = datat[iz]   #theta
-        ini_data_interp[iz, 3] = datau[iz]   #u
-        ini_data_interp[iz, 4] = datav[iz]   #v
-        ini_data_interp[iz, 5] = datap[iz]   #p
-        ini_data_interp[iz, 6] = datarho[iz] #rho
-        ini_data_interp[iz, 7] = datapi[iz]  #exner
+    for k = 1:nzmax
+        ini_data_interp[k, 1] = dataz[k]   #z
+        ini_data_interp[k, 2] = datat[k]   #theta
+        ini_data_interp[k, 3] = datau[k]   #u
+        ini_data_interp[k, 4] = datav[k]   #v
+        ini_data_interp[k, 5] = datap[k]   #p
+        ini_data_interp[k, 6] = datarho[k] #rho
+        ini_data_interp[k, 7] = datapi[k]  #exner
+        ini_data_interp[k, 8] = thetav[k]  #thetav
     end
     
     return ini_data_interp
@@ -3567,13 +3568,14 @@ function ic(sound_ini_interp, dim, x...)
 
      elseif(icase == 1201)
 
-            (nz, ~) = size(sound_ini_interp)
+            (nzmax, ~) = size(sound_ini_interp)
+
             
             #
             # Moist bubble from Kurowski et al. 2013
             #
             u0, v0   = 0.0, 0.0
-            
+
             pi0      = 1.0
             theta0   = 283.0
             p0       = 85000.0
@@ -3584,8 +3586,52 @@ function ic(sound_ini_interp, dim, x...)
             RH0    = 20.0                                 
             
             rc  =  300.0
-            r   = sqrt( (x[1] - 1800.0)^2/rc^2 + (x[dim] - 800.0)^2/rc^2 )
+            r   = sqrt( (x[1])^2/rc^2 + (x[dim] - 800.0)^2/rc^2 )
             
+            # find the matching height
+            for k = 1:nzmax
+ 
+                dataz = ini_data_interp[k, 1]    
+                z     = x[dim]
+                
+                # round off 2 decimal points
+                z2test = real(int(100.0 * dataz))/100.0
+                z1test = real(int(100.0 * z))/100.0
+                if ( abs(z1test - z2test) <= 1.0e-8 ) 
+                    count=k
+                    break
+                end
+            end
+
+            dataz   = ini_data_interp[count, 1] #z
+            datat   = ini_data_interp[count, 2] #theta
+            datau   = ini_data_interp[count, 3] #u
+            datav   = ini_data_interp[count, 4] #v
+            datap   = ini_data_interp[count, 5] #p
+            datarho = ini_data_interp[count, 6] #rho
+            datapi  = ini_data_interp[count, 7] #exner
+            thetav  = ini_data_interp[count, 8]  #thetav
+
+            theta_k = thetav
+            pi_k    = datapi
+
+            rho_k   = datarho
+            press_k = datap
+            tempe_k = pi_k*theta_k
+
+             
+           # Saturation water pressure according to Magnus-Tetens (see Klemp and Wilhelmson (1978) eq. (2.11),
+           # Emanuel (textbook Atmospheric Convection, 1994) eq. 4.4.14)
+           #es      = 611.2*exp(17.27*(tempe_k - 273.15)/(tempe_k - 36.0))  ! Pa
+
+           # Grabowski:
+           es      = 611.*exp(2.52e6/461.*(1/273.16-1/tempe_k))
+           qvs     = 287.04/461.0 * es/(press_k - es)                               # saturation mixing ratio
+
+
+
+
+
             q_t   = 0.0 #0.0192
             q_l   = 0.0
             q_i   = 0.0
