@@ -2898,6 +2898,186 @@ function convert_set3c_to_set2nc_scalar(x_ndim, Q)
 end
 # }}}
 
+
+# {{{
+#        SOUNDING operations:
+#
+# read_sound()
+# interpolate_sounding()
+#
+# Interpolate the sounding along the FIRST column of the grid.
+#
+# !!!WARNING!!! This function can only work for sturctured grids with vertical boundaries!!!
+# !!!TO BE REWRITTEN FOR THE GENERAL CODE!!!!
+#
+function read_sounding()
+    
+    #read in the original squal sounding
+    fsounding = open("/Users/simone/Work/Canary.jl/examples/soundings/sounding_GC1991.dat")    
+    sound_data = readdlm(fsounding)
+    close(fsounding)
+
+    (nzmax, ncols) = size(sound_data)
+    if nzmax == 0
+        error(" SOUNDING ERROR: The Sounding file is empty!")
+    end
+    
+    return (sound_data, nzmax, ncols)
+     
+end
+
+function interpolate_sounding(dim, N, Ne, vgeo)
+
+    γ::Float64       = _γ
+    p0::Float64      = _p0
+    R_gas::Float64   = _R_gas
+    c_p::Float64     = _c_p
+    c_v::Float64     = _c_v
+    gravity::Float64 = _gravity
+    
+    #Get sizes
+    (sound_data, nmax, ncols) = read_sounding()
+    
+    Np = (N+1)^dim
+    Nq = N + 1
+    (~, ~, nelem) = size(vgeo)
+    
+    #Reshape vgeo:
+    vgeo = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
+        
+    if ncols == 6
+        #height  theta  qv     u      v      press
+        zinit,   tinit, qinit, uinit, vinit, pinit = sound_data[:, 1], sound_data[:, 2], sound_data[:, 3], sound_data[:, 4], sound_data[:, 5], sound_data[:, 6]
+    elseif ncols == 5
+        #height  theta  qv     u      v
+        zinit,   tinit, qinit, uinit, vinit = sound_data[:, 1], sound_data[:, 2], sound_data[:, 3], sound_data[:, 4], sound_data[:, 5]
+    end
+    
+    #
+    # create vector with all the z-values of the current processor
+    # (avoids using column structure for better domain decomposition when no rain is used. AM)
+    #
+    nz         = Ne*N + 1      
+    dataz      = zeros(Float64, nz)
+    datat      = zeros(Float64, nz)
+    dataq      = zeros(Float64, nz)
+    datau      = zeros(Float64, nz)
+    datav      = zeros(Float64, nz)
+    datap      = zeros(Float64, nz)
+    thetav     = zeros(Float64, nz)
+    datapi     = zeros(Float64, nz)
+    datarho    = zeros(Float64, nz)
+    ini_data_interp = zeros(Float64, nz, 10)
+    
+    z          = vgeo[1, 1, _y, 1] 
+    dataz[1]   = z
+    zprev      = z
+    xmin       = 1.0e-8; #Take this value from the grid if xmin != 0.0
+    nzmax      = 1
+    @inbounds for e = 1:nelem
+        for j = 1:Nq, i = 1:Nq
+            
+            x = vgeo[i, j, _x, e]
+            z = vgeo[i, j, _y, e]
+            
+            if abs(x) < xmin
+                
+                if (abs(z - zprev) > 1.0e-5)
+                    nzmax          = nzmax + 1
+                    dataz[nzmax]   = z
+                    zprev          = z
+                end
+                
+            end            
+        end
+    end
+    if(nzmax != nz)
+        error(" interpolate_sounding: 1D INTERPOLATION: ops, something is wrong: nz is wrong!\n")
+    end
+    
+    #------------------------------------------------------
+    # interpolate to the actual LGL points in vertical
+    # dataz is given
+    #------------------------------------------------------
+    varout = 0.0
+    spl_tinit = Spline1D(zinit, tinit; k=1)
+    spl_qinit = Spline1D(zinit, qinit; k=1)
+    spl_uinit = Spline1D(zinit, uinit; k=1)
+    spl_vinit = Spline1D(zinit, vinit; k=1)
+    spl_pinit = Spline1D(zinit, pinit; k=1)
+    for k = 1:nz
+        datat[k] = spl_tinit(dataz[k])
+        dataq[k] = spl_qinit(dataz[k])
+        datau[k] = spl_uinit(dataz[k])
+        datav[k] = spl_vinit(dataz[k])
+        datap[k] = spl_pinit(dataz[k])
+        if(dataz[k] > 14000.0)
+            dataq[k] = 0.0
+        end
+    end
+    #------------------------------------------------------
+    # END interpolate to the actual LGL points in vertical
+    #------------------------------------------------------
+
+    c = c_v/R_gas
+    rvapor = 461.0
+    levap  = 2.5e+6
+    es0    = 6.1e+2
+    c2     = R_gas/c_p
+    c1     = 1.0/c2
+    g      = _gravity
+    pi0    = 1.0
+    theta0 = 300.5
+    theta0 = 283
+    p0     = 85000.0
+            
+    # convert qv from g/kg to g/g
+    dataq = dataq.*1.0e-3
+
+    # calculate the hydrostatically balanced exner potential and pressure
+    if(ncols == 5)
+        datapi[1] = 1.0
+        datap[1]  = p0
+    end
+    thetav[1] = datat[1]*(1.0 + 0.608*dataq[1])
+    for k = 2:nzmax
+        thetav[k] = datat[k]*(1.0 + 0.608*dataq[k])
+        #        datapi[k]=datapi[k-1]-gravity/(cp*0.5*(datat[k]+datat[k-1]))* &
+        #                               (dataz[k]-dataz[k-1])
+        if(ncols == 5)
+            
+            datapi[k] = datapi[k-1] - (gravity/(c_p*0.5*(thetav[k]+thetav[k-1])))*(dataz[k] - dataz[k-1])
+            #Pressure is computed only if it is NOT passed in the sounding file
+            datap[k] = p0*datapi[k]^(c_p/R_gas)
+        end
+    end
+    if(ncols == 6)
+        for k = 1:nzmax
+            datapi[k] = (datap[k]/_p0)^c2
+        end
+    end
+    
+   for k = 1:nzmax
+        #        datarho[k]=datap[k]/(R_gas*datapi[k]*datat[k])
+        datarho[k] = datap[k]/(R_gas * datapi[k] * thetav[k])
+        e          = dataq[k] * datap[k] * rvapor/(dataq[k] * rvapor + R_gas)
+        
+    end        
+    
+    for iz = 1:nzmax
+        ini_data_interp[iz, 1] = dataz[iz]
+        ini_data_interp[iz, 2] = datat[iz]
+        ini_data_interp[iz, 3] = datau[iz]
+        ini_data_interp[iz, 4] = datav[iz]
+        ini_data_interp[iz, 5] = datap[iz]
+        ini_data_interp[iz, 6] = datarho[iz]
+        ini_data_interp[iz, 7] = datapi[iz]
+        #@show(ini_data_interp[iz, 7], iz)
+    end
+    
+    return ini_data_interp
+end
+
 # {{{ nse driver
 function nse2d_sgs(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
                    meshwarp=(x...)->identity(x),
