@@ -3082,7 +3082,7 @@ function main()
         c_v::DFloat     = _c_v
         gravity::DFloat = _gravity
 
-        Qinit = Array{DFloat}(undef, _nstate)
+        Qinit = Array{DFloat}(undef, _nstate+3)
 
         qt, ql, qi = 0.0, 0.0, 0.0
         
@@ -3104,7 +3104,10 @@ function main()
             π_k = 1.0 - gravity/(c_p*θ)*x[dim]
             c   = c_v/R_gas
             ρ   = p0/(R_gas*θ)*(π_k)^c
+            T   = π_k*θ
 
+            (p, ~) = calculate_dry_pressure(x[dim], θ)
+            
             U   = u0
             V   = 0.0
             
@@ -3112,6 +3115,9 @@ function main()
             Qinit[2] = V
             Qinit[3] = ρ
             Qinit[4] = θ
+            Qinit[_nstate+1] = T
+            Qinit[_nstate+2] = θ_ref
+            Qinit[_nstate+3] = p
             
             #ρ, U, V, E
             
@@ -3130,6 +3136,8 @@ function main()
             θ_c    =   0.5
             Δθ     =   0.0
             
+            (p, ~) = calculate_dry_pressure(x[dim], θ)
+            
             #Passive
             rtracer  = sqrt((x[1]-500)^2 + (x[dim]-350)^2 )
             rctracer = 250.0
@@ -3146,6 +3154,7 @@ function main()
             π_k = 1.0 - gravity/(c_p*θ)*x[dim]
             c   = c_v/R_gas
             ρ   = p0/(R_gas*θ)*(π_k)^c
+            T   = π_k*θ
             qt  = qt_ref + Δqt
             
             U    = u0
@@ -3156,6 +3165,9 @@ function main()
             Qinit[3] = ρ
             Qinit[4] = θ
             Qinit[5] = qt
+            Qinit[_nstate+1] = T
+            Qinit[_nstate+2] = θ_ref
+            Qinit[_nstate+3] = p
             
             return Qinit
 
@@ -3207,7 +3219,10 @@ function main()
             π_k = 1.0 - gravity/(c_p*θ)*x[dim]
             c   = c_v/R_gas
             ρ   = p0/(R_gas*θ)*(π_k)^c
+            T    = π_k*θ
 
+            (p, ~) = calculate_dry_pressure(x[dim], θ)
+                
             U    = u0
             V    = 0.0
             
@@ -3223,6 +3238,9 @@ function main()
             Qinit[5] = qt1
             Qinit[6] = qt2
             Qinit[7] = qt3
+            Qinit[_nstate+1] = T
+            Qinit[_nstate+2] = θ_ref
+            Qinit[_nstate+3] = p
             
             return Qinit
             
@@ -3254,7 +3272,7 @@ function main()
             π_k  = 1.0 - gravity/(c_p*θ)*x[dim]
             c    = c_v/R_gas
             ρ    = p0/(R_gas*θ)*(π_k)^c
-            P    = p0 * (ρ*R_gas*θ/p0)^(c_p/ c_v)
+            p    = p0 * (ρ*R_gas*θ/p0)^(c_p/ c_v)
             T    = π_k*θ
             
             #Saturation adjustment
@@ -3268,27 +3286,29 @@ function main()
             ql = zeros(size(T)); qi = zeros(size(T))
             MoistThermodynamics.phase_partitioning_eq!(ql, qi, T, ρ, qt);
 
-#Velo
-U    = u0
-V    = 0.0
+            #Velo
+            U    = u0
+            V    = 0.0
 
-#ρtotal = ρ_dry*(1 + qt)
-ρt = ρ*(1.0 + qt)
+            #ρtotal = ρ_dry*(1 + qt)
+            ρt = ρ*(1.0 + qt)
 
-Qinit[1] = U
-Qinit[2] = V
-Qinit[3] = ρt
-Qinit[4] = θ
-Qinit[5] = qt
-Qinit[6] = 0.0 #ql
-Qinit[7] = 0.0
+            Qinit[1] = U
+            Qinit[2] = V
+            Qinit[3] = ρt
+            Qinit[4] = θ
+            Qinit[5] = qt
+            Qinit[6] = 0.0 #ql
+            Qinit[7] = 0.0
+            Qinit[_nstate+1] = T
+            Qinit[_nstate+2] = θ_ref
+            Qinit[_nstate+3] = p
 
-return Qinit
+            return Qinit
 
-else
-error(" \'ic\': Undefined case for IC. Assign a value to icase in \'main\' ")
-
-end
+     else
+            error(" \'ic\': Undefined case for IC. Assign a value to icase in \'main\' ")
+     end
 end
 
 #Input Parameters
