@@ -92,6 +92,8 @@ include("/Users/simone/Work/Tapio/CLIMA/src/Utilities/src/MoistThermodynamics.jl
 using PlanetParameters
 using MPI
 using Canary
+using DelimitedFiles
+using Dierckx
 using Printf: @sprintf
 const HAVE_CUDA = try
     using CUDAnative
@@ -139,6 +141,7 @@ else
     DRY_CASE = false
 end
 
+
 if DRY_CASE
 
     const _nstate   = _nsd + 2
@@ -146,6 +149,10 @@ if DRY_CASE
     const _U, _V, _ρ, _E = 1:_nstate
     const stateid = (U = _U, V = _V, ρ = _ρ, E = _E)
     
+    #Domain size:
+    _xmin, _xmax = 0.0, 1000.0
+    _ymin, _ymax = 0.0, 1000.0
+
 else
     
     if (_icase == 1001)
@@ -156,7 +163,11 @@ else
         const _nstate = (_nsd + 2) + _ntracers
         const _U, _V, _ρ, _E, _qt = 1:_nstate
         const stateid = (U = _U, V = _V, ρ = _ρ, E = _E, qt = _qt)
-
+       
+        #Domain size:
+        _xmin, _xmax = 0.0, 1000.0
+        _ymin, _ymax = 0.0, 1000.0
+        
     elseif (_icase == 1002)
         #
         # Moist dynamics
@@ -171,7 +182,11 @@ else
         const _nstate = (_nsd + 2) + _ntracers
         const _U, _V, _ρ, _E, _qt1, _qt2, _qt3 = 1:_nstate
         const stateid = (U = _U, V = _V, ρ = _ρ, E = _E, qt1 = _qt1, qt2 = _qt2, qt3 = _qt3)
-
+        
+        #Domain size:
+        _xmin, _xmax = 0.0, 1000.0
+        _ymin, _ymax = 0.0, 1000.0
+        
     elseif (_icase == 1010)
         #
         # Moist case of Pressel et al. 2015 JAMES:
@@ -181,11 +196,23 @@ else
         const _nstate = (_nsd + 2) + _ntracers
         const _U, _V, _ρ, _E, _qt1, _qt2, _qt3 = 1:_nstate
         const stateid = (U = _U, V = _V, ρ = _ρ, E = _E, qt1 = _qt1, qt2 = _qt2, qt3 = _qt3)
+
+        #Domain size:
+        _xmin, _xmax = 0.0, 20000.0
+        _ymin, _ymax = 0.0, 10000.0
         
-        #const _ntracers = 1
-        #const _nstate = (_nsd + 2) + _ntracers
-        #const _U, _V, _ρ, _E, _qt = 1:_nstate
-        #const stateid = (U = _U, V = _V, ρ = _ρ, E = _E, qt = _qt)
+    elseif (_icase == 1201)
+        #
+        # Moist case of Kurowski and Grabowski
+        #        
+        const _ntracers = 3
+        const _nstate = (_nsd + 2) + _ntracers
+        const _U, _V, _ρ, _E, _qt1, _qt2, _qt3 = 1:_nstate
+        const stateid = (U = _U, V = _V, ρ = _ρ, E = _E, qt1 = _qt1, qt2 = _qt2, qt3 = _qt3)
+        
+        #Domain size:
+        _xmin, _xmax = 0.0, 3600.0
+        _ymin, _ymax = 0.0, 2400.0
         
     else
         #
@@ -2913,7 +2940,7 @@ end
 function read_sounding()
     
     #read in the original squal sounding
-    fsounding = open("/Users/simone/Work/Canary.jl/examples/soundings/sounding_GC1991.dat")    
+    fsounding = open("..//soundings/sounding_GC1991.dat")    
     sound_data = readdlm(fsounding)
     close(fsounding)
 
@@ -3124,7 +3151,7 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, ::Val{Ne}, mpicomm, ic, mesh, tend, ipl
     
     @inbounds for e = 1:nelem, i = 1:(N+1)^dim
         x, y  = vgeo[i, _x, e], vgeo[i, _y, e]
-        Qinit = ic(x, y)
+        Qinit = ic(sound_ini_interp, x, y)
         
         Q[i, _ρ, e] = Qinit[3]
         Q[i, _U, e] = Qinit[1]
@@ -3240,11 +3267,67 @@ end
 # }}}
 
 
-    #Initial Conditions
+# {{{ thetae_function
+#
+# returns p and rho given theta and z of dry stratified atmosphere
+#
+function calculate_dry_pressure(z, theta)
     #
-    # Chose a problem icase:
+    # Dry air properties at given height 'z' and 'theta(z)'
     #
-    function ic(dim, x...)
+    DFloat          = eltype(z)
+    γ::DFloat       = _γ
+    p0::DFloat      = _p0
+    R_gas::DFloat   = _R_gas
+    c_p::DFloat     = _c_p
+    c_v::DFloat     = _c_v
+    gravity::DFloat = _gravity
+    
+    exner = 1.0 - gravity/(c_p*theta)*z;
+    rho   = p0/(R_gas*theta)*(exner)^(c_v/R_gas);
+    p     = p0*exner^(c_v/R_gas);
+
+    return (p, rho)
+end
+
+
+# {{{ thetae_function
+# 
+#  returns thetae according to its definition
+#
+#  See Eq. (34) in Bryan and Fritch 2002
+# 
+function  thetae_function(T, p, rt=0.0)
+    #
+    #
+    #
+    DFloat          = eltype(T)
+    γ::DFloat       = _γ
+    p0::DFloat      = _p0
+    R_gas::DFloat   = _R_gas
+    c_p::DFloat     = _c_p
+    c_v::DFloat     = _c_v
+    c_pl::DFloat    = PlanetParameters.cp_l;
+    c_pv::DFloat    = PlanetParameters.cp_v;
+    Lv0::DFloat     = PlanetParameters.LH_v0;
+    rv::DFloat      = rt;     #assumption for initial state only
+    gravity::DFloat = _gravity
+    
+    Lv  = Lv0 - (c_pl - c_pv)*(T - T_0);
+    
+    return T*(p/p0)^(-R_gas/(c_p + c_pl*rt))*exp( (Lv0 - (c_pl - c_pv)*(T - T_0))*rv/((c_p + c_pl*rt)*T) );
+
+end
+# }}}
+
+
+
+#IC
+#Initial Conditions
+#
+# Chose a problem icase:
+#
+function ic(sound_ini_interp, dim, x...)
         # FIXME: Type generic?
         DFloat          = eltype(x)
         γ::DFloat       = _γ
@@ -3257,6 +3340,8 @@ end
         Qinit = Array{DFloat}(undef, _nstate+3)
 
         qt, ql, qi = 0.0, 0.0, 0.0
+
+        (nz, ~) = size(sound_ini_interp)
         
         icase = _icase #defined on top of this file
         if(icase == 1)
@@ -3478,6 +3563,89 @@ end
 
             return Qinit
 
+
+     elseif(icase == 1201)
+
+            @show(size(sound_ini_interp))
+            
+            #
+            # Moist bubble from Kurowski et al. 2013
+            #
+            u0, v0   = 0.0, 0.0
+            
+            pi0      = 1.0
+            theta0   = 283.0
+            p0       = 85000.0
+
+            rho0   = _p0/(R_gas*theta0)*(pi0)^(c_v/R_gas)
+
+            #20% of relative humidity in the background
+            RH0    = 20.0                                 
+            
+            rc  =  300.0
+            r   = sqrt( (x[1] - 1800.0)^2/rc^2 + (x[dim] - 800.0)^2/rc^2 )
+            
+            q_t   = 0.0 #0.0192
+            q_l   = 0.0
+            q_i   = 0.0
+            R_gas = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)
+            
+            θ_c = 2.0
+            Δθ = 0.0
+            if r <= 1.0
+                Δθ = θ_c * cos(0.5 * π * r)*cos(0.5 * π * r)
+            end
+            
+            #Thermal
+            thetae = 320.0 + Δθ
+            T_0    = T_triple
+            
+            theta = thetae;
+            
+            (P, ρ)   = calculate_dry_pressure(x[dim], theta);
+<            
+            #Calculate T as the zeros of the non-linear thethae function (non-linear in T):
+            T_start = 300.0 #Starting value to find the zeros of the thetae=f(T) function
+            T       = find_zero(x -> thetae_function(x, P, q_t) - thetae, T_start, Order1(), atol=1e-12);
+            #verify = thetae - thetae_function(T, P, q_t) #ok
+            #aux = thetae_function(T, P, q_t)
+            #@show(thetae, aux, T, verify)
+
+            #E_int = MoistThermodynamics.internal_energy(T+T_0, q_t, q_l, q_i)
+            #ρ     = MoistThermodynamics.air_density( T, pd, q_t, q_l, q_i)
+            #P     = MoistThermodynamics.air_density( T,  ρ, q_t, q_l, q_i)
+            
+            #Total energy
+            KE           = 0.5 * (u0.^2 .+ v0.^2)
+            geopotential = gravity*x[dim]
+            E            = MoistThermodynamics.total_energy(KE, geopotential, T+T_0, q_t)
+            
+            #Obtain q_l, q_i from T,  ρ, q_t
+            #q_l = zeros(size(T)); q_i = zeros(size(T))
+            #MoistThermodynamics.phase_partitioning_eq!(q_l, q_i, T, ρ, q_t);
+            
+            #Velo
+            U    = u0
+            V    = v0
+
+            Qinit[1] = U
+            Qinit[2] = V
+            Qinit[3] = ρ
+            Qinit[4] = E
+
+            Qinit[5] = q_t
+            Qinit[6] = 0.0 #q_l[1]
+            Qinit[7] = 0.0 #q_i[1]
+
+            #T to be used as starting point for saturation adjustment iterations:
+            Qinit[_nstate+1] = T 
+
+            θ_ref  = thetae - Δθ
+            Qinit[_nstate+2] = θ_ref
+            Qinit[_nstate+3] = p
+
+            return Qinit
+
      else
             error(" \'ic\': Undefined case for IC. Assign a value to icase in \'main\' ")
      end
@@ -3512,21 +3680,21 @@ function main()
     end
 
     #Mesh Generation
-    mesh2D = brickmesh((range(DFloat(0); length=Ne+1, stop=1000),
-                        range(DFloat(0); length=Ne+1, stop=1000)),
+    mesh2D = brickmesh((range(_xmin; length=Ne+1, stop=_xmax),
+                        range(_ymin; length=Ne+1, stop=_ymax)),
                        (true, false),
                        part = mpirank+1, numparts = mpisize)
 
     #Call Solver
     if hardware == "cpu"
         mpirank == 0 && println("Running 2d (CPU)...")
-        nse2d_sgs(Val(dim), Val(N), Val(Ne), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot, visc;
+        nse2d_sgs(Val(dim), Val(N), Val(Ne), mpicomm, (sound_ini_interp, x...)->ic(sound_ini_interp, dim, x...), mesh2D, time_final, iplot, visc;
                   ArrType=Array, tout = 10)
         mpirank == 0 && println()
     elseif hardware == "gpu"
         @hascuda begin
             mpirank == 0 && println("Running 2d (GPU)...")
-            nse2d_sgs(Val(dim), Val(N), Val(Ne), mpicomm, (x...)->ic(dim, x...), mesh2D, time_final, iplot, visc;
+            nse2d_sgs(Val(dim), Val(N), Val(Ne), mpicomm, (sound_ini_interp, x...)->ic(sound_ini_interp, dim, x...), mesh2D, time_final, iplot, visc;
                       ArrType=CuArray, tout = 10)
             mpirank == 0 && println()
         end
