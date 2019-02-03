@@ -132,11 +132,11 @@ const _nsd = 2 #number of space dimensions
 # DEFINE CASE AND PRE_COMPILED QUANTITIES:
 #
 
-#_icase = 1    #RTB
+_icase = 1    #RTB
 #_icase = 1001 # RTB + 1 Passive tracer
 #_icase = 1003 # RTB + 3 Passive tracers
 #_icase = 1010 # Moist case of Pressel et al. 2015 JAMES
-=_icase = 1201 # Moist case of Kurowski and Grabowski 2014
+#_icase = 1201 # Moist case of Kurowski and Grabowski 2014
 if(_icase < 1000)
     DRY_CASE = true
 else
@@ -420,7 +420,7 @@ function volume_rhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
     Nq = N + 1
     nelem = size(Q)[end]
 
-    Q    = reshape(Q, Nq, Nq, _nstate, nelem)
+    Q    = reshape(Q, Nq, Nq, _nstate+3, nelem)
     rhs  = reshape(rhs, Nq, Nq, _nstate, nelem)
     vgeo = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
 
@@ -681,7 +681,7 @@ function volume_grad!(::Val{dim}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where
     Nq = N + 1
     nelem = size(Q)[end]
 
-    Q = reshape(Q, Nq, Nq, _nstate, nelem)
+    Q = reshape(Q, Nq, Nq, _nstate+3, nelem)
     rhs = reshape(rhs, Nq, Nq, _nstate, dim, nelem)
     vgeo = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
 
@@ -932,8 +932,8 @@ function volume_div!(::Val{dim}, ::Val{N}, rhs::Array, gradQ, Q, visc_sgs, vgeo,
     Nq = N + 1
     nelem = size(Q)[end]
 
-    Q     = reshape(Q, Nq, Nq, _nstate, nelem)
-    gradQ = reshape(gradQ, Nq, Nq, _nstate, dim, nelem)
+    Q     = reshape(Q, Nq, Nq, _nstate+3, nelem)
+    gradQ = reshape(gradQ, Nq, Nq, _nstate+3, dim, nelem)
     rhs   = reshape(rhs, Nq, Nq, _nstate, dim, nelem)
     vgeo  = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
 
@@ -1299,7 +1299,7 @@ function sat_adjust!(::Val{2}, ::Val{N}, Q, vgeo, elems) where N
     Nq = N + 1
     nelem = size(Q)[end]
     
-    Q      = reshape(Q, Nq, Nq, _nstate, nelem)
+    Q      = reshape(Q, Nq, Nq, _nstate+3, nelem)
     vgeo   = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
     q_tr   = zeros(DFloat, 3)
     Qinout = zeros(DFloat, _nstate)
@@ -2608,7 +2608,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
     d_D = ArrType(D)
 
     #Create Device LDG Arrays
-    d_gradQL = zeros(DFloat, (N+1)^dim, _nstate, dim, nelem)
+    d_gradQL = zeros(DFloat, (N+1)^dim, _nstate+3, dim, nelem)
     d_rhs_gradQL = zeros(DFloat, (N+1)^dim, _nstate, dim, nelem)
     d_sendgradQ, d_recvgradQ = ArrType(sendgradQ), ArrType(recvgradQ)
 
@@ -2952,7 +2952,7 @@ function read_sounding()
      
 end
 
-function interpolate_sounding(dim, N, Ne, vgeo)
+function interpolate_sounding(dim, N, Ne_v, vgeo)
     #
     # !!!WARNING!!! This function can only work for sturctured grids with vertical boundaries!!!
     # !!!TO BE REWRITTEN FOR THE GENERAL CODE!!!!
@@ -2986,7 +2986,7 @@ function interpolate_sounding(dim, N, Ne, vgeo)
     # create vector with all the z-values of the current processor
     # (avoids using column structure for better domain decomposition when no rain is used. AM)
     #
-    nz         = Ne*N + 1      
+    nz         = Ne_v*N + 1      
     dataz      = zeros(Float64, nz)
     datat      = zeros(Float64, nz)
     dataq      = zeros(Float64, nz)
@@ -3108,9 +3108,9 @@ function interpolate_sounding(dim, N, Ne, vgeo)
 end
 
 # {{{ nse driver
-function nse2d_sgs(::Val{dim}, ::Val{N}, ::Val{Ne}, mpicomm, ic, mesh, tend, iplot, visc;
+function nse2d_sgs(::Val{dim}, ::Val{N}, ::Val{Ne_h}, ::Val{Ne_v}, mpicomm, ic, mesh, tend, iplot, visc;
                    meshwarp=(x...)->identity(x),
-                   tout = 1, ArrType=Array, plotstep=0) where {dim, N, Ne}
+                   tout = 1, ArrType=Array, plotstep=0) where {dim, N, Ne_h, Ne_v}
     DFloat = typeof(tend)
 
     mpirank = MPI.Comm_rank(mpicomm)
@@ -3140,15 +3140,15 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, ::Val{Ne}, mpicomm, ic, mesh, tend, ipl
 
     # Storage for the solution, rhs, and error
     mpirank == 0 && println("[CPU] creating fields (CPU)...")
-    Q = zeros(DFloat, (N+1)^dim, _nstate, nelem)
+    Q = zeros(DFloat, (N+1)^dim, _nstate+3, nelem)
     rhs = zeros(DFloat, (N+1)^dim, _nstate, nelem)
 
     # setup the initial condition
     mpirank == 0 && println("[CPU] computing initial conditions (CPU)...")
     
     #Read sounding file:
-    sound_ini_interp = zeros(DFloat, Ne*N + 1, 10)
-    sound_ini_interp = interpolate_sounding(dim, N, Ne, vgeo)
+    sound_ini_interp = zeros(DFloat, Ne_v*N + 1, 10)
+    sound_ini_interp = interpolate_sounding(dim, N, Ne_v, vgeo)
     (nz, ~) = size(sound_ini_interp)
     
     @inbounds for e = 1:nelem, i = 1:(N+1)^dim
@@ -3580,37 +3580,46 @@ function ic(sound_ini_interp, dim, x...)
             theta0   = 283.0
             p0       = 85000.0
 
-            rho0   = _p0/(R_gas*theta0)*(pi0)^(c_v/R_gas)
+            rho0   = _p0/(R_gas * theta0) * (pi0)^(c_v/R_gas)
 
             #20% of relative humidity in the background
             RH0    = 20.0                                 
-            
-            rc  =  300.0
-            r   = sqrt( (x[1])^2/rc^2 + (x[dim] - 800.0)^2/rc^2 )
-            
+
             # find the matching height
+            maxt  = 0.0
+            count = 1
             for k = 1:nzmax
  
-                dataz = ini_data_interp[k, 1]    
+                dataz = sound_ini_interp[k, 1]
                 z     = x[dim]
                 
                 # round off 2 decimal points
-                z2test = real(int(100.0 * dataz))/100.0
-                z1test = real(int(100.0 * z))/100.0
-                if ( abs(z1test - z2test) <= 1.0e-8 ) 
+                #z2test = real(int(100.0 * dataz))/100.0
+                #z1test = real(int(100.0 * z))/100.0
+                #z2test = ((100.0 * dataz))/100.0
+                #z1test = ((100.0 * z))/100.0
+                z2test = Float64(floor(100.0 * dataz))/100.0
+                z1test = Float64(floor(100.0 * z))/100.0
+
+                if ( abs(z1test - z2test) <= 1)
+                    # this way of extracting the corresponding height
+                    # MUST BE CHANGED TO A MORE ROBUST WAY TO DO IT.
+                    # WE NEED A COLUMN DATA STRUCTURE!!!!!!
+                    #if z1test == z2test
+                    #@show(k, z2test, z1test)
                     count=k
                     break
                 end
             end
 
-            dataz   = ini_data_interp[count, 1] #z
-            datat   = ini_data_interp[count, 2] #theta
-            datau   = ini_data_interp[count, 3] #u
-            datav   = ini_data_interp[count, 4] #v
-            datap   = ini_data_interp[count, 5] #p
-            datarho = ini_data_interp[count, 6] #rho
-            datapi  = ini_data_interp[count, 7] #exner
-            thetav  = ini_data_interp[count, 8]  #thetav
+            dataz   = sound_ini_interp[count, 1] #z
+            datat   = sound_ini_interp[count, 2] #theta
+            datau   = sound_ini_interp[count, 3] #u
+            datav   = sound_ini_interp[count, 4] #v
+            datap   = sound_ini_interp[count, 5] #p
+            datarho = sound_ini_interp[count, 6] #rho
+            datapi  = sound_ini_interp[count, 7] #exner
+            thetav  = sound_ini_interp[count, 8] #thetav
 
             theta_k = thetav
             pi_k    = datapi
@@ -3625,71 +3634,90 @@ function ic(sound_ini_interp, dim, x...)
            #es      = 611.2*exp(17.27*(tempe_k - 273.15)/(tempe_k - 36.0))  ! Pa
 
            # Grabowski:
-           es      = 611.*exp(2.52e6/461.*(1/273.16-1/tempe_k))
+           es      = 611.0*exp(2.52e6/461.0*(1.0/273.16 - 1.0/tempe_k))
            qvs     = 287.04/461.0 * es/(press_k - es)                               # saturation mixing ratio
 
-
-
-
-
-            q_t   = 0.0 #0.0192
-            q_l   = 0.0
-            q_i   = 0.0
-            R_gas = MoistThermodynamics.gas_constant_air(q_t, q_l, q_i)
+            #formula from Joe Klemp's kessler.f:
+            #QVS    = 3.8/(pi_k^(1.0/0.2875)*1000.0)*EXP(17.27*(tempe_k-273.0)/(tempe_k- 36.0))
+            qv_k    = qvs * RH0/100.0
+              
+            rc  =  300.0
+            r   = sqrt( (x[1] - 1800)^2 + (x[dim] - 800.0)^2 )
             
-            θ_c = 2.0
-            Δθ = 0.0
-            if r <= 1.0
-                Δθ = θ_c * cos(0.5 * π * r)*cos(0.5 * π * r)
+            R_gas = MoistThermodynamics.gas_constant_air(0.0, 0.0, 0.0)
+            
+            theta_c = 0.5
+            dtheta  = 0.0
+            dqr=0.0
+            dqc=0.0
+            dqv=0.0
+            dRH=0.0
+            sigma = 6.0
+            dtheta = theta_c*exp(-(r/rc)^sigma)
+            #if r < 200.0
+            #    dtheta = theta_c
+            #    
+            #elseif( r >= 200.0 && r < 300.0 )
+            #    dtheta = theta_c * (cos(0.5 * pi *(r - 200.0)/100.0))^2
+            #    
+            #elseif r >= 300.0
+            #    dtheta = 0.0
+            #    
+            #end
+
+            if (dtheta > maxt)
+                maxt = dtheta
             end
-            
-            #Thermal
-            thetae = 320.0 + Δθ
-            T_0    = T_triple
-            
-            theta = thetae;
-            
-            (p, ρ)   = calculate_dry_pressure(x[dim], theta);
+            theta_k = thetav + dtheta
+            pi_k    = datapi
+            rho_k   = datap/(R_gas * pi_k * theta_k)   
+            tempe_k = pi_k * theta_k
 
-            #Calculate T as the zeros of the non-linear thethae function (non-linear in T):
-            T_start = 300.0 #Starting value to find the zeros of the thetae=f(T) function
-            T       = find_zero(x -> thetae_function(x, p, q_t) - thetae, T_start, Order1(), atol=1e-12);
-            #verify = thetae - thetae_function(T, P, q_t) #ok
-            #aux = thetae_function(T, P, q_t)
-            #@show(thetae, aux, T, verify)
+              
+            # Saturation water pressure according to Magnus-Tetens (see Klemp and Wilhelmson (1978) eq. (2.11),
+            # Emanuel (textbook Atmospheric Convection, 1994) eq. 4.4.14)
+            #es      = 611.2*exp(17.27*(tempe_k - 273.15)/(tempe_k - 36.0))  ! Pa
 
-            #E_int = MoistThermodynamics.internal_energy(T+T_0, q_t, q_l, q_i)
-            #ρ     = MoistThermodynamics.air_density( T, pd, q_t, q_l, q_i)
-            #P     = MoistThermodynamics.air_density( T,  ρ, q_t, q_l, q_i)
+            # Grabowski:
+            es      = 611.0*exp(2.52e6/461.0*(1.0/273.16 - 1.0/tempe_k))
+            qvs     = 287.04/461.0 * es/(press_k - es)                               # saturation mixing ratio
+
             
-            #Total energy
-            KE           = 0.5 * (u0.^2 .+ v0.^2)
-            geopotential = gravity*x[dim]
-            E            = MoistThermodynamics.total_energy(KE, geopotential, T+T_0, q_t)
+            #formula from Joe Klemp's kessler.f:
+            #QVS    = 3.8/(pi_k**(1./.2875)*1000.)*EXP(17.27*(tempe_k-273.)/(tempe_k- 36.))
+            qv_k    = qvs * RH0/100.0
+
+            if r < 200.0
+                dRH    = 80.0
+                dqv    = dRH * qvs/100.0
+
+            elseif( r >= 200.0 && r < 300.0)
+                dRH    = 80.0*(cos(0.5 * pi * (r - 200.0)/100.0))^2
+                dqv    = dRH*qvs/100.0
+
+            elseif( r >= 300.0)
+                dRH    = 0.0
+                dqv    = 0.0
+            end
+            q_t  = qv_k + dqv
             
-            #Obtain q_l, q_i from T,  ρ, q_t
-            #q_l = zeros(size(T)); q_i = zeros(size(T))
-            #MoistThermodynamics.phase_partitioning_eq!(q_l, q_i, T, ρ, q_t);
-            
-            #Velo
+
             U    = u0
             V    = v0
 
             Qinit[1] = U
             Qinit[2] = V
-            Qinit[3] = ρ
-            Qinit[4] = E
+            Qinit[3] = rho_k
+            Qinit[4] = theta_k
 
             Qinit[5] = q_t
             Qinit[6] = 0.0 #q_l[1]
             Qinit[7] = 0.0 #q_i[1]
 
             #T to be used as starting point for saturation adjustment iterations:
-            Qinit[_nstate+1] = T 
-
-            θ_ref  = thetae - Δθ
-            Qinit[_nstate+2] = θ_ref
-            Qinit[_nstate+3] = p
+            Qinit[_nstate+1] = tempe_k
+            Qinit[_nstate+2] = thetav
+            Qinit[_nstate+3] = press_k
 
             return Qinit
 
@@ -3717,31 +3745,32 @@ function main()
     #Input Parameters
     time_final = DFloat(1000)
     iplot=1000
-    Ne = 10
+    Ne_h = 20
+    Ne_v = 10
     N  = 4
     visc = 1.5
     dim = _nsd
     hardware="cpu"
     if mpirank == 0
-        @show (dim,N,Ne,visc,iplot,time_final,hardware,mpisize)
+        @show (dim,N,Ne_h,Ne_v,visc,iplot,time_final,hardware,mpisize)
     end
 
     #Mesh Generation
-    mesh2D = brickmesh((range(_xmin; length=Ne+1, stop=_xmax),
-                        range(_ymin; length=Ne+1, stop=_ymax)),
+    mesh2D = brickmesh((range(_xmin; length=Ne_h+1, stop=_xmax),
+                        range(_ymin; length=Ne_v+1, stop=_ymax)),
                        (true, false),
                        part = mpirank+1, numparts = mpisize)
 
     #Call Solver
     if hardware == "cpu"
         mpirank == 0 && println("Running 2d (CPU)...")
-        nse2d_sgs(Val(dim), Val(N), Val(Ne), mpicomm, (sound_ini_interp, x...)->ic(sound_ini_interp, dim, x...), mesh2D, time_final, iplot, visc;
+        nse2d_sgs(Val(dim), Val(N), Val(Ne_h), Val(Ne_v), mpicomm, (sound_ini_interp, x...)->ic(sound_ini_interp, dim, x...), mesh2D, time_final, iplot, visc;
                   ArrType=Array, tout = 10)
         mpirank == 0 && println()
     elseif hardware == "gpu"
         @hascuda begin
             mpirank == 0 && println("Running 2d (GPU)...")
-            nse2d_sgs(Val(dim), Val(N), Val(Ne), mpicomm, (sound_ini_interp, x...)->ic(sound_ini_interp, dim, x...), mesh2D, time_final, iplot, visc;
+            nse2d_sgs(Val(dim), Val(N), Val(Ne_h), Val(Ne_v), mpicomm, (sound_ini_interp, x...)->ic(sound_ini_interp, dim, x...), mesh2D, time_final, iplot, visc;
                       ArrType=CuArray, tout = 10)
             mpirank == 0 && println()
         end
