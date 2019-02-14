@@ -135,8 +135,8 @@ const _nsd = 2 #number of space dimensions
 #_icase = 1    #RTB
 #_icase = 1001 # RTB + 1 Passive tracer
 #_icase = 1003 # RTB + 3 Passive tracers
-_icase = 1010 # Moist case of Pressel et al. 2015 JAMES
-#_icase = 1201 # Moist case of Kurowski and Grabowski 2014
+#_icase = 1010 # Moist case of Pressel et al. 2015 JAMES
+_icase = 1201 # Moist case of Kurowski and Grabowski 2014
 if(_icase < 1000)
     DRY_CASE = true
 else
@@ -524,7 +524,6 @@ function volume_rhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
             s_G[i,j,_U]  = build_volume_fluxes_ije(ηx, ηy, MJ, fluxU_x, fluxU_y)
             s_G[i,j,_V]  = build_volume_fluxes_ije(ηx, ηy, MJ, fluxV_x, fluxV_y)
             s_G[i,j,_E]  = build_volume_fluxes_ije(ηx, ηy, MJ, fluxE_x, fluxE_y)
-
             
             #Tracers
             @inbounds for itracer = 1:_ntracers
@@ -2645,6 +2644,73 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
     start_time = t1 = time_ns()
     for step = 1:nsteps
         
+        #------------------------------------------------------------------
+        # --------------- Saturation adjustment
+        #------------------------------------------------------------------
+        if ( step == 1 &&(_icase == 1201 || _icase == 1202 || _icase == 1010 ))
+            #sat_adjust(Val(dim), Val(N), d_QL, d_vgeoL, mesh.realelems)
+
+            Nq    = N + 1
+            Np    = (N+1)^dim
+            nelem = size(d_QL)[end]
+            if(step == 1)
+                file1 = open("Eadj.txt", "w")
+                writedlm(file1, d_QL[:, _E, :])
+                close(file1)
+            end
+            #@inbounds for e in nelem
+            #for j = 1:Nq, i = 1:Nq
+            @inbounds for e = 1:nelem, i = 1:Np
+                
+                y            = d_vgeoL[i, _y, e]
+                geopotential = gravity*y
+
+                U, V = d_QL[i, _U, e], d_QL[i, _V, e]
+                ρ, E = d_QL[i, _ρ, e], d_QL[i, _E, e]
+                u, v = U/ρ, V/ρ
+                
+                q_tr[1], q_tr[2], q_tr[3] = d_QL[i, _qt1, e], 0.0, 0.0 #d_QL[i, _qt2, e], d_QL[i, _qt3, e]
+                R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
+                c_p   = MoistThermodynamics.cp_m( q_tr[1], q_tr[2], q_tr[3] )
+                c_v   = MoistThermodynamics.cv_m( q_tr[1], q_tr[2], q_tr[3] )
+                
+                q_t    = q_tr[1]
+                T_prev = d_QL[i, _nstate+1, e]
+                
+                # compute internal energy from dynamic variables
+                KE = 0.5 * (u^2 + v^2)
+                IE = E/ρ - KE - geopotential
+                
+                # compute temperature, pressure and condensate specific humidities,
+                # using T_prev as initial condition for iterations
+                #T      = MoistThermodynamics.air_temperature(E_int, q_tr[1], 0.0*q_tr[2], 0.0*q_tr[3])
+                T   = MoistThermodynamics.saturation_adjustment(IE, ρ, q_t/ρ)
+
+                q_l = zeros(size(T)); q_i = zeros(size(T))
+                MoistThermodynamics.phase_partitioning_eq!(q_l, q_i, T, ρ, q_t/ρ);               
+                E   = MoistThermodynamics.total_energy(KE, geopotential, T, q_t, q_l[1], q_i[1])
+                #@show(E)
+                
+                d_QL[i, _qt1, e] = q_t
+                #d_QL[i, _E, e]  = E*ρ
+                
+                Qtr[i, 1, e] = q_l[1]
+                Qtr[i, 2, e] = q_i[1]
+                #d_QL[i, _qt2, e], d_QL[i, _qt3, e] =  q_l[1],  q_i[1]
+                
+                if(q_l[1] > 0.0 || q_i[1] > 0.0)
+                    @show("QLxx? ", q_l[1], q_i[1])
+                end
+                
+                # Update temperature for next timestep
+                d_QL[i, _nstate+1, e] = T - T_0
+                
+            end
+        end    
+        #--------------------------------------------------------------------------------------
+        # End saturation adjustment
+        #--------------------------------------------------------------------------------------
+        
        
         for s = 1:length(RKA)
 
@@ -2702,69 +2768,6 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
             updatesolution!(Val(dim), Val(N), d_rhsL, d_rhs_gradQL, d_QL, d_vgeoL, mesh.realelems,
                             RKA[s%length(RKA)+1], RKB[s], dt)
 
-            
-            #------------------------------------------------------------------
-            # --------------- Saturation adjustment
-            #------------------------------------------------------------------
-            if ( step == 1 &&(_icase == 1201 || _icase == 1202 || _icase == 10101 ))
-            #sat_adjust(Val(dim), Val(N), d_QL, d_vgeoL, mesh.realelems)
-
-            Nq    = N + 1
-            Np    = (N+1)^dim
-            nelem = size(d_QL)[end]
-            
-            #@inbounds for e in nelem
-            #for j = 1:Nq, i = 1:Nq
-            @inbounds for e = 1:nelem, i = 1:Np
-                
-                y            = d_vgeoL[i, _y, e]
-                geopotential = gravity*y
-
-                U, V   = d_QL[i, _U, e], d_QL[i, _V, e]
-                rho, E = d_QL[i, _ρ, e], d_QL[i, _E, e]
-                u, v = U/rho, V/rho
-
-                q_tr[1], q_tr[2], q_tr[3] = d_QL[i, _qt1, e], 0.0, 0.0 #d_QL[i, _qt2, e], d_QL[i, _qt3, e]
-                #c_p   = MoistThermodynamics.cp_m( q_tr[1], q_tr[2], q_tr[3] )
-                #c_v   = MoistThermodynamics.cv_m( q_tr[1], q_tr[2], q_tr[3] )
-                               
-                q_t    = q_tr[1]
-                T_prev = d_QL[i, _nstate+1, e]
-                
-                # compute internal energy from dynamic variables
-                KE     = 0.5 * (u^2 + v^2)
-                E_int  = E/rho - KE - geopotential
-                
-                # compute temperature, pressure and condensate specific humidities,
-                # using T_prev as initial condition for iterations
-                #T      = MoistThermodynamics.air_temperature(E_int, q_tr[1], 0.0*q_tr[2], 0.0*q_tr[3])
-                T   = MoistThermodynamics.saturation_adjustment(E_int, rho, q_t/rho, T_prev)
-                q_l = zeros(size(T)); q_i = zeros(size(T))
-                MoistThermodynamics.phase_partitioning_eq!(q_l, q_i, T, rho, q_t/rho);               
-                #E   = MoistThermodynamics.total_energy(KE, geopotential, T, q_t, q_l[1], q_i[1])
-                #@show(E)
-                
-                d_QL[i, _qt1, e] = q_t/rho
-                #d_QL[i, _E, e]   =   E/rho
-                
-                Qtr[i, 1, e] = q_l[1]
-                Qtr[i, 2, e] = q_i[1]
-                d_QL[i, _qt2, e], d_QL[i, _qt3, e] =  q_l[1],  q_i[1]
-                
-                if(q_l[1] > 0.0 || q_i[1] > 0.0)
-                    @show("QLxx? ", q_l[1], q_i[1])
-                end
-                
-                # Update temperature for next timestep
-                d_QL[i, _nstate+1, e] = T - T_0
-                
-            end
-        end    
-        #--------------------------------------------------------------------------------------
-        # End saturation adjustment
-        #--------------------------------------------------------------------------------------
-        
-            
         end #end time steopping
 
         if step == 1
@@ -3126,6 +3129,54 @@ function convert_Etot_to_EtotRho(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
 end
 # }}}
 
+
+# {{{
+#        intma for DG indexing
+#
+function intma_dg(i, j, k, e)
+
+    intma_dg = (e-1) * nglz * ngly * nglx + (k-1) * ngly * nglx + (j-1) * nglx + (i-1) + 1
+
+    return intma_dg
+    
+end
+
+function intma_1d_dg(k, e)
+
+    return intma_1d_dg = (e - 1) * (nglz) + k
+     
+end
+
+
+function node_column(nelz, nelem)
+    
+    do e = 1:nelem
+        
+        #calculate on-processor number of elements on a shell
+        nelems = nelem / nelz
+        
+        #column and element numbering dependent code
+        ecol = mod(e - 1 , nelems) + 1
+        ie   = (e - 1) / nelems + 1
+        endif
+        
+        for j = 1:ngly
+            for i = 1:nglx
+                
+                ic = (ecol - 1) * ngly * nglx + (j - 1) * nglx + i
+                
+                for k = 1:nglz
+                    iz = intma_1d_dg(k, ie)
+                    
+                    node_column_dg[iz, ic] = intma_dg(i, j, k, el)
+                    
+                end
+            end
+        end
+    end
+    return node_column
+end
+
 # {{{
 #        SOUNDING operations:
 #
@@ -3201,7 +3252,7 @@ function interpolate_sounding(dim, N, Ne_v, vgeo)
     zprev      = z
     xmin       = 1.0e-8; #Take this value from the grid if xmin != 0.0
     nzmax      = 1
-    @inbounds for e = 1:nelem
+    #=@inbounds for e = 1:nelem
         for j = 1:Nq, i = 1:Nq
             
             x = vgeo[i, j, _x, e]
@@ -3220,6 +3271,13 @@ function interpolate_sounding(dim, N, Ne_v, vgeo)
     end
     if(nzmax != nz)
         error(" interpolate_sounding: 1D INTERPOLATION: ops, something is wrong: nz is wrong!\n")
+    end
+    =#
+
+    do j =1:nz
+        ip = node_column(1,j)
+        datazp[j] = coord(3,ip)
+        enddo
     end
     
     #------------------------------------------------------
@@ -3382,7 +3440,10 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, ::Val{Ne_h}, ::Val{Ne_v}, mpicomm, ic, 
         end
         
     end
-
+    file2 = open("EINITIAL.txt", "w")
+    writedlm(file2, Q[:, _E, :])
+    close(file2)
+        
     #######
     #=
     Q_temp   = copy(Q)
@@ -3830,7 +3891,7 @@ function ic(sound_ini_interp, dim, x...)
             theta_c    =   2.0
 
             #Moisture
-            q_t_ref  = 0.0 # 0.0196 #kg/kg
+            q_t_ref  = 0.0196 #kg/kg
             q_t      = q_t_ref
             q_l      = 0.0
             q_i      = 0.0
@@ -3910,10 +3971,12 @@ function ic(sound_ini_interp, dim, x...)
                 #z1test = real(int(100.0 * z))/100.0
                 #z2test = ((100.0 * dataz))/100.0
                 #z1test = ((100.0 * z))/100.0
-                z2test = Float64(floor(100.0 * dataz))/100.0
-                z1test = Float64(floor(100.0 * z))/100.0
+                #z2test = Float64(floor(100.0 * dataz))/100.0
+                #z1test = Float64(floor(100.0 * z))/100.0
 
-                if ( abs(z1test - z2test) <= 0.2)
+                z2test = dataz
+                z1test = z                
+                if ( abs(z1test - z2test) <= 1.0e-4)
                     # this way of extracting the corresponding height
                     # MUST BE CHANGED TO A MORE ROBUST WAY TO DO IT.
                     # WE NEED A COLUMN DATA STRUCTURE!!!!!!
