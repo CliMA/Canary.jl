@@ -87,6 +87,7 @@
 #
 #--------------------------------Markdown Language Header-----------------------
 include(joinpath(@__DIR__,"vtk.jl"))
+include(joinpath(@__DIR__,"column_map.jl"))
 include("/Users/simone/Work/Tapio/CLIMA/src/Utilities/src/MoistThermodynamics.jl")
 
 using PlanetParameters
@@ -3129,54 +3130,6 @@ function convert_Etot_to_EtotRho(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
 end
 # }}}
 
-
-# {{{
-#        intma for DG indexing
-#
-function intma_dg(i, j, k, e)
-
-    intma_dg = (e-1) * nglz * ngly * nglx + (k-1) * ngly * nglx + (j-1) * nglx + (i-1) + 1
-
-    return intma_dg
-    
-end
-
-function intma_1d_dg(k, e)
-
-    return intma_1d_dg = (e - 1) * (nglz) + k
-     
-end
-
-
-function node_column(nelz, nelem)
-    
-    do e = 1:nelem
-        
-        #calculate on-processor number of elements on a shell
-        nelems = nelem / nelz
-        
-        #column and element numbering dependent code
-        ecol = mod(e - 1 , nelems) + 1
-        ie   = (e - 1) / nelems + 1
-        endif
-        
-        for j = 1:ngly
-            for i = 1:nglx
-                
-                ic = (ecol - 1) * ngly * nglx + (j - 1) * nglx + i
-                
-                for k = 1:nglz
-                    iz = intma_1d_dg(k, ie)
-                    
-                    node_column_dg[iz, ic] = intma_dg(i, j, k, el)
-                    
-                end
-            end
-        end
-    end
-    return node_column
-end
-
 # {{{
 #        SOUNDING operations:
 #
@@ -3254,6 +3207,9 @@ function interpolate_sounding(dim, N, Ne_v, vgeo)
     nzmax      = 1
     @inbounds for e = 1:nelem
         for j = 1:Nq, i = 1:Nq
+
+            ip = intma_dg2d(i, j, e)
+            @show(ip)
             
             x = vgeo[i, j, _x, e]
             z = vgeo[i, j, _y, e]

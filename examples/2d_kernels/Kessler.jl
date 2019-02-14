@@ -106,16 +106,18 @@ function kessler_column(rho, t, qv, qc, qr, p, z, rainnc, rainncv, dt, icol)
     # do the sedimentation first
     crmax = 0.0
 
-    #Define region inside the sponge:
+    #
+    # Define region inside the sponge:
+    #
     zs  = zmax - bc_zscale
     nz_inside=nz
-    for k = 1:nz
-        ip     = node_column[icol,k]
-        if coord[3,ip] <= zs 
-            nz_inside = k-1
-        end 
-    end
-
+    #for k = 1:nz
+    #    ip     = node_column[icol,k]
+    #    if coord[3,ip] <= zs 
+    #        nz_inside = k-1
+    #    end 
+    #end
+    
     #=
     #Define region inside the sponge:    
     z         = vgeo[1, 1, _y, 1] 
@@ -142,12 +144,10 @@ function kessler_column(rho, t, qv, qc, qr, p, z, rainnc, rainncv, dt, icol)
     ###
     =#
     
-
     #------------------------------------------------------------------------------
     # Terminal velocity calculation and advection, set up coefficients and
     # compute stable timestep
     #------------------------------------------------------------------------------
-    nz_inside = nz #WARNING: REMOVE THIS WHEN THE SPONGE DETECTION HAS BEEN ADDED
     do k = 1:nz_inside-1
         rdzk[k] = 1./(z[k+1] - z[k])
     end
