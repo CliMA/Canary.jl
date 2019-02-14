@@ -3252,7 +3252,7 @@ function interpolate_sounding(dim, N, Ne_v, vgeo)
     zprev      = z
     xmin       = 1.0e-8; #Take this value from the grid if xmin != 0.0
     nzmax      = 1
-    #=@inbounds for e = 1:nelem
+    @inbounds for e = 1:nelem
         for j = 1:Nq, i = 1:Nq
             
             x = vgeo[i, j, _x, e]
@@ -3271,13 +3271,6 @@ function interpolate_sounding(dim, N, Ne_v, vgeo)
     end
     if(nzmax != nz)
         error(" interpolate_sounding: 1D INTERPOLATION: ops, something is wrong: nz is wrong!\n")
-    end
-    =#
-
-    do j =1:nz
-        ip = node_column(1,j)
-        datazp[j] = coord(3,ip)
-        enddo
     end
     
     #------------------------------------------------------
