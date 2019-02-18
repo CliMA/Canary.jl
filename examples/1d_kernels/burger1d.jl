@@ -75,6 +75,7 @@ using Printf: @sprintf
 const HAVE_CUDA = try
     using CUDAnative
     using CUDAdrv
+    using CuArrays
     true
 catch
     false
@@ -923,7 +924,9 @@ function main()
     DFloat = Float64
 
     MPI.Initialized() || MPI.Init()
-    MPI.finalize_atexit()
+    if !Sys.iswindows()
+        MPI.finalize_atexit()
+    end
 
     mpicomm = MPI.COMM_WORLD
     mpirank = MPI.Comm_rank(mpicomm)
