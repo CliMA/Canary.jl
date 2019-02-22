@@ -87,7 +87,7 @@
 #
 #--------------------------------Markdown Language Header-----------------------
 include(joinpath(@__DIR__,"vtk.jl"))
-include(joinpath(@__DIR__,"column_map.jl"))
+#include(joinpath(@__DIR__,"column_map.jl"))
 include("/Users/simone/Work/Tapio/CLIMA/src/Utilities/src/MoistThermodynamics.jl")
 
 using PlanetParameters
@@ -97,6 +97,10 @@ using Roots
 using DelimitedFiles
 using Dierckx
 using Printf: @sprintf
+
+abstract type InterpMethod end
+struct SplineMethod <:InterpMethod end
+
 const HAVE_CUDA = try
     using CUDAnative
     using CUDAdrv
@@ -133,11 +137,11 @@ const _nsd = 2 #number of space dimensions
 # DEFINE CASE AND PRE_COMPILED QUANTITIES:
 #
 
-#_icase = 1    #RTB
+_icase = 1    #RTB
 #_icase = 1001 # RTB + 1 Passive tracer
 #_icase = 1003 # RTB + 3 Passive tracers
 #_icase = 1010 # Moist case of Pressel et al. 2015 JAMES
-_icase = 1201 # Moist case of Kurowski and Grabowski 2014
+#_icase = 1201 # Moist case of Kurowski and Grabowski 2014
 if(_icase < 1000)
     DRY_CASE = true
 else
@@ -460,7 +464,7 @@ function volume_rhs!(::Val{2}, ::Val{N}, rhs::Array, Q, vgeo, D, elems) where N
     gravity::DFloat = _gravity
     Nq = N + 1
     nelem = size(Q)[end]
-
+    
     Q    = reshape(Q, Nq, Nq, _nstate+3, nelem)
     rhs  = reshape(rhs, Nq, Nq, _nstate, nelem)
     vgeo = reshape(vgeo, Nq, Nq, _nvgeo, nelem)
@@ -2641,6 +2645,10 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
     Qt = ArrType(Q)    
     Qtr = zeros(DFloat, (N+1)^dim, 3, nelem)
     
+    Nq    = N + 1
+    Np    = (N+1)^dim
+    nelem = size(d_QL)[end]
+    
     #Start Time Loop
     start_time = t1 = time_ns()
     for step = 1:nsteps
@@ -2648,19 +2656,10 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
         #------------------------------------------------------------------
         # --------------- Saturation adjustment
         #------------------------------------------------------------------
-        if ( step == 1 &&(_icase == 1201 || _icase == 1202 || _icase == 1010 ))
-            #sat_adjust(Val(dim), Val(N), d_QL, d_vgeoL, mesh.realelems)
+        if ( _icase == 1201 || _icase == 1202 || _icase == 1010 )
 
-            Nq    = N + 1
-            Np    = (N+1)^dim
-            nelem = size(d_QL)[end]
-            if(step == 1)
-                file1 = open("Eadj.txt", "w")
-                writedlm(file1, d_QL[:, _E, :])
-                close(file1)
-            end
-            #@inbounds for e in nelem
-            #for j = 1:Nq, i = 1:Nq
+            #sat_adjust(Val(dim), Val(N), d_QL, d_vgeoL, mesh.realelems)
+            
             @inbounds for e = 1:nelem, i = 1:Np
                 
                 y            = d_vgeoL[i, _y, e]
@@ -2670,7 +2669,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                 ρ, E = d_QL[i, _ρ, e], d_QL[i, _E, e]
                 u, v = U/ρ, V/ρ
                 
-                q_tr[1], q_tr[2], q_tr[3] = d_QL[i, _qt1, e], 0.0, 0.0 #d_QL[i, _qt2, e], d_QL[i, _qt3, e]
+                q_tr[1], q_tr[2], q_tr[3] = d_QL[i, _qt1, e], d_QL[i, _qt2, e], d_QL[i, _qt3, e]
                 R_gas = MoistThermodynamics.gas_constant_air(q_tr[1], q_tr[2], q_tr[3])
                 c_p   = MoistThermodynamics.cp_m( q_tr[1], q_tr[2], q_tr[3] )
                 c_v   = MoistThermodynamics.cv_m( q_tr[1], q_tr[2], q_tr[3] )
@@ -2685,22 +2684,22 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
                 # compute temperature, pressure and condensate specific humidities,
                 # using T_prev as initial condition for iterations
                 #T      = MoistThermodynamics.air_temperature(E_int, q_tr[1], 0.0*q_tr[2], 0.0*q_tr[3])
-                T   = MoistThermodynamics.saturation_adjustment(IE, ρ, q_t/ρ)
+                T   = MoistThermodynamics.saturation_adjustment(IE, ρ, q_t/ρ, T_prev)
 
-                q_l = zeros(size(T)); q_i = zeros(size(T))
-                MoistThermodynamics.phase_partitioning_eq!(q_l, q_i, T, ρ, q_t/ρ);               
-                E   = MoistThermodynamics.total_energy(KE, geopotential, T, q_t, q_l[1], q_i[1])
-                #@show(E)
                 
-                d_QL[i, _qt1, e] = q_t
-                #d_QL[i, _E, e]  = E*ρ
+                MoistThermodynamics.phase_partitioning_eq!(q_l, q_i, T, ρ, q_t/ρ);
+                #E   = MoistThermodynamics.total_energy(KE, geopotential, T, q_t, q_l[1], q_i[1])
+                
+                d_QL[i, _qt1, e] = q_t/ρ
+                d_QL[i, _qt2, e] = q_l[1]/ρ
+                d_QL[i, _qt3, e] = q_i[1]/ρ
+                #d_QL[i, _E, e]   = E*ρ
                 
                 Qtr[i, 1, e] = q_l[1]
                 Qtr[i, 2, e] = q_i[1]
-                #d_QL[i, _qt2, e], d_QL[i, _qt3, e] =  q_l[1],  q_i[1]
                 
                 if(q_l[1] > 0.0 || q_i[1] > 0.0)
-                    @show("QLxx? ", q_l[1], q_i[1])
+                    @show("QLxx? ", step, q_l[1], q_i[1])
                 end
                 
                 # Update temperature for next timestep
@@ -2801,7 +2800,7 @@ function lowstorageRK(::Val{dim}, ::Val{N}, mesh, vgeo, sgeo, Q, rhs, D,
             if (_icase == 1201 || _icase == 1202 || _icase == 1010)
                 
                 Qt   = reshape((@view Q[:, _qt1, :]), ntuple(j->(N+1),dim)..., nelem)
-                Qliq = reshape((@view Qtr[:, 1, :]), ntuple(j->(N+1),dim)..., nelem)
+                Qliq = reshape((@view Q[:, _qt2, :]), ntuple(j->(N+1),dim)..., nelem)
                 
                 writemesh(@sprintf("viz/nse2d_sgs_%s_rank_%04d_step_%05d",
                                    ArrType, mpirank, step), X...;
@@ -3130,6 +3129,49 @@ function convert_Etot_to_EtotRho(::Val{dim}, ::Val{N}, vgeo, Q) where {dim, N}
 end
 # }}}
 
+
+# {{{
+# get value of a coordinate in a 1D direction
+#
+function get_x_coordinate(mesh::T) where T
+  (elemtovert, elemtocoord, elemtobndy, faceconnections) = mesh
+  dim = 1
+  return unique(hcat(elemtocoord[dim,1,:],elemtocoord[dim,6,:]))
+end
+function get_y_coordinate(mesh::T) where T
+  (elemtovert, elemtocoord, elemtobndy, faceconnections) = mesh
+    dim = 2
+    
+  return unique(hcat(elemtocoord[dim,1,:],elemtocoord[dim,3,:]))
+end
+function get_z_coordinate(mesh::T) where T
+  (elemtovert, elemtocoord, elemtobndy, faceconnections) = mesh
+  dim = 3
+  return unique(hcat(elemtocoord[dim,1,:],elemtocoord[dim,6,:]))
+end
+# }}}
+
+
+# {{{
+# wrapper for any interpolation type
+#
+# -Spline1D requires
+#
+#  using Dierckx
+#  abstract type InterpMethod end
+#  struct SplineMethod <:InterpMethod end
+#
+function interpolate(grid_a::V,
+                     field_a::V,
+                     grid_b::V,
+                     order::Int,
+                     method::SplineMethod
+                     ) where V
+  return Spline1D(grid_a, field_a; k=order)(grid_b)
+end
+# }}}
+
+
 # {{{
 #        SOUNDING operations:
 #
@@ -3154,7 +3196,7 @@ function read_sounding()
      
 end
 
-function interpolate_sounding(dim, N, Ne_v, vgeo)
+function interpolate_sounding(mesh, vert_coord_1D, dim, N, Ne_v, vgeo)
     #
     # !!!WARNING!!! This function can only work for sturctured grids with vertical boundaries!!!
     # !!!TO BE REWRITTEN FOR THE GENERAL CODE!!!!
@@ -3168,6 +3210,7 @@ function interpolate_sounding(dim, N, Ne_v, vgeo)
     
     #Get sizes
     (sound_data, nmax, ncols) = read_sounding()
+
     
     Np = (N+1)^dim
     Nq = N + 1
@@ -3205,57 +3248,59 @@ function interpolate_sounding(dim, N, Ne_v, vgeo)
     zprev      = z
     xmin       = 1.0e-8; #Take this value from the grid if xmin != 0.0
     nzmax      = 1
-    @inbounds for e = 1:nelem
+    #=@inbounds for e = 1:nelem
+        
         for j = 1:Nq, i = 1:Nq
 
-            ip = intma_dg2d(i, j, e)
-            @show(ip)
-            
             x = vgeo[i, j, _x, e]
             z = vgeo[i, j, _y, e]
             
             if abs(x) < xmin
-                
                 if (abs(z - zprev) > 1.0e-5)
                     nzmax          = nzmax + 1
                     dataz[nzmax]   = z
                     zprev          = z
                 end
-                
             end            
         end
     end
     if(nzmax != nz)
+        @show(nzmax, nz)
         error(" interpolate_sounding: 1D INTERPOLATION: ops, something is wrong: nz is wrong!\n")
     end
+    =#
+    @show ("AAAAA", size(vert_coord_1D))
+    dataz = vert_coord_1D
     
     #------------------------------------------------------
     # interpolate to the actual LGL points in vertical
     # dataz is given
     #------------------------------------------------------
-    varout = 0.0
-    spl_tinit = Spline1D(zinit, tinit; k=1)
-    spl_qinit = Spline1D(zinit, qinit; k=1)
-    spl_uinit = Spline1D(zinit, uinit; k=1)
-    spl_vinit = Spline1D(zinit, vinit; k=1)
-    spl_pinit = Spline1D(zinit, pinit; k=1)
+    varout    = 0.0
+    
+    tinit_new = interpolate(zinit, tinit, z_dycore, 1, SplineMethod())
+    qinit_new = Spline1D(zinit, qinit; k=1)#interpolate(zinit, qinit, z_dycore, 1, SplineMethod())
+    uinit_new = Spline1D(zinit, uinit; k=1)#interpolate(zinit, uinit, z_dycore, 1, SplineMethod())
+    vinit_new = Spline1D(zinit, vinit; k=1)#interpolate(zinit, vinit, z_dycore, 1, SplineMethod())
+    pinit_new = Spline1D(zinit, pinit; k=1)#interpolate(zinit, pinit, z_dycore, 1, SplineMethod())
+    
     if ncols == 5
         for k = 1:nz
-            datat[k] = spl_tinit(dataz[k])
-            dataq[k] = spl_qinit(dataz[k])
-            datau[k] = spl_uinit(dataz[k])
-            datav[k] = spl_vinit(dataz[k])
+            datat[k] = tinit_new(dataz[k])
+            dataq[k] = qinit_new(dataz[k])
+            datau[k] = uinit_new(dataz[k])
+            datav[k] = vinit_new(dataz[k])
             if(dataz[k] > 14000.0)
                 dataq[k] = 0.0
             end
         end
     elseif ncols == 6
         for k = 1:nz
-            datat[k] = spl_tinit(dataz[k])
-            dataq[k] = spl_qinit(dataz[k])
-            datau[k] = spl_uinit(dataz[k])
-            datav[k] = spl_vinit(dataz[k])
-            datap[k] = spl_pinit(dataz[k])
+            datat[k] = tinit_new(dataz[k])
+            dataq[k] = qinit_new(dataz[k])
+            datau[k] = uinit_new(dataz[k])
+            datav[k] = vinit_new(dataz[k])
+            datap[k] = pinit_new(dataz[k])
             if(dataz[k] > 14000.0)
                 dataq[k] = 0.0
             end
@@ -3329,8 +3374,12 @@ end
 function nse2d_sgs(::Val{dim}, ::Val{N}, ::Val{Ne_h}, ::Val{Ne_v}, mpicomm, ic, mesh, tend, iplot, visc;
                    meshwarp=(x...)->identity(x),
                    tout = 1, ArrType=Array, plotstep=0) where {dim, N, Ne_h, Ne_v}
+    
+    #Get a 1D array of the globbal vertical (y in 2D, z in 3D) coordinate BEFORE the grid is partitioned
+    vert_coord_1D = get_y_coordinate(mesh)
+    
     DFloat = typeof(tend)
-
+    
     mpirank = MPI.Comm_rank(mpicomm)
     mpisize = MPI.Comm_size(mpicomm)
 
@@ -3341,12 +3390,12 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, ::Val{Ne_h}, ::Val{Ne_v}, mpicomm, ic, 
     # Connect the mesh in parallel
     mpirank == 0 && println("[CPU] connecting mesh...")
     mesh = connectmesh(mpicomm, mesh...)
-
+    
     # Get the vmaps
     mpirank == 0 && println("[CPU] computing mappings...")
     (vmapM, vmapP) = mappings(N, mesh.elemtoelem, mesh.elemtoface,
                               mesh.elemtoordr)
-
+    
     # Create 1-D operators
     (ξ, ω) = lglpoints(DFloat, N)
     D = spectralderivative(ξ)
@@ -3367,13 +3416,14 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, ::Val{Ne_h}, ::Val{Ne_v}, mpicomm, ic, 
     sound_ini_interp = zeros(DFloat, Ne_v*N + 1, 10)
     if(_icase == 1201 || _icase == 1202)
         #Read sounding file:        
-        sound_ini_interp = interpolate_sounding(dim, N, Ne_v, vgeo)
+        sound_ini_interp = interpolate_sounding(mesh, vert_coord_1D, dim, N, Ne_v, vgeo)
         (nz, ~) = size(sound_ini_interp)
     end
+
     
     @inbounds for e = 1:nelem, i = 1:(N+1)^dim
         x, y  = vgeo[i, _x, e], vgeo[i, _y, e]
-        Qinit = ic(sound_ini_interp, x, y)
+        Qinit = ic(sound_ini_interp, vert_coord_1D, x, y)
         
         Q[i, _ρ, e]        = Qinit[3]
         Q[i, _U, e]        = Qinit[1]
@@ -3653,7 +3703,7 @@ end
 #
 # Chose a problem icase:
 #
-function ic(sound_ini_interp, dim, x...)
+function ic(sound_ini_interp, vert_coord_1D, dim, x...)
         # FIXME: Type generic?
         DFloat          = eltype(x)
         γ::DFloat       = _γ
@@ -3916,13 +3966,10 @@ function ic(sound_ini_interp, dim, x...)
                 z     = x[dim]
                 
                 # round off 2 decimal points
-                #z2test = real(int(100.0 * dataz))/100.0
-                #z1test = real(int(100.0 * z))/100.0
-                #z2test = ((100.0 * dataz))/100.0
-                #z1test = ((100.0 * z))/100.0
+                #####z2test = real(int(100.0 * dataz))/100.0    #F90 version
+                #####z1test = real(int(100.0 * z))/100.0        #F90 version
                 #z2test = Float64(floor(100.0 * dataz))/100.0
                 #z1test = Float64(floor(100.0 * z))/100.0
-
                 z2test = dataz
                 z1test = z                
                 if ( abs(z1test - z2test) <= 1.0e-4)
@@ -4071,12 +4118,10 @@ function ic(sound_ini_interp, dim, x...)
                 z     = x[dim]
                 
                 # round off 2 decimal points
-                #z2test = real(int(100.0 * dataz))/100.0
-                #z1test = real(int(100.0 * z))/100.0
-                #z2test = ((100.0 * dataz))/100.0
-                #z1test = ((100.0 * z))/100.0
-                z2test = Float64(floor(100.0 * dataz))/100.0
-                z1test = Float64(floor(100.0 * z))/100.0
+                ####z2test = real(int(100.0 * dataz))/100.0
+                ####z1test = real(int(100.0 * z))/100.0
+                #z2test = Float64(floor(100.0 * dataz))/100.0
+                #z1test = Float64(floor(100.0 * z))/100.0
 
                 if ( abs(z1test - z2test) <= 110)
                     # this way of extracting the corresponding height
@@ -4238,7 +4283,7 @@ end
 
 # {{{ main
 function main()
-    DFloat = Float64
+    DFloat = Float32
     
     # MPI.Init()
     MPI.Initialized() || MPI.Init()
@@ -4257,8 +4302,10 @@ function main()
     iplot=250
     Ne_h = 10
     Ne_v = 10
-    N  = 4
-    visc = 75
+    N    = 4
+    Np   = (Ne_h*N + 1)*(Ne_v*N + 1)
+    
+    visc = 2.5
     dim = _nsd
     hardware="cpu"
     if mpirank == 0
@@ -4267,20 +4314,20 @@ function main()
 
     #Mesh Generation
     mesh2D = brickmesh((range(_xmin; length=Ne_h+1, stop=_xmax),
-                    range(_ymin; length=Ne_v+1, stop=_ymax)),
-                   (true, false),
-                   part = mpirank+1, numparts = mpisize)
-
+                        range(_ymin; length=Ne_v+1, stop=_ymax)),
+                       (true, false),
+                       part = mpirank+1, numparts = mpisize)
+    
     #Call Solver
     if hardware == "cpu"
         mpirank == 0 && println("Running 2d (CPU)...")
-        nse2d_sgs(Val(dim), Val(N), Val(Ne_h), Val(Ne_v), mpicomm, (sound_ini_interp, x...)->ic(sound_ini_interp, dim, x...), mesh2D, time_final, iplot, visc;
+        nse2d_sgs(Val(dim), Val(N), Val(Ne_h), Val(Ne_v), mpicomm, (sound_ini_interp, vert_coord_1D , x...)->ic(sound_ini_interp, vert_coord_1D, dim, x...), mesh2D, time_final, iplot, visc;
                   ArrType=Array, tout = 10)
         mpirank == 0 && println()
     elseif hardware == "gpu"
         @hascuda begin
             mpirank == 0 && println("Running 2d (GPU)...")
-            nse2d_sgs(Val(dim), Val(N), Val(Ne_h), Val(Ne_v), mpicomm, (sound_ini_interp, x...)->ic(sound_ini_interp, dim, x...), mesh2D, time_final, iplot, visc;
+            nse2d_sgs(Val(dim), Val(N), Val(Ne_h), Val(Ne_v), mpicomm, (sound_ini_interp, vert_coord_1D , x...)->ic(sound_ini_interp, vert_coord_1D, dim, x...), mesh2D, time_final, iplot, visc;
                       ArrType=CuArray, tout = 10)
             mpirank == 0 && println()
         end

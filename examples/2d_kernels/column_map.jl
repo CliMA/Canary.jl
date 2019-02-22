@@ -5,8 +5,8 @@ export  intma_dg2d, intma_dg3d, intma_1d_dg, node_column2d, node_column3d
 # {{{
 #        intma for DG indexing
 #
-function intma_dg2d(i, k, e)
-
+function intma_dg2d(i, k, e, nglx, nglz)
+    
     intma_dg = (e-1) * nglz * nglx + (k-1) * nglx + (i-1) + 1
     
     return intma_dg
@@ -14,7 +14,7 @@ function intma_dg2d(i, k, e)
 end
 
 
-function intma_dg3d(i, j, k, e)
+function intma_dg3d(i, j, k, e, nglx, ngly, nglz)
 
     intma_dg = (e-1) * nglz * ngly * nglx + (k-1) * ngly * nglx + (j-1) * nglx + (i-1) + 1
 
@@ -22,14 +22,14 @@ function intma_dg3d(i, j, k, e)
     
 end
 
-function intma_1d_dg(k, e)
+function intma_1d_dg(k, e, nglz)
 
     return intma_1d_dg = (e - 1) * (nglz) + k
      
 end
 
 
-function node_column2d(nelz, nelem)
+function node_column2d(nelz, nelem, nglx, nglz)
     
     for e = 1:nelem
         
@@ -45,9 +45,9 @@ function node_column2d(nelz, nelem)
             ic = (ecol - 1) * nglx + i
             
             for k = 1:nglz
-                iz = intma_1d_dg(k, ie)
+                iz = intma_1d_dg(k, ie, nglz)
                 
-                node_column_dg[iz, ic] = intma_dg2d(i, k, el)
+                node_column_dg[iz, ic] = intma_dg2d(i, k, el, nglx, nglz)
                 
             end
         end
@@ -57,7 +57,7 @@ end
 
 
 
-function node_column3d(nelz, nelem)
+function node_column3d(nelz, nelem, nglx, ngly, nglz)
     
     for e = 1:nelem
         
@@ -74,9 +74,9 @@ function node_column3d(nelz, nelem)
                 ic = (ecol - 1) * ngly * nglx + (j - 1) * nglx + i
                 
                 for k = 1:nglz
-                    iz = intma_1d_dg(k, ie)
+                    iz = intma_1d_dg(k, ie, nglz)
                     
-                    node_column_dg[iz, ic] = intma_dg(i, j, k, el)
+                    node_column_dg[iz, ic] = intma_dg(i, j, k, el, nglx, ngly, nglz)
                     
                 end
             end
