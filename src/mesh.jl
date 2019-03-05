@@ -738,8 +738,9 @@ returns a connected mesh.  This returns a `NamedTuple` of:
 
 """
 function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
-                     faceconnections)
-  (d, nvert, nelem) = size(elemtocoord)
+                     faceconnections; dim = size(elemtocoord,1))
+  d = dim
+  (coorddim, nvert, nelem) = size(elemtocoord)
   nface, nfacevert = 2d, 2^(d-1)
 
   p = reshape(1:nvert, ntuple(j->2, d))
@@ -895,7 +896,7 @@ function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
   end
 
   # fill the ghost values in elemtocoord
-  newelemtocoord = similar(elemtocoord, d, nvert, nelem+nghost)
+  newelemtocoord = similar(elemtocoord, coorddim, nvert, nelem+nghost)
   newelemtobndy = similar(elemtobndy, nface, nelem+nghost)
 
   sendelemtocoord = elemtocoord[:,:,sendelems]
