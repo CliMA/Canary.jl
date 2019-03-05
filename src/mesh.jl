@@ -883,16 +883,27 @@ function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
   elemtoface = repeat(1:nface, 1, nelem+nghost)
   elemtoordr = ones(Int, nface, nelem+nghost)
 
-  for i = 1:last(size(B))
-    me, mf, mo = B[ME,i], B[MF,i], B[MO,i]
-    ne, nf, no = B[NE,i], B[NF,i], B[NO,i]
+  if d == 2
+    for i = 1:last(size(B))
+      me, mf, mo = B[ME,i], B[MF,i], B[MO,i]
+      ne, nf, no = B[NE,i], B[NF,i], B[NO,i]
 
-    elemtoelem[mf,me] = ne
-    elemtoface[mf,me] = nf
-    if no != 1 || mo != 1
-      error("TODO add support for other orientations")
+      elemtoelem[mf,me] = ne
+      elemtoface[mf,me] = nf
+      elemtoordr[mf,me] = (no == mo ? 1 : 2)
     end
-    elemtoordr[mf,me] = 1
+  else
+    for i = 1:last(size(B))
+      me, mf, mo = B[ME,i], B[MF,i], B[MO,i]
+      ne, nf, no = B[NE,i], B[NF,i], B[NO,i]
+
+      elemtoelem[mf,me] = ne
+      elemtoface[mf,me] = nf
+      if no != 1 || mo != 1
+        error("TODO add support for other orientations")
+      end
+      elemtoordr[mf,me] = 1
+    end
   end
 
   # fill the ghost values in elemtocoord
