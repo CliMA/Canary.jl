@@ -700,6 +700,17 @@ function vertsortandorder(a, b, c, d)
  elseif  s1 &&  s2 &&  s3 &&  s4 && !s5
    o = 8
  else
+    # FIXME: some possible orientations are missing since there are a total of
+    # 24. Missing orientations:
+    #=
+       d---c  d---c  b---c  a---d  c---b  d---a  a---b  b---a
+       |   |  |   |  |   |  |   |  |   |  |   |  |   |  |   |
+       a---b  b---a  a---d  b---c  d---a  c---b  d---c  c---d
+
+       c---b  d---b  b---d  b---c  c---a  d---a  a---d  a---c
+       |   |  |   |  |   |  |   |  |   |  |   |  |   |  |   |
+       a---d  a---c  c---a  d---a  b---d  b---c  c---b  d---b
+    =#
     error("Problem finding vertex ordering $((a,b,c,d))
             with flips $((s1,s2,s3,s4,s5))")
  end
