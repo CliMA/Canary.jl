@@ -700,6 +700,17 @@ function vertsortandorder(a, b, c, d)
  elseif  s1 &&  s2 &&  s3 &&  s4 && !s5
    o = 8
  else
+    # FIXME: some possible orientations are missing since there are a total of
+    # 24. Missing orientations:
+    #=
+       d---c  d---c  b---c  a---d  c---b  d---a  a---b  b---a
+       |   |  |   |  |   |  |   |  |   |  |   |  |   |  |   |
+       a---b  b---a  a---d  b---c  d---a  c---b  d---c  c---d
+
+       c---b  d---b  b---d  b---c  c---a  d---a  a---d  a---c
+       |   |  |   |  |   |  |   |  |   |  |   |  |   |  |   |
+       a---d  a---c  c---a  d---a  b---d  b---c  c---b  d---b
+    =#
     error("Problem finding vertex ordering $((a,b,c,d))
             with flips $((s1,s2,s3,s4,s5))")
  end
@@ -738,8 +749,9 @@ returns a connected mesh.  This returns a `NamedTuple` of:
 
 """
 function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
-                     faceconnections)
-  (d, nvert, nelem) = size(elemtocoord)
+                     faceconnections; dim = size(elemtocoord,1))
+  d = dim
+  (coorddim, nvert, nelem) = size(elemtocoord)
   nface, nfacevert = 2d, 2^(d-1)
 
   p = reshape(1:nvert, ntuple(j->2, d))
@@ -882,20 +894,31 @@ function connectmesh(comm::MPI.Comm, elemtovert, elemtocoord, elemtobndy,
   elemtoface = repeat(1:nface, 1, nelem+nghost)
   elemtoordr = ones(Int, nface, nelem+nghost)
 
-  for i = 1:last(size(B))
-    me, mf, mo = B[ME,i], B[MF,i], B[MO,i]
-    ne, nf, no = B[NE,i], B[NF,i], B[NO,i]
+  if d == 2
+    for i = 1:last(size(B))
+      me, mf, mo = B[ME,i], B[MF,i], B[MO,i]
+      ne, nf, no = B[NE,i], B[NF,i], B[NO,i]
 
-    elemtoelem[mf,me] = ne
-    elemtoface[mf,me] = nf
-    if no != 1 || mo != 1
-      error("TODO add support for other orientations")
+      elemtoelem[mf,me] = ne
+      elemtoface[mf,me] = nf
+      elemtoordr[mf,me] = (no == mo ? 1 : 2)
     end
-    elemtoordr[mf,me] = 1
+  else
+    for i = 1:last(size(B))
+      me, mf, mo = B[ME,i], B[MF,i], B[MO,i]
+      ne, nf, no = B[NE,i], B[NF,i], B[NO,i]
+
+      elemtoelem[mf,me] = ne
+      elemtoface[mf,me] = nf
+      if no != 1 || mo != 1
+        error("TODO add support for other orientations")
+      end
+      elemtoordr[mf,me] = 1
+    end
   end
 
   # fill the ghost values in elemtocoord
-  newelemtocoord = similar(elemtocoord, d, nvert, nelem+nghost)
+  newelemtocoord = similar(elemtocoord, coorddim, nvert, nelem+nghost)
   newelemtobndy = similar(elemtobndy, nface, nelem+nghost)
 
   sendelemtocoord = elemtocoord[:,:,sendelems]
