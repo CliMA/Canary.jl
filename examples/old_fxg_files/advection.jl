@@ -1051,7 +1051,7 @@ function advection(mpicomm, ic, ::Val{N}, brickN::NTuple{dim, Int}, tend;
   stats[3] = L2errorsquared(Val(dim), Val(N), Q, vgeo, mesh.realelems, ic,
                             tend)
 
-  stats = sqrt.(MPI.allreduce(stats, MPI.SUM, mpicomm))
+  stats = sqrt.(MPI.Allreduce(stats, MPI.SUM, mpicomm))
 
   if  mpirank == 0
     @show eng = stats[1]

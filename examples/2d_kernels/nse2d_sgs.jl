@@ -1367,13 +1367,13 @@ function compute_viscosity_sgs(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs, Q, vgeo
     for s=1:nstate
         Q_mean_global[s] = Q_mean_global[s]/(nelem*Np)
     end
-    Q_mean_global=MPI.allreduce(Q_mean_global, MPI.SUM, mpicomm)/mpisize
+    Q_mean_global=MPI.Allreduce(Q_mean_global, MPI.SUM, mpicomm)/mpisize
 
     #Compute Infinity/Max norm of (Q-Q_mean_global)
     @inbounds for e = 1:nelem, s=1:nstate, i = 1:Np
         ΔQ_global[s]=max( ΔQ_global[s], abs( Q[i, s, e] - Q_mean_global[s] ) )
     end
-    ΔQ_global=MPI.allreduce(ΔQ_global, MPI.MAX, mpicomm)
+    ΔQ_global=MPI.Allreduce(ΔQ_global, MPI.MAX, mpicomm)
 
     #Loop through elements
     @inbounds for e = 1:nelem
@@ -1531,13 +1531,13 @@ function compute_viscosity_sgs_working(::Val{dim}, ::Val{N},  visc_sgs, rhs_sgs,
     for s=1:nstate
         Q_mean_global[s] = Q_mean_global[s]/(nelem*Np)
     end
-    Q_mean_global=MPI.allreduce(Q_mean_global, MPI.SUM, mpicomm)/mpisize
+    Q_mean_global=MPI.Allreduce(Q_mean_global, MPI.SUM, mpicomm)/mpisize
 
     #Compute Infinity/Max norm of (Q-Q_mean_global)
     @inbounds for e = 1:nelem, s=1:nstate, i = 1:Np
         ΔQ_global[s]=max( ΔQ_global[s], abs( Q[i, s, e] - Q_mean_global[s] ) )
     end
-    ΔQ_global=MPI.allreduce(ΔQ_global, MPI.MAX, mpicomm)
+    ΔQ_global=MPI.Allreduce(ΔQ_global, MPI.MAX, mpicomm)
 
     #Loop through elements
     @inbounds for e = 1:nelem
@@ -3067,7 +3067,7 @@ function nse2d_sgs(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
     mpirank == 0 && println("[CPU] computing final energy...")
     stats[2] = L2energysquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems)
 
-    stats = sqrt.(MPI.allreduce(stats, MPI.SUM, mpicomm))
+    stats = sqrt.(MPI.Allreduce(stats, MPI.SUM, mpicomm))
 
     if  mpirank == 0
         @show eng0 = stats[1]

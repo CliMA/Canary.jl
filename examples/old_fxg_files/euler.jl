@@ -1286,7 +1286,7 @@ function euler(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend;
   mpirank == 0 && println("[CPU] computing final energy...")
   stats[2] = L2energysquared(Val(dim), Val(N), Q, vgeo, mesh.realelems)
 
-  stats = sqrt.(MPI.allreduce(stats, MPI.SUM, mpicomm))
+  stats = sqrt.(MPI.Allreduce(stats, MPI.SUM, mpicomm))
 
   if  mpirank == 0
     @show eng0 = stats[1]

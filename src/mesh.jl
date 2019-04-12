@@ -114,8 +114,8 @@ function centroidtocode(comm::MPI.Comm, elemtocorner; coortocode=hilbertcode,
   centroidmin = (nelem > 0) ? minimum(centroids, dims=3) : fill(typemax(T),d)
   centroidmax = (nelem > 0) ? maximum(centroids, dims=3) : fill(typemin(T),d)
 
-  centroidmin = MPI.allreduce(centroidmin, MPI.MIN, comm)
-  centroidmax = MPI.allreduce(centroidmax, MPI.MAX, comm)
+  centroidmin = MPI.Allreduce(centroidmin, MPI.MIN, comm)
+  centroidmax = MPI.Allreduce(centroidmax, MPI.MAX, comm)
   centroidsize = centroidmax - centroidmin
 
   # Fix centroidsize to be nonzero.  It can be zero for a couple of reasons.
