@@ -1749,7 +1749,7 @@ function LDG(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, iplot, visc;
     stats[2] = L2energysquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems)
     stats[3] = L2errorsquared(Val(dim), Val(N), Q_temp, vgeo, mesh.realelems, Qexact,tend)
 
-    stats = sqrt.(MPI.allreduce(stats, MPI.SUM, mpicomm))
+    stats = sqrt.(MPI.Allreduce(stats, MPI.SUM, mpicomm))
 
     if  mpirank == 0
         @show eng0 = stats[1]
