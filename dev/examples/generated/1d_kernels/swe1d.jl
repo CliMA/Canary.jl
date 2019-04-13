@@ -834,7 +834,7 @@ function swe(::Val{dim}, ::Val{N}, mpicomm, ic, mesh, tend, gravity, δnl,
     stats[3] = L2errorsquared(Val(dim), Val(N), Q, vgeo, mesh.realelems, Qexact,
                               tend)
 
-    stats = sqrt.(MPI.allreduce(stats, MPI.SUM, mpicomm))
+    stats = sqrt.(MPI.Allreduce(stats, MPI.SUM, mpicomm))
 
     if  mpirank == 0
         @show eng0 = stats[1]
