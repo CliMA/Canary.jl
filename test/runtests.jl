@@ -1,41 +1,28 @@
-using Canary
 using Test
-using MPI
-using Logging
+using Pkg
 
-MPI.Init()
+function include_test(_module)
+    println("Starting tests for $_module")
+    t = @elapsed include(joinpath(_module, "runtests.jl"))
+    println("Completed tests for $_module, $(round(Int, t)) seconds elapsed")
+    return nothing
+end
 
-include("test_mesh.jl")
-include("test_operators.jl")
-include("test_metric.jl")
 
-MPI.Finalize()
+@testset "Canary" begin
+    all_tests = isempty(ARGS) || "all" in ARGS ? true : false
 
-@testset "MPI Jobs" begin
-  # The code below was modified from the MPI.jl file runtests.jl
-  #
-  # Code coverage command line options; must correspond to src/julia.h
-  # and src/ui/repl.c
-  JL_LOG_NONE = 0
-  JL_LOG_USER = 1
-  JL_LOG_ALL = 2
-  coverage_opts = Dict{Int, String}(JL_LOG_NONE => "none",
-                                    JL_LOG_USER => "user",
-                                    JL_LOG_ALL => "all")
-  coverage_opt = coverage_opts[Base.JLOptions().code_coverage]
-  testdir = dirname(@__FILE__)
+    function has_submodule(sm)
+        any(ARGS) do a
+            a == sm && return true
+            first(split(a, '/')) == sm && return true
+            return false
+        end
+    end
 
-  for (n, f) in [(3, "mpi_test_centriod.jl")
-                 (5, "mpi_test_connect_1d.jl")
-                 (2, "mpi_test_connect_ell.jl")
-                 (3, "mpi_test_connect.jl")
-                 (3, "mpi_test_getpartition.jl")
-                 (5, "mpi_test_getpartition.jl")
-                 (3, "mpi_test_partition.jl")
-                 (1, "mpi_test_sortcolumns.jl")
-                 (4, "mpi_test_sortcolumns.jl")]
-    cmd =  `mpiexec -n $n $(Base.julia_cmd()) --startup-file=no --project=$(joinpath(testdir, "..")) --code-coverage=$coverage_opt $(joinpath(testdir, f))`
-    @info "Running MPI test..." n f cmd
-    @test (run(cmd); true)
-  end
+    for submodule in ["Mesh", "Elements"]
+        if all_tests || has_submodule(submodule) || "Canary" in ARGS
+            include_test(submodule)
+        end
+    end
 end
