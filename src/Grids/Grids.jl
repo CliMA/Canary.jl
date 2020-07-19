@@ -3,8 +3,9 @@ module Grids
 include(joinpath(@__DIR__, "Meshes", "Meshes.jl"))
 include(joinpath(@__DIR__, "Elements", "Elements.jl"))
 
-import .Meshes: AbstractTopology
-import .Elements
+using Reexport
+@reexport using .Meshes
+using .Elements
 
 using MPI
 using LinearAlgebra
@@ -153,7 +154,7 @@ function mappings(N, elemtoelem, elemtoface, elemtoordr)
         end
     end
 
-    (vmap⁻, vmap⁺)
+    return (vmap⁻, vmap⁺)
 end
 # }}}
 
@@ -279,7 +280,7 @@ function computegeometry(
     else
         error("dim $dim not implemented")
     end
-    (vgeo, sgeo)
+    return (vgeo, sgeo)
 end
 # }}}
 
@@ -333,12 +334,12 @@ function indefinite_integral_interpolation_matrix(r, ω)
         # row of the matrix we have computed
         I∫[n, :] .= (Δ * ω' * In)[:]
     end
-    I∫
+    return I∫
 end
 # }}}
 
-include("discontinuous_spectral_grid.jl")
-include("geometry.jl")
+include("dgsem_grid.jl")
+include("local_geometry.jl")
 
 include("Grids_kernels.jl")
 

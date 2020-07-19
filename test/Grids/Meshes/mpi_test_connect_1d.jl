@@ -1,6 +1,6 @@
 using Test
 using MPI
-using Canary.Mesh
+using Canary.Grids.Meshes
 
 function main()
     MPI.Init()

@@ -1,3 +1,4 @@
+
 module Elements
 
 import GaussQuadrature
@@ -11,7 +12,7 @@ Gauss-Legendre-Lobatto quadrature rule of type `T`
 """
 function lglpoints(::Type{T}, N::Integer) where {T <: AbstractFloat}
     @assert N ≥ 1
-    GaussQuadrature.legendre(T, N + 1, GaussQuadrature.both)
+    return GaussQuadrature.legendre(T, N + 1, GaussQuadrature.both)
 end
 
 """
@@ -22,7 +23,7 @@ Gauss-Legendre quadrature rule of type `T`
 """
 function lgpoints(::Type{T}, N::Integer) where {T <: AbstractFloat}
     @assert N ≥ 1
-    GaussQuadrature.legendre(T, N + 1, GaussQuadrature.neither)
+    return GaussQuadrature.legendre(T, N + 1, GaussQuadrature.neither)
 end
 
 """
@@ -47,14 +48,14 @@ function baryweights(r::AbstractVector{T}) where {T}
         end
         wb[j] = T(1) / wb[j]
     end
-    wb
+    return wb
 end
 
 """
-    spectralderivative(r::AbstractVector{T},
-                       wb=baryweights(r)::AbstractVector{T}) where T
+    derivative(r::AbstractVector{T},
+               wb=baryweights(r)::AbstractVector{T}) where T
 
-returns the spectral differentiation matrix for a polynomial defined on the
+returns the differentiation matrix for a polynomial defined on the
 points `r` with associated barycentric weights `wb`
 
 Reference:
@@ -62,7 +63,7 @@ Reference:
   SIAM Review 46 (2004), pp. 501-517.
   <https://doi.org/10.1137/S0036144502417715>
 """
-function spectralderivative(
+function derivative(
     r::AbstractVector{T},
     wb = baryweights(r)::AbstractVector{T},
 ) where {T}
@@ -83,7 +84,7 @@ function spectralderivative(
             end
         end
     end
-    D
+    return D
 end
 
 """
@@ -119,7 +120,7 @@ function interpolationmatrix(
         d = sum(I[k, :])
         I[k, :] = I[k, :] / d
     end
-    I
+    return I
 end
 
 end # module

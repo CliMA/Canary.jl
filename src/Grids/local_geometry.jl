@@ -38,7 +38,7 @@ function LocalGeometry(
         vgeo[n, _ξ3x1, e] vgeo[n, _ξ3x2, e] vgeo[n, _ξ3x3, e]
     ]
 
-    LocalGeometry(polynomial, coord, invJ)
+    return LocalGeometry(polynomial, coord, invJ)
 end
 
 """
@@ -52,7 +52,7 @@ function resolutionmetric(
     g::LocalGeometry{T, Val{polyorder}},
 ) where {T, polyorder}
     S = polyorder * g.invJ / 2
-    S' * S # TODO: return an eigendecomposition / symmetric object?
+    return S' * S # TODO: return an eigendecomposition / symmetric object?
 end
 
 """
@@ -61,5 +61,5 @@ end
 The effective grid resolution at the point.
 """
 function lengthscale(g::LocalGeometry{T, Val{polyorder}}) where {T, polyorder}
-    2 / (cbrt(det(g.invJ)) * polyorder)
+    return 2 / (cbrt(det(g.invJ)) * polyorder)
 end

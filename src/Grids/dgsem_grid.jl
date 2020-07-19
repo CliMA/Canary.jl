@@ -91,7 +91,7 @@ struct DiscontinuousSpectralElementGrid{
         N = polynomialorder
         (ξ, ω) = Elements.lglpoints(FloatType, N)
         Imat = indefinite_integral_interpolation_matrix(ξ, ω)
-        D = Elements.spectralderivative(ξ)
+        D = Elements.derivative(ξ)
 
         (vmap⁻, vmap⁺) = mappings(
             N,
@@ -144,7 +144,7 @@ struct DiscontinuousSpectralElementGrid{
         DAI3 = typeof(vmap⁻)
         TOP = typeof(topology)
 
-        new{
+        return new{
             FloatType,
             dim,
             N,
@@ -188,7 +188,7 @@ function referencepoints(
     ::DiscontinuousSpectralElementGrid{T, dim, N},
 ) where {T, dim, N}
     ξ, _ = Elements.lglpoints(T, N)
-    ξ
+    return ξ
 end
 
 """
@@ -243,7 +243,7 @@ function get_z(
     grid::DiscontinuousSpectralElementGrid{T, dim, N},
     z_scale = 1,
 ) where {T, dim, N}
-    return reshape(grid.vgeo[(1:((N + 1)^2):((N + 1)^3)), _x3, :], :) * z_scale
+    reshape(grid.vgeo[(1:((N + 1)^2):((N + 1)^3)), _x3, :], :) * z_scale
 end
 
 function Base.getproperty(G::DiscontinuousSpectralElementGrid, s::Symbol)

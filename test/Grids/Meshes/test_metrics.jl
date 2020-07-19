@@ -1,5 +1,5 @@
 using Canary
-using Canary.Mesh
+using Canary.Grids.Meshes
 using Test
 
 const VGEO2D = (x1 = 1, x2 = 2, J = 3, ξ1x1 = 4, ξ2x1 = 5, ξ1x2 = 6, ξ2x2 = 7)
@@ -28,8 +28,8 @@ const SGEO3D = (sJ = 1, n1 = 2, n2 = 3, n3 = 4)
         let
             N = 4
 
-            r, w = Canary.Elements.lglpoints(T, N)
-            D = Canary.Elements.spectralderivative(r)
+            r, w = Canary.Grids.Elements.lglpoints(T, N)
+            D = Canary.Grids.Elements.derivative(r)
             Nq = N + 1
 
             d = 1
@@ -39,11 +39,11 @@ const SGEO3D = (sJ = 1, n1 = 2, n2 = 3, n3 = 4)
             e2c[:, :, 2] = [0 10]
             nelem = size(e2c, 3)
 
-            (x1,) = Canary.Mesh.creategrid1d(e2c, r)
+            (x1,) = Canary.Grids.Meshes.creategrid1d(e2c, r)
             @test x1[:, 1] ≈ (r .- 1) / 2
             @test x1[:, 2] ≈ 5 * (r .+ 1)
 
-            metric = Canary.Mesh.computemetric(x1, D)
+            metric = Canary.Grids.Meshes.computemetric(x1, D)
             @test metric.J[:, 1] ≈ ones(T, Nq) / 2
             @test metric.J[:, 2] ≈ 5 * ones(T, Nq)
             @test metric.ξ1x1[:, 1] ≈ 2 * ones(T, Nq)
@@ -64,8 +64,8 @@ end
         let
             N = 2
 
-            r, w = Canary.Elements.lglpoints(T, N)
-            D = Canary.Elements.spectralderivative(r)
+            r, w = Canary.Grids.Elements.lglpoints(T, N)
+            D = Canary.Grids.Elements.derivative(r)
             Nq = N + 1
 
             d = 2
@@ -131,8 +131,8 @@ end
 
             vgeo = Array{T, 4}(undef, Nq, Nq, length(VGEO2D), nelem)
             sgeo = Array{T, 4}(undef, Nq, nfaces, length(SGEO2D), nelem)
-            Canary.Mesh.creategrid!(ntuple(j -> (@view vgeo[:, :, j, :]), d)..., e2c, r)
-            Canary.Mesh.computemetric!(
+            Canary.Grids.Meshes.creategrid!(ntuple(j -> (@view vgeo[:, :, j, :]), d)..., e2c, r)
+            Canary.Grids.Meshes.computemetric!(
                 ntuple(j -> (@view vgeo[:, :, j, :]), length(VGEO2D))...,
                 ntuple(j -> (@view sgeo[:, :, j, :]), length(SGEO2D))...,
                 D,
@@ -170,8 +170,8 @@ end
             fx2ξ1(r, s) = -4 .* r .^ 3 .* (-1 .+ s) .+ 2 .* r .* s .* (1 .+ s)
             fx2ξ2(r, s) = 10 .- r .^ 4 .+ r .^ 2 .* (1 .+ 2 .* s)
 
-            r, w = Canary.Elements.lglpoints(T, N)
-            D = Canary.Elements.spectralderivative(r)
+            r, w = Canary.Grids.Elements.lglpoints(T, N)
+            D = Canary.Grids.Elements.derivative(r)
             Nq = N + 1
 
             d = 2
@@ -183,7 +183,7 @@ end
             vgeo = Array{T, 4}(undef, Nq, Nq, length(VGEO2D), nelem)
             sgeo = Array{T, 4}(undef, Nq, nfaces, length(SGEO2D), nelem)
 
-            Canary.Mesh.creategrid!(ntuple(j -> (@view vgeo[:, :, j, :]), d)..., e2c, r)
+            Canary.Grids.Meshes.creategrid!(ntuple(j -> (@view vgeo[:, :, j, :]), d)..., e2c, r)
             x1 = @view vgeo[:, :, VGEO2D.x1, :]
             x2 = @view vgeo[:, :, VGEO2D.x2, :]
 
@@ -192,7 +192,7 @@ end
             J = x1ξ1 .* x2ξ2 - x1ξ2 .* x2ξ1
             foreach(j -> (x1[j], x2[j]) = f(x1[j], x2[j]), 1:length(x1))
 
-            Canary.Mesh.computemetric!(
+            Canary.Grids.Meshes.computemetric!(
                 ntuple(j -> (@view vgeo[:, :, j, :]), length(VGEO2D))...,
                 ntuple(j -> (@view sgeo[:, :, j, :]), length(SGEO2D))...,
                 D,
@@ -235,8 +235,8 @@ end
             fx2ξ1(r, s) = -4 .* r .^ 3 .* (-1 .+ s) .+ 2 .* r .* s .* (1 .+ s)
             fx2ξ2(r, s) = 10 .- r .^ 4 .+ r .^ 2 .* (1 .+ 2 .* s)
 
-            r, w = Canary.Elements.lglpoints(T, N)
-            D = Canary.Elements.spectralderivative(r)
+            r, w = Canary.Grids.Elements.lglpoints(T, N)
+            D = Canary.Grids.Elements.derivative(r)
             Nq = N + 1
 
             d = 2
@@ -245,14 +245,14 @@ end
             e2c[:, :, 1] = [-1 1 -1 1; -1 -1 1 1]
             nelem = size(e2c, 3)
 
-            (x1, x2) = Canary.Mesh.creategrid2d(e2c, r)
+            (x1, x2) = Canary.Grids.Meshes.creategrid2d(e2c, r)
 
             (x1ξ1, x1ξ2, x2ξ1, x2ξ2) =
                 (fx1ξ1(x1, x2), fx1ξ2(x1, x2), fx2ξ1(x1, x2), fx2ξ2(x1, x2))
             J = x1ξ1 .* x2ξ2 - x1ξ2 .* x2ξ1
             foreach(j -> (x1[j], x2[j]) = f(x1[j], x2[j]), 1:length(x1))
 
-            metric = Canary.Mesh.computemetric(x1, x2, D)
+            metric = Canary.Grids.Meshes.computemetric(x1, x2, D)
             @test J ≈ metric.J
             @test metric.ξ1x1 ≈ x2ξ2 ./ J
             @test metric.ξ2x1 ≈ -x2ξ1 ./ J
@@ -294,8 +294,8 @@ end
         fx2ξ1(r, s) = -4 .* r .^ 3 .* (-1 .+ s) .+ 2 .* r .* s .* (1 .+ s)
         fx2ξ2(r, s) = 10 .- r .^ 4 .+ r .^ 2 .* (1 .+ 2 .* s)
 
-        r, w = Canary.Elements.lglpoints(T, N)
-        D = Canary.Elements.spectralderivative(r)
+        r, w = Canary.Grids.Elements.lglpoints(T, N)
+        D = Canary.Grids.Elements.derivative(r)
         Nq = N + 1
 
         d = 2
@@ -307,13 +307,13 @@ end
         vgeo = Array{T, 4}(undef, Nq, Nq, length(VGEO2D), nelem)
         sgeo = Array{T, 4}(undef, Nq, nfaces, length(SGEO2D), nelem)
 
-        Canary.Mesh.creategrid!(ntuple(j -> (@view vgeo[:, :, j, :]), d)..., e2c, r)
+        Canary.Grids.Meshes.creategrid!(ntuple(j -> (@view vgeo[:, :, j, :]), d)..., e2c, r)
         x1 = @view vgeo[:, :, VGEO2D.x1, :]
         x2 = @view vgeo[:, :, VGEO2D.x2, :]
 
         foreach(j -> (x1[j], x2[j]) = f(x1[j], x2[j]), 1:length(x1))
 
-        Canary.Mesh.computemetric!(
+        Canary.Grids.Meshes.computemetric!(
             ntuple(j -> (@view vgeo[:, :, j, :]), length(VGEO2D))...,
             ntuple(j -> (@view sgeo[:, :, j, :]), length(SGEO2D))...,
             D,
@@ -348,8 +348,8 @@ end
         let
             N = 2
 
-            r, w = Canary.Elements.lglpoints(T, N)
-            D = Canary.Elements.spectralderivative(r)
+            r, w = Canary.Grids.Elements.lglpoints(T, N)
+            D = Canary.Grids.Elements.derivative(r)
             Nq = N + 1
 
             d = 3
@@ -425,12 +425,12 @@ end
 
             vgeo = Array{T, 5}(undef, Nq, Nq, Nq, length(VGEO3D), nelem)
             sgeo = Array{T, 4}(undef, Nq^2, nfaces, length(SGEO3D), nelem)
-            Canary.Mesh.creategrid!(
+            Canary.Grids.Meshes.creategrid!(
                 ntuple(j -> (@view vgeo[:, :, :, j, :]), d)...,
                 e2c,
                 r,
             )
-            Canary.Mesh.computemetric!(
+            Canary.Grids.Meshes.computemetric!(
                 ntuple(j -> (@view vgeo[:, :, :, j, :]), length(VGEO3D))...,
                 ntuple(j -> (@view sgeo[:, :, j, :]), length(SGEO3D))...,
                 D,
@@ -504,8 +504,8 @@ end
         let
             N = 2
 
-            r, w = Canary.Elements.lglpoints(T, N)
-            D = Canary.Elements.spectralderivative(r)
+            r, w = Canary.Grids.Elements.lglpoints(T, N)
+            D = Canary.Grids.Elements.derivative(r)
             Nq = N + 1
 
             d = 3
@@ -583,12 +583,12 @@ end
 
             vgeo = Array{T, 5}(undef, Nq, Nq, Nq, length(VGEO3D), nelem)
             sgeo = Array{T, 4}(undef, Nq^2, nfaces, length(SGEO3D), nelem)
-            Canary.Mesh.creategrid!(
+            Canary.Grids.Meshes.creategrid!(
                 ntuple(j -> (@view vgeo[:, :, :, j, :]), d)...,
                 e2c,
                 r,
             )
-            Canary.Mesh.computemetric!(
+            Canary.Grids.Meshes.computemetric!(
                 ntuple(j -> (@view vgeo[:, :, :, j, :]), length(VGEO3D))...,
                 ntuple(j -> (@view sgeo[:, :, j, :]), length(SGEO3D))...,
                 D,
@@ -642,8 +642,8 @@ end
         let
             N = 9
 
-            r, w = Canary.Elements.lglpoints(T, N)
-            D = Canary.Elements.spectralderivative(r)
+            r, w = Canary.Grids.Elements.lglpoints(T, N)
+            D = Canary.Grids.Elements.derivative(r)
             Nq = N + 1
 
             d = 3
@@ -659,7 +659,7 @@ end
 
             vgeo = Array{T, 5}(undef, Nq, Nq, Nq, length(VGEO3D), nelem)
             sgeo = Array{T, 4}(undef, Nq^2, nfaces, length(SGEO3D), nelem)
-            Canary.Mesh.creategrid!(
+            Canary.Grids.Meshes.creategrid!(
                 ntuple(j -> (@view vgeo[:, :, :, j, :]), d)...,
                 e2c,
                 r,
@@ -700,7 +700,7 @@ end
                 1:length(x1),
             )
 
-            Canary.Mesh.computemetric!(
+            Canary.Grids.Meshes.computemetric!(
                 ntuple(j -> (@view vgeo[:, :, :, j, :]), length(VGEO3D))...,
                 ntuple(j -> (@view sgeo[:, :, j, :]), length(SGEO3D))...,
                 D,
@@ -797,8 +797,8 @@ end
         let
             N = 9
 
-            r, w = Canary.Elements.lglpoints(T, N)
-            D = Canary.Elements.spectralderivative(r)
+            r, w = Canary.Grids.Elements.lglpoints(T, N)
+            D = Canary.Grids.Elements.derivative(r)
             Nq = N + 1
 
             d = 3
@@ -812,7 +812,7 @@ end
 
             nelem = size(e2c, 3)
 
-            (x1, x2, x3) = Canary.Mesh.creategrid3d(e2c, r)
+            (x1, x2, x3) = Canary.Grids.Meshes.creategrid3d(e2c, r)
 
             (x1ξ1, x1ξ2, x1ξ3, x2ξ1, x2ξ2, x2ξ3, x3ξ1, x3ξ2, x3ξ3) = (
                 fx1ξ1(x1, x2, x3),
@@ -846,7 +846,7 @@ end
                 1:length(x1),
             )
 
-            metric = Canary.Mesh.computemetric(x1, x2, x3, D)
+            metric = Canary.Grids.Meshes.computemetric(x1, x2, x3, D)
 
             @test metric.J ≈ J
             @test metric.ξ1x1 ≈ ξ1x1
@@ -926,8 +926,8 @@ end
         let
             N = 5
 
-            r, w = Canary.Elements.lglpoints(T, N)
-            D = Canary.Elements.spectralderivative(r)
+            r, w = Canary.Grids.Elements.lglpoints(T, N)
+            D = Canary.Grids.Elements.derivative(r)
             Nq = N + 1
 
             d = 3
@@ -943,7 +943,7 @@ end
 
             vgeo = Array{T, 5}(undef, Nq, Nq, Nq, length(VGEO3D), nelem)
             sgeo = Array{T, 4}(undef, Nq^2, nfaces, length(SGEO3D), nelem)
-            Canary.Mesh.creategrid!(
+            Canary.Grids.Meshes.creategrid!(
                 ntuple(j -> (@view vgeo[:, :, :, j, :]), d)...,
                 e2c,
                 r,
@@ -957,7 +957,7 @@ end
                 1:length(x1),
             )
 
-            Canary.Mesh.computemetric!(
+            Canary.Grids.Meshes.computemetric!(
                 ntuple(j -> (@view vgeo[:, :, :, j, :]), length(VGEO3D))...,
                 ntuple(j -> (@view sgeo[:, :, j, :]), length(SGEO3D))...,
                 D,

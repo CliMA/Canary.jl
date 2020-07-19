@@ -1,7 +1,7 @@
 using Test
 using MPI
 using Canary
-using Canary.Mesh
+using Canary.Grids.Meshes
 using Random
 
 function main()
@@ -18,14 +18,14 @@ function main()
 
     bs = [
         (i == 1) ? (1:0) :
-        Canary.Mesh.linearpartition(Nelemtotal, i - 1, csize - 1)
+        Canary.Grids.Meshes.linearpartition(Nelemtotal, i - 1, csize - 1)
         for i in 1:csize
     ]
-    as = [Canary.Mesh.linearpartition(Nelemtotal, i, csize) for i in 1:csize]
+    as = [Canary.Grids.Meshes.linearpartition(Nelemtotal, i, csize) for i in 1:csize]
 
     codeb = globalcode[bs[crank + 1]]
 
-    (so, ss, rs) = Canary.Mesh.getpartition(comm, codeb)
+    (so, ss, rs) = Canary.Grids.Meshes.getpartition(comm, codeb)
 
     codeb = codeb[so]
     codec = []

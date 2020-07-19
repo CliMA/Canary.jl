@@ -16,10 +16,10 @@ using Test
 
     N = 6
     for test_type in (Float32, Float64, BigFloat)
-        r, w = Canary.Elements.lglpoints(test_type, N)
-        D = Canary.Elements.spectralderivative(r)
+        r, w = Canary.Grids.Elements.lglpoints(test_type, N)
+        D = Canary.Grids.Elements.derivative(r)
         x = LinRange{test_type}(-1, 1, 101)
-        I = Canary.Elements.interpolationmatrix(r, x)
+        I = Canary.Grids.Elements.interpolationmatrix(r, x)
 
         @test sum(P5(r) .^ 2 .* w) ≈ IPN(test_type, 5)
         @test D * P6(r) ≈ DP6(r)
@@ -27,8 +27,8 @@ using Test
     end
 
     for test_type in (Float32, Float64, BigFloat)
-        r, w = Canary.Elements.lgpoints(test_type, N)
-        D = Canary.Elements.spectralderivative(r)
+        r, w = Canary.Grids.Elements.lgpoints(test_type, N)
+        D = Canary.Grids.Elements.derivative(r)
 
         @test sum(P5(r) .^ 2 .* w) ≈ IPN(test_type, 5)
         @test sum(P6(r) .^ 2 .* w) ≈ IPN(test_type, 6)

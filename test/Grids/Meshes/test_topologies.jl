@@ -1,13 +1,13 @@
 using Test
 using Canary
-using Canary.Mesh
+using Canary.Grids.Meshes
 using Combinatorics
 using MPI
 
 MPI.Initialized() || MPI.Init()
 
 @testset "cubedshellwarp tests" begin
-    import Canary.Mesh: cubedshellwarp
+    import Canary.Grids.Meshes: cubedshellwarp
 
     @testset "check radius" begin
         @test hypot(cubedshellwarp(3.0, -2.2, 1.3)...) ≈ 3.0 rtol = eps()
@@ -56,7 +56,7 @@ MPI.Initialized() || MPI.Init()
 end
 
 @testset "cubedshellunwarp" begin
-    import Canary.Mesh: cubedshellwarp, cubedshellunwarp
+    import Canary.Grids.Meshes: cubedshellwarp, cubedshellunwarp
 
     for u in permutations([3.0, 2.999999999, 1.3])
         @test all(cubedshellunwarp(cubedshellwarp(u...)...) .≈ u)
@@ -190,11 +190,11 @@ end
         comm = MPI.COMM_SELF
         for px in (true, false)
             topology = BrickTopology(comm, (0:10,), periodicity = (px,))
-            @test Canary.Mesh.hasboundary(topology) == !px
+            @test Canary.Grids.Meshes.hasboundary(topology) == !px
         end
         for py in (true, false), px in (true, false)
             topology = BrickTopology(comm, (0:10, 0:3), periodicity = (px, py))
-            @test Canary.Mesh.hasboundary(topology) == !(px && py)
+            @test Canary.Grids.Meshes.hasboundary(topology) == !(px && py)
         end
         for pz in (true, false), py in (true, false), px in (true, false)
             topology = BrickTopology(
@@ -202,7 +202,7 @@ end
                 (0:10, 0:3, -1:3),
                 periodicity = (px, py, pz),
             )
-            @test Canary.Mesh.hasboundary(topology) == !(px && py && pz)
+            @test Canary.Grids.Meshes.hasboundary(topology) == !(px && py && pz)
         end
     end
 end
@@ -266,7 +266,7 @@ end
         for py in (true, false), px in (true, false)
             topology =
                 StackedBrickTopology(comm, (0:10, 0:3), periodicity = (px, py))
-            @test Canary.Mesh.hasboundary(topology) == !(px && py)
+            @test Canary.Grids.Meshes.hasboundary(topology) == !(px && py)
         end
         for pz in (true, false), py in (true, false), px in (true, false)
             topology = StackedBrickTopology(
@@ -274,17 +274,17 @@ end
                 (0:10, 0:3, -1:3),
                 periodicity = (px, py, pz),
             )
-            @test Canary.Mesh.hasboundary(topology) == !(px && py && pz)
+            @test Canary.Grids.Meshes.hasboundary(topology) == !(px && py && pz)
         end
     end
 end
 
 @testset "StackedCubedSphereTopology tests" begin
     topology = StackedCubedSphereTopology(MPI.COMM_SELF, 3, 1.0:3.0)
-    @test Canary.Mesh.hasboundary(topology)
+    @test Canary.Grids.Meshes.hasboundary(topology)
 end
 
 @testset "CubedShellTopology tests" begin
     topology = CubedShellTopology(MPI.COMM_SELF, 3, Float64)
-    @test !Canary.Mesh.hasboundary(topology)
+    @test !Canary.Grids.Meshes.hasboundary(topology)
 end

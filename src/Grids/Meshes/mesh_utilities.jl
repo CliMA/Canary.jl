@@ -147,7 +147,7 @@ function centroidtocode(
         code[:, e] = coortocode(X)
     end
 
-    code
+    return code
 end
 
 """
@@ -339,7 +339,7 @@ function brickmesh(
         end
     end
 
-    (elemtovert, elemtocoord, elemtobndy, faceconnections)
+    return (elemtovert, elemtocoord, elemtobndy, faceconnections)
 end
 
 """
@@ -417,7 +417,7 @@ function parallelsortcolumns(
     end
     B = reshape(B, m, div(length(B), m))
 
-    sortslices(B, dims = 2, alg = alg, lt = lt, by = by, rev = rev)
+    return sortslices(B, dims = 2, alg = alg, lt = lt, by = by, rev = rev)
 end
 
 """
@@ -532,7 +532,7 @@ function getpartition(comm::MPI.Comm, elemtocode::AbstractMatrix)
         partrecvstarts[i + 1] = partrecvcounts[i] + partrecvstarts[i]
     end
 
-    partsendorder, partsendstarts, partrecvstarts
+    return partsendorder, partsendstarts, partrecvstarts
 end
 
 """
@@ -663,7 +663,7 @@ function partition(
         newglobord = newglobord[newsortorder]
     end
 
-    (
+    return (
         newelemtovert,
         newelemtocoord,
         newelemtobndy,
@@ -706,7 +706,7 @@ vetex ordering for faces.
 function vertsortandorder(a, b)
     a, b, s1 = minmaxflip(a, b)
     o = s1 ? 2 : 1
-    ((a, b), o)
+    return ((a, b), o)
 end
 
 """
@@ -748,7 +748,7 @@ function vertsortandorder(a, b, c)
               $((s1,s2,s3))")
     end
 
-    ((a, b, c), o)
+    return ((a, b, c), o)
 end
 
 """
@@ -808,7 +808,7 @@ function vertsortandorder(a, b, c, d)
                 with flips $((s1,s2,s3,s4,s5))")
     end
 
-    ((a, b, c, d), o)
+    return ((a, b, c, d), o)
 end
 
 """
@@ -1096,7 +1096,7 @@ function connectmesh(
 
     MPI.Waitall!([csreq; crreq; bsreq; brreq])
 
-    (
+    return (
         elems = 1:(nelem + nghost),       # range of          element indices
         realelems = 1:nelem,            # range of real     element indices
         ghostelems = nelem .+ (1:nghost), # range of ghost    element indices
@@ -1158,7 +1158,7 @@ function mappings(N, elemtoelem, elemtoface, elemtoordr)
         vmap⁺[:, f1, e1] .= Np * (e2 - 1) .+ fmask[:, f2]
     end
 
-    (vmap⁻, vmap⁺)
+    return (vmap⁻, vmap⁺)
 end
 
 """
@@ -1223,5 +1223,5 @@ function commmapping(N, commelems, commfaces, nabrtocomm)
 
     resize!(vmapC, i - 1)
 
-    (vmapC, nabrtovmapC)
+    return (vmapC, nabrtovmapC)
 end

@@ -1,7 +1,7 @@
 using Test
 using MPI
 using Canary
-using Canary.Mesh
+using Canary.Grids.Meshes
 using Random
 
 function main()
@@ -12,7 +12,7 @@ function main()
     Random.seed!(1234)
     d = 4
     A = rand(1:10, d, 3rank)
-    B = Canary.Mesh.parallelsortcolumns(comm, A, rev = true)
+    B = Canary.Grids.Meshes.parallelsortcolumns(comm, A, rev = true)
 
     root = 0
     Acounts = MPI.Allgather(Cint(length(A)), comm)

@@ -1,7 +1,7 @@
 using MPI
 using Test
 
-include(joinpath("..", "testhelper.jl"))
+include(joinpath("..", "..", "testhelper.jl"))
 
 @testset "Mesh BrickMesh" begin
     runmpi(joinpath(@__DIR__, "test_mesh_utilities.jl"))

@@ -1,40 +1,40 @@
 using Canary
-using Canary.Mesh
+using Canary.Grids.Meshes
 using Test
 using MPI
 
 MPI.Initialized() || MPI.Init()
 
 @testset "Linear Parition" begin
-    @test Canary.Mesh.linearpartition(1, 1, 1) == 1:1
-    @test Canary.Mesh.linearpartition(20, 1, 1) == 1:20
-    @test Canary.Mesh.linearpartition(10, 1, 2) == 1:5
-    @test Canary.Mesh.linearpartition(10, 2, 2) == 6:10
+    @test Canary.Grids.Meshes.linearpartition(1, 1, 1) == 1:1
+    @test Canary.Grids.Meshes.linearpartition(20, 1, 1) == 1:20
+    @test Canary.Grids.Meshes.linearpartition(10, 1, 2) == 1:5
+    @test Canary.Grids.Meshes.linearpartition(10, 2, 2) == 6:10
 end
 
 @testset "Hilbert Code" begin
-    @test Canary.Mesh.hilbertcode([0, 0], bits = 1) == [0, 0]
-    @test Canary.Mesh.hilbertcode([0, 1], bits = 1) == [0, 1]
-    @test Canary.Mesh.hilbertcode([1, 1], bits = 1) == [1, 0]
-    @test Canary.Mesh.hilbertcode([1, 0], bits = 1) == [1, 1]
-    @test Canary.Mesh.hilbertcode([0, 0], bits = 2) == [0, 0]
-    @test Canary.Mesh.hilbertcode([1, 0], bits = 2) == [0, 1]
-    @test Canary.Mesh.hilbertcode([1, 1], bits = 2) == [0, 2]
-    @test Canary.Mesh.hilbertcode([0, 1], bits = 2) == [0, 3]
-    @test Canary.Mesh.hilbertcode([0, 2], bits = 2) == [1, 0]
-    @test Canary.Mesh.hilbertcode([0, 3], bits = 2) == [1, 1]
-    @test Canary.Mesh.hilbertcode([1, 3], bits = 2) == [1, 2]
-    @test Canary.Mesh.hilbertcode([1, 2], bits = 2) == [1, 3]
-    @test Canary.Mesh.hilbertcode([2, 2], bits = 2) == [2, 0]
-    @test Canary.Mesh.hilbertcode([2, 3], bits = 2) == [2, 1]
-    @test Canary.Mesh.hilbertcode([3, 3], bits = 2) == [2, 2]
-    @test Canary.Mesh.hilbertcode([3, 2], bits = 2) == [2, 3]
-    @test Canary.Mesh.hilbertcode([3, 1], bits = 2) == [3, 0]
-    @test Canary.Mesh.hilbertcode([2, 1], bits = 2) == [3, 1]
-    @test Canary.Mesh.hilbertcode([2, 0], bits = 2) == [3, 2]
-    @test Canary.Mesh.hilbertcode([3, 0], bits = 2) == [3, 3]
+    @test Canary.Grids.Meshes.hilbertcode([0, 0], bits = 1) == [0, 0]
+    @test Canary.Grids.Meshes.hilbertcode([0, 1], bits = 1) == [0, 1]
+    @test Canary.Grids.Meshes.hilbertcode([1, 1], bits = 1) == [1, 0]
+    @test Canary.Grids.Meshes.hilbertcode([1, 0], bits = 1) == [1, 1]
+    @test Canary.Grids.Meshes.hilbertcode([0, 0], bits = 2) == [0, 0]
+    @test Canary.Grids.Meshes.hilbertcode([1, 0], bits = 2) == [0, 1]
+    @test Canary.Grids.Meshes.hilbertcode([1, 1], bits = 2) == [0, 2]
+    @test Canary.Grids.Meshes.hilbertcode([0, 1], bits = 2) == [0, 3]
+    @test Canary.Grids.Meshes.hilbertcode([0, 2], bits = 2) == [1, 0]
+    @test Canary.Grids.Meshes.hilbertcode([0, 3], bits = 2) == [1, 1]
+    @test Canary.Grids.Meshes.hilbertcode([1, 3], bits = 2) == [1, 2]
+    @test Canary.Grids.Meshes.hilbertcode([1, 2], bits = 2) == [1, 3]
+    @test Canary.Grids.Meshes.hilbertcode([2, 2], bits = 2) == [2, 0]
+    @test Canary.Grids.Meshes.hilbertcode([2, 3], bits = 2) == [2, 1]
+    @test Canary.Grids.Meshes.hilbertcode([3, 3], bits = 2) == [2, 2]
+    @test Canary.Grids.Meshes.hilbertcode([3, 2], bits = 2) == [2, 3]
+    @test Canary.Grids.Meshes.hilbertcode([3, 1], bits = 2) == [3, 0]
+    @test Canary.Grids.Meshes.hilbertcode([2, 1], bits = 2) == [3, 1]
+    @test Canary.Grids.Meshes.hilbertcode([2, 0], bits = 2) == [3, 2]
+    @test Canary.Grids.Meshes.hilbertcode([3, 0], bits = 2) == [3, 3]
 
-    @test Canary.Mesh.hilbertcode(UInt64.([14, 3, 4])) ==
+    @test Canary.Grids.Meshes.hilbertcode(UInt64.([14, 3, 4])) ==
           UInt64.([0x0, 0x0, 0xe25])
 end
 
@@ -71,30 +71,30 @@ end
 end
 
 @testset "Vertex Ordering" begin
-    @test ((1,), 1) == Canary.Mesh.vertsortandorder(1)
+    @test ((1,), 1) == Canary.Grids.Meshes.vertsortandorder(1)
 
-    @test ((1, 2), 1) == Canary.Mesh.vertsortandorder(1, 2)
-    @test ((1, 2), 2) == Canary.Mesh.vertsortandorder(2, 1)
+    @test ((1, 2), 1) == Canary.Grids.Meshes.vertsortandorder(1, 2)
+    @test ((1, 2), 2) == Canary.Grids.Meshes.vertsortandorder(2, 1)
 
-    @test ((1, 2, 3), 1) == Canary.Mesh.vertsortandorder(1, 2, 3)
-    @test ((1, 2, 3), 2) == Canary.Mesh.vertsortandorder(3, 1, 2)
-    @test ((1, 2, 3), 3) == Canary.Mesh.vertsortandorder(2, 3, 1)
-    @test ((1, 2, 3), 4) == Canary.Mesh.vertsortandorder(2, 1, 3)
-    @test ((1, 2, 3), 5) == Canary.Mesh.vertsortandorder(3, 2, 1)
-    @test ((1, 2, 3), 6) == Canary.Mesh.vertsortandorder(1, 3, 2)
+    @test ((1, 2, 3), 1) == Canary.Grids.Meshes.vertsortandorder(1, 2, 3)
+    @test ((1, 2, 3), 2) == Canary.Grids.Meshes.vertsortandorder(3, 1, 2)
+    @test ((1, 2, 3), 3) == Canary.Grids.Meshes.vertsortandorder(2, 3, 1)
+    @test ((1, 2, 3), 4) == Canary.Grids.Meshes.vertsortandorder(2, 1, 3)
+    @test ((1, 2, 3), 5) == Canary.Grids.Meshes.vertsortandorder(3, 2, 1)
+    @test ((1, 2, 3), 6) == Canary.Grids.Meshes.vertsortandorder(1, 3, 2)
 
-    @test_throws ErrorException Canary.Mesh.vertsortandorder(2, 1, 1)
+    @test_throws ErrorException Canary.Grids.Meshes.vertsortandorder(2, 1, 1)
 
-    @test ((1, 2, 3, 4), 1) == Canary.Mesh.vertsortandorder(1, 2, 3, 4)
-    @test ((1, 2, 3, 4), 2) == Canary.Mesh.vertsortandorder(1, 3, 2, 4)
-    @test ((1, 2, 3, 4), 3) == Canary.Mesh.vertsortandorder(2, 1, 3, 4)
-    @test ((1, 2, 3, 4), 4) == Canary.Mesh.vertsortandorder(2, 4, 1, 3)
-    @test ((1, 2, 3, 4), 5) == Canary.Mesh.vertsortandorder(3, 1, 4, 2)
-    @test ((1, 2, 3, 4), 6) == Canary.Mesh.vertsortandorder(3, 4, 1, 2)
-    @test ((1, 2, 3, 4), 7) == Canary.Mesh.vertsortandorder(4, 2, 3, 1)
-    @test ((1, 2, 3, 4), 8) == Canary.Mesh.vertsortandorder(4, 3, 2, 1)
+    @test ((1, 2, 3, 4), 1) == Canary.Grids.Meshes.vertsortandorder(1, 2, 3, 4)
+    @test ((1, 2, 3, 4), 2) == Canary.Grids.Meshes.vertsortandorder(1, 3, 2, 4)
+    @test ((1, 2, 3, 4), 3) == Canary.Grids.Meshes.vertsortandorder(2, 1, 3, 4)
+    @test ((1, 2, 3, 4), 4) == Canary.Grids.Meshes.vertsortandorder(2, 4, 1, 3)
+    @test ((1, 2, 3, 4), 5) == Canary.Grids.Meshes.vertsortandorder(3, 1, 4, 2)
+    @test ((1, 2, 3, 4), 6) == Canary.Grids.Meshes.vertsortandorder(3, 4, 1, 2)
+    @test ((1, 2, 3, 4), 7) == Canary.Grids.Meshes.vertsortandorder(4, 2, 3, 1)
+    @test ((1, 2, 3, 4), 8) == Canary.Grids.Meshes.vertsortandorder(4, 3, 2, 1)
 
-    @test_throws ErrorException Canary.Mesh.vertsortandorder(1, 3, 3, 1)
+    @test_throws ErrorException Canary.Grids.Meshes.vertsortandorder(1, 3, 3, 1)
 end
 
 @testset "Mesh" begin
@@ -531,7 +531,7 @@ end
 @testset "Get Partition" begin
     let
         Nelem = 150
-        (so, ss, rs) = Canary.Mesh.getpartition(MPI.COMM_SELF, Nelem:-1:1)
+        (so, ss, rs) = Canary.Grids.Meshes.getpartition(MPI.COMM_SELF, Nelem:-1:1)
         @test so == Nelem:-1:1
         @test ss == [1, Nelem + 1]
         @test rs == [1, Nelem + 1]
@@ -540,7 +540,7 @@ end
     let
         Nelem = 111
         code = [ones(1, Nelem); collect(Nelem:-1:1)']
-        (so, ss, rs) = Canary.Mesh.getpartition(MPI.COMM_SELF, Nelem:-1:1)
+        (so, ss, rs) = Canary.Grids.Meshes.getpartition(MPI.COMM_SELF, Nelem:-1:1)
         @test so == Nelem:-1:1
         @test ss == [1, Nelem + 1]
         @test rs == [1, Nelem + 1]
